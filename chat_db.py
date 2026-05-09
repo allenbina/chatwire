@@ -243,7 +243,7 @@ class ChatDBReader:
             conn.close()
 
     def services_for(self, handles: list[str]) -> dict[str, list[str]]:
-        """Return {handle_lc: [services]} — e.g. {"+19805858391": ["SMS", "iMessage"]}.
+        """Return {handle_lc: [services]} — e.g. {"+15551234567": ["SMS", "iMessage"]}.
 
         Apple stores one handle row per (id, service) pair. A phone number
         that has an iMessage identity AND has been SMS'd will appear twice;
