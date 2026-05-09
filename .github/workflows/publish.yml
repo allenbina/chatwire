@@ -1,18 +1,16 @@
 name: Publish to PyPI
 
-# Triggered by pushing a tag like v0.2.0. Builds the sdist + wheel from
-# that tag's source tree, then publishes to PyPI via OIDC trusted publisher
-# (no API tokens — PyPI verifies the GitHub Actions JWT instead).
+# Triggered by pushing a v* tag (e.g. v1.7.0). Three-job pipeline:
+#   1. build        — npm ci + npm run build + python -m build
+#   2. publish      — OIDC trusted publisher → PyPI + GitHub Release w/ assets
+#   3. homebrew-bump — bumps Formula/chatwire.rb in allenbina/homebrew-tap
 #
-# One-time setup at https://pypi.org/manage/account/publishing/ before
-# this workflow can succeed:
-#   - PyPI Project:    chatwire
-#   - Owner:           allenbina
-#   - Repository name: chatwire
-#   - Workflow name:   publish.yml
-#   - Environment:     pypi
-# Add it as a "pending publisher" if the project doesn't exist yet — that
-# both reserves the name and grants the workflow permission to upload it.
+# One-time PyPI setup (https://pypi.org/manage/project/chatwire/settings/publishing/):
+#   Project: chatwire   Owner: allenbina
+#   Repository: chatwire   Workflow: publish.yml   Environment: pypi
+#
+# Required secrets:
+#   HOMEBREW_TAP_TOKEN — classic PAT with `repo` scope on allenbina/homebrew-tap
 
 on:
   push:
@@ -30,6 +28,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/frontend/package-lock.json
 
       - name: Build React frontend
         working-directory: web/frontend
@@ -41,15 +41,22 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - name: Install build
-        run: python -m pip install --upgrade build
+
+      - name: Install build tools
+        run: python -m pip install --upgrade build twine
+
       - name: Build sdist + wheel
         run: python -m build
+
+      - name: Verify distribution metadata
+        run: twine check --strict dist/*
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+          retention-days: 7
 
   publish:
     name: Publish to PyPI
@@ -59,36 +66,57 @@ jobs:
       name: pypi
       url: https://pypi.org/p/chatwire
     permissions:
-      # OIDC token for PyPI trusted publisher — no API token required.
-      id-token: write
-      # Needed by `gh release create` in the post-publish step below.
-      contents: write
+      id-token: write   # OIDC token for PyPI trusted publisher
+      contents: write   # create GitHub releases
+
     steps:
+      - uses: actions/checkout@v5
+
       - name: Download dist artifacts
         uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-      - name: Create GitHub Release
-        # Promote the pushed tag to a proper Release so the in-app
-        # update-check (which queries /releases/latest) actually finds it.
-        # Runs only after PyPI upload succeeds — a failed publish should
-        # not leave behind a misleading Release.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+
+      - name: Extract changelog section
         run: |
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$TAG" \
-            --generate-notes \
-            --verify-tag
+          VERSION="${GITHUB_REF_NAME#v}"
+          BODY=$(awk "/^## \\[${VERSION}\\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+          if [ -z "$(echo "$BODY" | tr -d '[:space:]')" ]; then
+            BODY=$(awk '/^## \\[Unreleased\\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md)
+          fi
+          if [ -z "$(echo "$BODY" | tr -d '[:space:]')" ]; then
+            BODY="See CHANGELOG.md for details."
+          fi
+          printf '%s\n' "$BODY" > /tmp/release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/release-notes.md
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+
+  homebrew-bump:
+    name: Bump Homebrew tap
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bump chatwire formula in allenbina/homebrew-tap
+        uses: dawidd6/action-homebrew-bump-formula@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          tap: allenbina/homebrew-tap
+          formula: chatwire
+          push: true
 
   notify-failure:
     name: Notify on failure
-    needs: [build, publish]
+    needs: [build, publish, homebrew-bump]
     if: failure()
     runs-on: ubuntu-latest
     steps:
