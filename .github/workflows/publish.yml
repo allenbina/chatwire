@@ -85,3 +85,18 @@ jobs:
             --title "$TAG" \
             --generate-notes \
             --verify-tag
+
+  notify-failure:
+    name: Notify on failure
+    needs: [build, publish]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send ntfy alert
+        run: |
+          curl -s \
+            -H "Title: CI FAILED: ${{ github.workflow }} (${{ github.ref_name }})" \
+            -H "Priority: high" \
+            -H "Tags: x,robot_face" \
+            -d "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            ntfy.sh/p9SKpYzY70LlyK1N
