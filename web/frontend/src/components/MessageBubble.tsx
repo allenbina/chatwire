@@ -1,15 +1,20 @@
 /**
  * Single message bubble. Renders:
- *  - Text body (with basic URL auto-linking)
- *  - Image thumbnails (via the /attachment endpoint)
- *  - Non-image attachment chips
- *  - Link preview card (pluginPayloadAttachment or OG fallback)
+ *  - Image gallery grid (1/2/3/4+ layout matching _messages.html)
+ *  - Lightbox for full-size images with prev/next navigation
+ *  - Inline HTML5 <video> and <audio> players
+ *  - File attachment download links
+ *  - Sync-pending spinner for not-yet-ready attachments
+ *  - Link preview card
+ *  - Text body with URL auto-linking
  *  - Timestamp + delivery status for outgoing messages
  *
- * Outgoing (from_me) messages align right with --color-msg-me.
- * Incoming messages align left with --color-msg-them.
+ * Accessibility: each bubble has role="article" and an aria-label with
+ * sender name + timestamp, matching the Jinja2 _messages.html template.
  */
 import type { Message, Attachment, LinkPreview } from '../api'
+import { MediaGallery, PendingAttachment } from './MediaGallery'
+import { SlotRenderer } from '../plugins/SlotRenderer'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -20,65 +25,98 @@ const URL_RE = /https?:\/\/[^\s<>"']+/g
 function linkify(text: string): string {
   return text.replace(
     URL_RE,
-    (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer"
-        class="text-[--color-info] underline hover:text-[--color-accent]"
-      >${url}</a>`,
+    (url) =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer"
+          class="text-[--color-info] underline hover:text-[--color-accent]"
+        >${url}</a>`,
   )
 }
 
-function statusIcon(status?: string): string {
-  if (!status) return ''
-  if (status === 'delivered') return '&#10003;&#10003;' // ✓✓
-  if (status === 'read') return '&#10003;&#10003;'
-  if (status === 'sent') return '&#10003;'
-  if (status === 'failed') return '&#x26A0;' // ⚠
-  return ''
-}
-
 // ---------------------------------------------------------------------------
-// Sub-components
+// Non-image attachment renderers
 // ---------------------------------------------------------------------------
 
-function ImageAttachment({ att }: { att: Attachment }) {
-  if (!att.ready) {
-    return (
-      <div className="h-24 w-40 rounded bg-[--color-bg-tertiary] flex items-center justify-center text-xs text-[--color-text-muted]">
-        Downloading&hellip;
-      </div>
-    )
-  }
-  const src = `/attachment?path=${encodeURIComponent(att.path)}&size=thumb`
-  const full = `/attachment?path=${encodeURIComponent(att.path)}`
+function VideoAttachment({ att }: { att: Attachment }) {
+  const src = `/attachment?path=${encodeURIComponent(att.path)}&dl=${encodeURIComponent(att.name)}`
   return (
-    <a href={full} target="_blank" rel="noopener noreferrer" className="block">
-      <img
-        src={src}
-        alt={att.name}
-        className="max-h-48 max-w-xs rounded object-cover hover:opacity-90 transition-opacity"
-        loading="lazy"
-      />
-    </a>
+    <video
+      className="w-full rounded"
+      controls
+      preload="metadata"
+      aria-label={att.name}
+      src={src}
+    />
   )
 }
 
-function FileChip({ att }: { att: Attachment }) {
-  const href = `/attachment?path=${encodeURIComponent(att.path)}&dl=1`
+function AudioAttachment({ att }: { att: Attachment }) {
+  const src = `/attachment?path=${encodeURIComponent(att.path)}&dl=${encodeURIComponent(att.name)}`
+  return (
+    <audio
+      className="w-full px-2 py-1"
+      controls
+      preload="none"
+      aria-label={att.name}
+      src={src}
+    />
+  )
+}
+
+function FileAttachment({ att }: { att: Attachment }) {
+  const href = `/attachment?path=${encodeURIComponent(att.path)}&dl=${encodeURIComponent(att.name)}`
+  const sizeStr = att.total_bytes > 0
+    ? att.total_bytes < 1024 * 1024
+      ? `${Math.round(att.total_bytes / 1024)} KB`
+      : `${(att.total_bytes / (1024 * 1024)).toFixed(1)} MB`
+    : ''
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      download={att.name}
       className="flex items-center gap-2 px-3 py-2 rounded bg-[--color-bg-tertiary]
-                 text-xs text-[--color-text-secondary] hover:text-[--color-accent] transition-colors"
+                 text-xs text-[--color-text-primary] hover:text-[--color-accent] transition-colors"
     >
-      <span>&#128196;</span>
-      <span className="truncate max-w-[180px]">{att.name}</span>
+      <svg
+        className="w-4 h-4 shrink-0 text-[--color-text-muted]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        viewBox="0 0 24 24"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+      </svg>
+      <span className="truncate max-w-[200px]">{att.name}</span>
+      {sizeStr && <span className="shrink-0 text-[--color-text-muted]">{sizeStr}</span>}
     </a>
   )
 }
 
+function NonImageAttachment({ att }: { att: Attachment }) {
+  if (!att.ready) return <PendingAttachment name={att.name} />
+  if (att.kind === 'video') return <VideoAttachment att={att} />
+  if (att.kind === 'audio') return <AudioAttachment att={att} />
+  return <FileAttachment att={att} />
+}
+
+// ---------------------------------------------------------------------------
+// Link preview card
+// ---------------------------------------------------------------------------
+
 function PreviewCard({ preview }: { preview: LinkPreview }) {
   if (!preview.url && !preview.title) return null
+  // Use the attachment endpoint for preview images served from local storage,
+  // otherwise fall back to image_url for external OG images.
+  const imgSrc = preview.image_url
+    ? preview.image_url.startsWith('/')
+      ? `${preview.image_url}&size=thumb`
+      : preview.image_url
+    : null
+
   return (
     <a
       href={preview.url}
@@ -87,9 +125,9 @@ function PreviewCard({ preview }: { preview: LinkPreview }) {
       className="block mt-1 rounded border border-[--color-border] overflow-hidden
                  hover:border-[--color-accent] transition-colors max-w-xs"
     >
-      {preview.image_url && (
+      {imgSrc && (
         <img
-          src={preview.image_url}
+          src={imgSrc}
           alt=""
           className="w-full h-32 object-cover"
           loading="lazy"
@@ -111,40 +149,112 @@ function PreviewCard({ preview }: { preview: LinkPreview }) {
 }
 
 // ---------------------------------------------------------------------------
+// Delivery status
+// ---------------------------------------------------------------------------
+
+function DeliveryBadge({ status, hint }: { status: string; hint?: string }) {
+  if (!status || status === 'delivered') return null
+  if (status === 'failed') {
+    return (
+      <span
+        className="bg-[--color-bg-tertiary] text-[--color-error] text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+        title={hint}
+      >
+        failed
+      </span>
+    )
+  }
+  if (status === 'sent') {
+    return (
+      <span className="bg-[--color-bg-tertiary] text-[--color-text-muted] text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+        sent
+      </span>
+    )
+  }
+  // ghost / other
+  return (
+    <span
+      className="bg-[--color-bg-tertiary] text-[--color-warning] text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+      title={hint}
+    >
+      {status}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main bubble
 // ---------------------------------------------------------------------------
 
 interface MessageBubbleProps {
   msg: Message
-  /** True for optimistic (pending) messages */
   pending?: boolean
 }
 
 export function MessageBubble({ msg, pending = false }: MessageBubbleProps) {
   const isMine = msg.from_me
+  const senderLabel = msg.sender_name ?? (isMine ? 'You' : 'Them')
 
-  const imageAtts = msg.attachments.filter((a) => a.kind === 'image')
-  const otherAtts = msg.attachments.filter((a) => a.kind !== 'image')
+  // Split attachments: ready images → gallery; everything else → inline
+  const readyImages = msg.attachments.filter((a) => a.kind === 'image' && a.ready)
+  const otherAtts = [
+    ...msg.attachments.filter((a) => a.kind !== 'image'),
+    ...msg.attachments.filter((a) => a.kind === 'image' && !a.ready),
+  ]
 
   return (
     <div
+      role="article"
+      aria-label={`${senderLabel}, ${msg.ts}`}
       className={[
         'flex flex-col max-w-[75%] gap-0.5',
         isMine ? 'self-end items-end' : 'self-start items-start',
         pending ? 'opacity-60' : '',
       ].join(' ')}
     >
-      {/* Attachment images above bubble */}
-      {imageAtts.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {imageAtts.map((a, i) => (
-            <ImageAttachment key={i} att={a} />
+      {/* Gallery grid for ready images */}
+      {readyImages.length > 0 && (
+        <MediaGallery
+          images={readyImages}
+          senderName={senderLabel}
+          fromMe={isMine}
+        />
+      )}
+
+      {/* Non-image / pending attachments */}
+      {otherAtts.length > 0 && (
+        <div
+          className={[
+            'rounded-2xl overflow-hidden flex flex-col gap-0.5',
+            isMine ? 'rounded-br-sm' : 'rounded-bl-sm',
+            'max-w-xs',
+          ].join(' ')}
+        >
+          {otherAtts.map((a: Attachment, i: number) => (
+            <NonImageAttachment key={i} att={a} />
           ))}
         </div>
       )}
 
       {/* Text bubble */}
-      {(msg.text || otherAtts.length > 0 || msg.link_preview) && (
+      {(msg.text || msg.link_preview) && !msg.link_preview && msg.text && (
+        <div
+          className={[
+            'rounded-2xl px-3 py-2 text-sm break-words',
+            isMine
+              ? 'rounded-br-sm bg-[--color-msg-me] text-[--color-text-primary]'
+              : 'rounded-bl-sm bg-[--color-msg-them] text-[--color-text-primary]',
+          ].join(' ')}
+        >
+          <p
+            className="whitespace-pre-wrap"
+            dangerouslySetInnerHTML={{ __html: linkify(msg.text) }}
+          />
+        </div>
+      )}
+
+      {/* Text + link preview together */}
+      {msg.link_preview && (
         <div
           className={[
             'rounded-2xl px-3 py-2 text-sm break-words',
@@ -155,16 +265,11 @@ export function MessageBubble({ msg, pending = false }: MessageBubbleProps) {
         >
           {msg.text && (
             <p
-              className="whitespace-pre-wrap"
+              className="whitespace-pre-wrap mb-1"
               dangerouslySetInnerHTML={{ __html: linkify(msg.text) }}
             />
           )}
-
-          {otherAtts.map((a, i) => (
-            <FileChip key={i} att={a} />
-          ))}
-
-          {msg.link_preview && <PreviewCard preview={msg.link_preview} />}
+          <PreviewCard preview={msg.link_preview} />
         </div>
       )}
 
@@ -177,12 +282,11 @@ export function MessageBubble({ msg, pending = false }: MessageBubbleProps) {
       >
         <span>{msg.ts}</span>
         {isMine && msg.status && (
-          <span
-            className={msg.status === 'failed' ? 'text-[--color-error]' : 'text-[--color-success]'}
-            dangerouslySetInnerHTML={{ __html: statusIcon(msg.status) }}
-          />
+          <DeliveryBadge status={msg.status} hint={(msg as Message & { hint?: string }).hint} />
         )}
         {pending && <span className="italic">sending&hellip;</span>}
+        {/* Plugin slot: extra toolbar items per message */}
+        <SlotRenderer slot="message.toolbar" msgRowid={msg.rowid} fromMe={isMine} />
       </div>
     </div>
   )

@@ -13,6 +13,7 @@ import { useState, useRef, KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { sendMessage, sendFile } from '../api'
 import { useChatStore, nextOptimisticId } from '../store'
+import { SlotRenderer } from '../plugins/SlotRenderer'
 
 interface ComposeBoxProps {
   handle: string
@@ -142,6 +143,8 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
 
   return (
     <div className="border-t border-[--color-border] bg-[--color-bg-primary] px-4 py-3">
+      {/* Plugin slot: extensions rendered above the input row */}
+      <SlotRenderer slot="compose.extension" handle={handle} />
       {error && (
         <p className="mb-2 text-xs text-[--color-error]">{error}</p>
       )}
@@ -181,6 +184,7 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
           rows={1}
           placeholder="Message…"
           disabled={sending}
+          aria-label="Type a message"
           className="flex-1 resize-none bg-transparent text-sm text-[--color-text-primary]
                      placeholder:text-[--color-text-muted] outline-none leading-snug"
           style={{ maxHeight: '144px' }}

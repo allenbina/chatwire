@@ -1,12 +1,18 @@
 /**
  * Two-pane shell: fixed sidebar on the left, scrollable main area on
  * the right. On narrow viewports the sidebar collapses into a drawer
- * toggled by the hamburger button. The sidebar always renders — it is
- * hidden via CSS on mobile when sidebarOpen is false.
+ * toggled by the hamburger button.
+ *
+ * Accessibility:
+ *  - Skip-nav link at top (visible on focus via .sr-only:focus)
+ *  - Sidebar is <nav aria-label="Conversations"> (inside ConversationList)
+ *  - Main content area is <main aria-label="Chat">
+ *  - Mobile overlay uses a <button> (no div/span onClick)
  */
 import { ReactNode } from 'react'
 import { useChatStore } from '../store'
 import { ConversationList } from './ConversationList'
+import { SlotRenderer } from '../plugins/SlotRenderer'
 
 interface LayoutProps {
   children: ReactNode
@@ -17,6 +23,17 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[--color-bg-primary] text-[--color-text-primary]">
+      {/* Skip-nav link — visible on keyboard focus, hidden otherwise */}
+      <a
+        href="#messages"
+        className="sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50
+                   focus:px-4 focus:py-2 focus:rounded-lg
+                   focus:bg-[--color-accent] focus:text-[--color-bg-primary]
+                   focus:text-sm focus:font-medium"
+      >
+        Skip to messages
+      </a>
+
       {/* ── Sidebar ── */}
       <aside
         className={[
@@ -43,6 +60,8 @@ export function Layout({ children }: LayoutProps) {
         {/* Conversation list */}
         <div className="flex-1 overflow-y-auto">
           <ConversationList />
+          {/* Plugin slot: panels below the conversation list */}
+          <SlotRenderer slot="sidebar.panel" />
         </div>
 
         {/* Sidebar footer */}
@@ -63,16 +82,22 @@ export function Layout({ children }: LayoutProps) {
         </div>
       </aside>
 
-      {/* ── Mobile backdrop ── */}
+      {/* ── Mobile backdrop — button so it's accessible and not a div/span onclick ── */}
       {sidebarOpen && (
-        <div
-          className="md:hidden fixed inset-0 z-30 bg-black/50"
+        <button
+          type="button"
+          className="md:hidden fixed inset-0 z-30 bg-black/50 cursor-default w-full h-full"
           onClick={() => setSidebarOpen(false)}
+          aria-label="Close sidebar"
+          tabIndex={-1}
         />
       )}
 
       {/* ── Main content area ── */}
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <main
+        aria-label="Chat"
+        className="flex-1 flex flex-col min-w-0 h-full overflow-hidden"
+      >
         {/* Mobile top bar */}
         <div className="md:hidden flex items-center px-3 py-2 bg-[--color-sidebar-bg] border-b border-[--color-border]">
           <button

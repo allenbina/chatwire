@@ -8,9 +8,13 @@
  * - Shows a "scroll to bottom" button when the user has scrolled up.
  * - "Load older" button at the top when the backend signals has_more.
  * - For group chats, shows the sender name above incoming bubbles.
+ *
+ * Performance: the message list is virtualised with @tanstack/react-virtual
+ * so only ~30 DOM nodes are rendered regardless of conversation length.
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { fetchMessages, fetchOlderMessages, type Message } from '../api'
 import { useChatStore } from '../store'
 import { MessageBubble } from './MessageBubble'
@@ -52,13 +56,22 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
   const recentMessages: Message[] = data?.messages ?? []
   const allMessages = [...olderMsgs, ...recentMessages, ...optimistic]
 
+  // ---------------------------------------------------------------------------
+  // Virtualiser — renders only the visible slice of allMessages
+  // ---------------------------------------------------------------------------
+  const virtualizer = useVirtualizer({
+    count: allMessages.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 64, // rough average row height (px)
+    overscan: 10, // extra rows to pre-render above/below viewport
+  })
+
   // Scroll to bottom on new messages (only when already at bottom)
   useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    if (atBottomRef.current) {
-      el.scrollTop = el.scrollHeight
+    if (atBottomRef.current && allMessages.length > 0) {
+      virtualizer.scrollToIndex(allMessages.length - 1, { align: 'end' })
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMessages.length])
 
   const handleScroll = useCallback(() => {
@@ -70,14 +83,12 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
   }, [])
 
   function scrollToBottom() {
-    const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    virtualizer.scrollToIndex(allMessages.length - 1, { align: 'end' })
     atBottomRef.current = true
     setShowScrollBtn(false)
   }
 
   async function loadOlder() {
-    // Use the oldest message we currently display as the before-cursor
     const oldest = olderMsgs.length > 0 ? olderMsgs[0] : recentMessages[0]
     if (!oldest || loadingOlder) return
     setLoadingOlder(true)
@@ -85,7 +96,6 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
       const result = await fetchOlderMessages(handle, isGroup, oldest.date, oldest.rowid, 50)
       setOlderMsgs((prev) => [...result.messages, ...prev])
       setHasMore(result.has_more)
-      // Invalidate so the standard query stays fresh
       queryClient.invalidateQueries({ queryKey: ['messages', handle] })
     } catch {
       // silently ignore; user can retry
@@ -110,16 +120,22 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
     )
   }
 
+  const virtualItems = virtualizer.getVirtualItems()
+
   return (
     <div className="relative flex-1 min-h-0">
       <div
+        id="messages"
         ref={scrollRef}
         onScroll={handleScroll}
-        className="absolute inset-0 overflow-y-auto flex flex-col gap-2 px-4 py-4"
+        role="log"
+        aria-live="polite"
+        aria-label="Conversation messages"
+        className="absolute inset-0 overflow-y-auto"
       >
         {/* Load-older button */}
         {hasMore && (
-          <div className="flex justify-center mb-2">
+          <div className="flex justify-center my-2 px-4">
             <button
               onClick={loadOlder}
               disabled={loadingOlder}
@@ -133,25 +149,45 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
         )}
 
         {allMessages.length === 0 && (
-          <p className="text-center text-sm text-[--color-text-muted] mt-8">
+          <p className="text-center text-sm text-[--color-text-muted] mt-8 px-4">
             No messages yet.
           </p>
         )}
 
-        {allMessages.map((msg) => (
-          <div key={msg.rowid}>
-            {/* Sender label for incoming group messages */}
-            {isGroup && !msg.from_me && msg.sender_name && (
-              <p className="text-[10px] text-[--color-text-muted] mb-0.5 ml-1">
-                {msg.sender_name}
-              </p>
-            )}
-            <MessageBubble
-              msg={msg}
-              pending={'pending' in msg && (msg as Message & { pending?: boolean }).pending === true}
-            />
-          </div>
-        ))}
+        {/* Virtual list container — height matches total row heights */}
+        <div
+          style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
+        >
+          {virtualItems.map((vItem) => {
+            const msg = allMessages[vItem.index]
+            return (
+              <div
+                key={msg.rowid}
+                data-index={vItem.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${vItem.start}px)`,
+                }}
+                className="px-4 py-1"
+              >
+                {/* Sender label for incoming group messages */}
+                {isGroup && !msg.from_me && msg.sender_name && (
+                  <p className="text-[10px] text-[--color-text-muted] mb-0.5 ml-1">
+                    {msg.sender_name}
+                  </p>
+                )}
+                <MessageBubble
+                  msg={msg}
+                  pending={'pending' in msg && (msg as Message & { pending?: boolean }).pending === true}
+                />
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* Scroll-to-bottom button */}

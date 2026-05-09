@@ -1,0 +1,52 @@
+# Git history — not needed in the image
+.git
+.gitignore
+.gitattributes
+
+# Node modules — rebuilt inside the Docker build stage
+web/frontend/node_modules
+packages/mobile/node_modules
+packages/sdk/node_modules
+
+# Playwright / Vitest artifacts
+web/frontend/dist        # overwritten by Docker build stage
+web/frontend/coverage
+web/frontend/test-results
+web/frontend/playwright-report
+
+# Python build artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+dist/
+*.egg-info/
+.eggs/
+
+# Local dev config and state — mount a volume instead
+.chatwire/
+*.env
+.env.*
+
+# CI / CD — not needed at runtime
+.github/
+
+# Documentation
+docs/
+assets/
+HANDOFF.md
+
+# macOS artifacts
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage

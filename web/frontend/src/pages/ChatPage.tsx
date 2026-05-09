@@ -15,6 +15,8 @@ import { useEffect } from 'react'
 import { Layout } from '../components/Layout'
 import { MessageList } from '../components/MessageList'
 import { ComposeBox } from '../components/ComposeBox'
+import { ExportDropdown } from '../components/ExportDropdown'
+import { UpdateBanner } from '../components/UpdateBanner'
 import { useChatStore } from '../store'
 import { useSSE, type SSEEvent } from '../hooks/useSSE'
 import { fetchConversations, type Conversation } from '../api'
@@ -59,6 +61,11 @@ function ConversationHeader({ handle, isGroup, conversations }: HeaderProps) {
   const displayName = displayNameForHandle(handle, conversations)
   const initials = isGroup ? '##' : (displayName.trim()[0] ?? '?').toUpperCase()
 
+  // Popout URL for this conversation
+  const popoutParam = isGroup
+    ? `?chat=${encodeURIComponent(handle)}`
+    : `?handle=${encodeURIComponent(handle)}`
+
   return (
     <div
       className="flex items-center gap-3 px-4 py-3 border-b border-[--color-border]
@@ -74,7 +81,7 @@ function ConversationHeader({ handle, isGroup, conversations }: HeaderProps) {
       >
         {initials}
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-[--color-text-primary] truncate">
           {displayName}
         </p>
@@ -82,6 +89,26 @@ function ConversationHeader({ handle, isGroup, conversations }: HeaderProps) {
           <p className="text-[10px] text-[--color-text-muted]">Group conversation</p>
         )}
       </div>
+
+      {/* Popout button */}
+      <a
+        href={`/app/popout${popoutParam}`}
+        target="_blank"
+        rel="noopener"
+        aria-label="Open in popout window"
+        className="p-2 rounded-lg text-[--color-text-muted] hover:bg-[--color-sidebar-hover] transition-colors"
+        title="Popout window"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+             strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </a>
+
+      {/* Export dropdown */}
+      <ExportDropdown handle={handle} isGroup={isGroup} />
     </div>
   )
 }
@@ -108,6 +135,12 @@ function ActiveConversation({ handle }: { handle: string }) {
       qc.invalidateQueries({ queryKey: ['conversations'] })
     },
   })
+
+  // Move focus to compose box when conversation changes (Chunk 5 a11y)
+  useEffect(() => {
+    const el = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Type a message"]')
+    if (el) el.focus()
+  }, [handle])
 
   return (
     <>
@@ -139,6 +172,7 @@ export function ChatPage() {
 
   return (
     <Layout>
+      <UpdateBanner />
       {handle ? (
         <ActiveConversation handle={handle} />
       ) : (

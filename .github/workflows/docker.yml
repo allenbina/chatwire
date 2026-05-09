@@ -1,0 +1,77 @@
+name: Publish Docker image
+
+# Triggered by the same tag pushes that fire publish.yml (v*).
+# Builds a multi-platform image (linux/amd64 + linux/arm64) and pushes to
+# GitHub Container Registry (ghcr.io/allenbina/chatwire).
+#
+# The image embeds the compiled React frontend (built inside Docker's
+# Node stage) so `docker pull ghcr.io/allenbina/chatwire` is self-contained.
+#
+# NOTE: chatwire's iMessage bridge features only work on macOS.
+# This image serves the web dashboard and REST/SSE API; iMessage read/send
+# and the menu-bar toolbar are unavailable inside Docker.
+#
+# No extra secrets required — GITHUB_TOKEN handles GHCR authentication.
+# GITHUB_TOKEN is provided automatically by GitHub Actions.
+#
+# Image tags produced per release:
+#   ghcr.io/allenbina/chatwire:1.7.0      (semver, e.g. for v1.7.0 tag)
+#   ghcr.io/allenbina/chatwire:1.7         (minor)
+#   ghcr.io/allenbina/chatwire:1           (major)
+#   ghcr.io/allenbina/chatwire:latest
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  docker:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # push to GHCR
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Set up QEMU for cross-platform builds (linux/arm64 on amd64 runner).
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Derive OCI-compliant image tags and labels from the git tag.
+      # v1.7.0  →  1.7.0, 1.7, 1, latest
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/allenbina/chatwire
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer-cache backed by the GitHub Actions cache — speeds up rebuilds
+          # when only source files change (Node modules and pip deps are cached).
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
