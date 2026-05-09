@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>chatwire — self-hosted iMessage bridge for macOS</title>
+<meta name="description" content="Self-hosted iMessage bridge for macOS. Telegram-first phone client, plugin architecture, no relay servers, zero telemetry. pipx install chatwire.">
+<meta property="og:title" content="chatwire — self-hosted iMessage bridge for macOS">
+<meta property="og:description" content="Telegram-first iMessage bridge. Plugin architecture. No relay servers. pipx install chatwire.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://allenbina.github.io/chatwire/">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0a0a'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='20' fill='%2300ff88' text-anchor='middle'%3E%26gt;%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-2: #141414;
+    --bg-3: #1c1c1c;
+    --fg: #e4e4e4;
+    --fg-dim: #999;
+    --fg-faint: #666;
+    --accent: #00ff88;
+    --accent-2: #ffb86c;
+    --line: #2a2a2a;
+    --warn: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    line-height: 1.55;
+    padding: 0;
+    min-height: 100vh;
+  }
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 4rem 1.25rem 6rem;
+  }
+  ::selection { background: var(--accent); color: var(--bg); }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
+  a:hover { border-bottom-color: var(--accent); }
+  h1, h2, h3 { font-weight: 700; letter-spacing: -0.01em; }
+  h1 { font-size: 2.5rem; line-height: 1.1; margin-bottom: 0.75rem; }
+  h2 { font-size: 1.4rem; margin: 3rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 1rem; color: var(--fg-dim); margin-bottom: 0.4rem; }
+  p { margin: 0 0 1rem; }
+  p.lead { color: var(--fg-dim); font-size: 1.1rem; margin-bottom: 1.5rem; }
+  code, pre { font-family: inherit; }
+  ul { list-style: none; padding: 0; }
+  ul.feature-list li { padding: 0.45rem 0 0.45rem 1.5rem; position: relative; }
+  ul.feature-list li:before { content: "›"; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+
+  /* terminal prompt accent above the wordmark */
+  .prompt { color: var(--accent); font-size: 0.85rem; letter-spacing: 0.05em; margin-bottom: 0.5rem; opacity: 0.85; }
+  .prompt::before { content: "$ "; color: var(--fg-faint); }
+
+  .tagline { font-size: 1.25rem; color: var(--fg); margin-bottom: 2rem; max-width: 560px; }
+  .tagline em { color: var(--accent); font-style: normal; }
+
+  /* install box */
+  .install {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0 0 1.25rem;
+    overflow-x: auto;
+  }
+  .install code { color: var(--accent); white-space: nowrap; font-size: 0.95rem; flex: 1; }
+  .install code::before { content: "$ "; color: var(--fg-faint); }
+  button.copy {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--fg-dim);
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+    transition: color .15s, border-color .15s;
+  }
+  button.copy:hover { color: var(--accent); border-color: var(--accent); }
+  button.copy.copied { color: var(--accent); border-color: var(--accent); }
+
+  /* CTA buttons */
+  .ctas { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .btn {
+    display: inline-block;
+    padding: 0.65rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--fg);
+    border-bottom: 1px solid var(--line);
+    font-size: 0.9rem;
+    transition: all .15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); border-bottom-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { background: transparent; color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* status pill */
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--fg-dim);
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    margin-bottom: 1.25rem;
+  }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* comparison table */
+  .compare-wrap { overflow-x: auto; margin: 1rem 0 1.5rem; }
+  table.compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  table.compare th, table.compare td {
+    padding: 0.55rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+  }
+  table.compare th { color: var(--fg-dim); font-weight: 600; }
+  table.compare th:first-child { color: transparent; }
+  table.compare th.us { color: var(--accent); }
+  table.compare td:first-child { color: var(--fg-dim); }
+  table.compare td.us { color: var(--fg); font-weight: 600; }
+  table.compare .yes { color: var(--accent); }
+  table.compare .no  { color: var(--warn); opacity: 0.7; }
+  table.compare .meh { color: var(--accent-2); opacity: 0.85; }
+
+  /* screenshot placeholder cards */
+  .shots { display: grid; grid-template-columns: 1fr; gap: 1rem; margin: 1rem 0 1.5rem; }
+  .shot {
+    background: var(--bg-2);
+    border: 1px dashed var(--line);
+    border-radius: 6px;
+    padding: 2.25rem 1rem;
+    text-align: center;
+    color: var(--fg-faint);
+    font-size: 0.85rem;
+  }
+  .shot strong { display: block; color: var(--fg-dim); margin-bottom: 0.4rem; }
+
+  /* story stats */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin: 1rem 0 1.25rem; }
+  .stat { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.85rem; text-align: center; }
+  .stat .num { display: block; font-size: 1.5rem; color: var(--accent); font-weight: 700; line-height: 1.1; }
+  .stat .label { display: block; font-size: 0.75rem; color: var(--fg-faint); margin-top: 0.25rem; }
+
+  /* install steps */
+  pre.steps {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    font-size: 0.88rem;
+    line-height: 1.7;
+  }
+  pre.steps .c { color: var(--fg-faint); }
+  pre.steps .s { color: var(--accent); }
+
+  /* socials row */
+  .socials { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 1rem; }
+  .socials a { color: var(--fg-dim); font-size: 0.88rem; }
+  .socials a:hover { color: var(--accent); }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+    color: var(--fg-faint);
+    font-size: 0.8rem;
+    line-height: 1.7;
+  }
+  footer a { color: var(--fg-dim); border-bottom: none; }
+  footer a:hover { color: var(--accent); }
+
+  @media (min-width: 600px) {
+    .shots { grid-template-columns: 1fr 1fr; }
+    .shots .shot.wide { grid-column: 1 / -1; }
+  }
+  @media (max-width: 480px) {
+    main { padding: 2.5rem 1rem 4rem; }
+    h1 { font-size: 2rem; }
+    .stats { grid-template-columns: 1fr; }
+    .install { flex-direction: column; align-items: stretch; }
+    .install code { white-space: pre-wrap; word-break: break-all; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <p class="prompt">whoami → chatwire</p>
+  <h1>chatwire</h1>
+  <div class="status"><span class="dot"></span> v1.1.0 · beta · MIT-licensed</div>
+  <p class="tagline">A self-hosted iMessage bridge for macOS. <em>Telegram-first.</em> Plugin-based. No relay servers. Zero telemetry.</p>
+
+  <div class="install">
+    <code id="install-cmd">pipx install chatwire</code>
+    <button class="copy" onclick="copyInstall(this)" aria-label="Copy install command">copy</button>
+  </div>
+
+  <div class="ctas">
+    <a class="btn primary" href="https://github.com/allenbina/chatwire">GitHub →</a>
+    <a class="btn" href="https://dsc.gg/chatwire">Discord</a>
+    <a class="btn" href="https://github.com/allenbina/chatwire/blob/main/docs/onboarding.md">Setup guide</a>
+  </div>
+
+  <h2>What it is</h2>
+  <p>chatwire is a small Python service that runs on your Mac, watches the iMessage database, and bridges messages to a configurable set of plugins. The default plugin is Telegram — you read and reply to your iMessages from any Telegram client (phone, desktop, web). A web UI is included for setup and live message inspection.</p>
+  <p>It's designed for the same people who run their own Jellyfin, Home Assistant, or k3s cluster. Headless install. Tailscale or Cloudflare Zero Trust as the intended access model. ntfy or Pushover baked in.</p>
+
+  <h2>How it's different</h2>
+  <div class="compare-wrap">
+    <table class="compare">
+      <thead>
+        <tr>
+          <th></th>
+          <th class="us">chatwire</th>
+          <th>BlueBubbles</th>
+          <th>AirMessage</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Phone client</td>
+          <td class="us">Any Telegram</td>
+          <td>Dedicated app</td>
+          <td>Dedicated app</td>
+        </tr>
+        <tr>
+          <td>Open source</td>
+          <td class="us"><span class="yes">MIT</span></td>
+          <td><span class="yes">Apache-2.0</span></td>
+          <td><span class="no">proprietary</span></td>
+        </tr>
+        <tr>
+          <td>Install</td>
+          <td class="us"><span class="yes">pipx, CLI</span></td>
+          <td>GUI app</td>
+          <td>GUI app</td>
+        </tr>
+        <tr>
+          <td>Plugin system</td>
+          <td class="us"><span class="yes">yes</span></td>
+          <td><span class="no">no</span></td>
+          <td><span class="no">no</span></td>
+        </tr>
+        <tr>
+          <td>Relay servers</td>
+          <td class="us"><span class="yes">none</span></td>
+          <td><span class="meh">Firebase</span></td>
+          <td><span class="meh">AirMessage relay</span></td>
+        </tr>
+        <tr>
+          <td>Telemetry</td>
+          <td class="us"><span class="yes">zero</span></td>
+          <td><span class="meh">configurable</span></td>
+          <td><span class="meh">yes</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="feature-list">
+    <li><strong>Telegram-first</strong> — no dedicated phone app required, ever.</li>
+    <li><strong>Plugin architecture</strong> — `pipx inject` to add. Auto-generated settings UI per plugin.</li>
+    <li><strong>Headless &amp; CLI-first</strong> — no GUI, no Electron, no 400 MB download.</li>
+    <li><strong>No relay servers</strong> — messages never transit a third-party cloud unless you point a plugin at one.</li>
+    <li><strong>Zero telemetry</strong> — your data stays on your hardware.</li>
+  </ul>
+
+  <h2>Screenshots</h2>
+  <div class="shots">
+    <div class="shot wide">
+      <strong>web UI</strong>
+      thread view — placeholder until screenshot lands
+    </div>
+    <div class="shot">
+      <strong>Telegram relay</strong>
+      iMessage in Telegram
+    </div>
+    <div class="shot">
+      <strong>setup wizard</strong>
+      first-run flow
+    </div>
+  </div>
+
+  <h2>The build story</h2>
+  <p>chatwire was built by one developer in collaboration with Anthropic's Claude — a $100/month Claude Pro subscription, no team, no funding, no co-founder. 201 commits over the course of the project. It runs every day on the author's own hardware.</p>
+  <div class="stats">
+    <div class="stat"><span class="num">201</span><span class="label">commits</span></div>
+    <div class="stat"><span class="num">$100</span><span class="label">/month all-in</span></div>
+    <div class="stat"><span class="num">1</span><span class="label">developer</span></div>
+  </div>
+  <p>Read more in the <a href="https://github.com/allenbina/press">press kit</a>.</p>
+
+  <h2>Install</h2>
+<pre class="steps"><span class="c"># 1. install</span>
+<span class="s">pipx install chatwire</span>
+
+<span class="c"># 2. interactive setup — picks plugins, walks you through perms</span>
+<span class="s">chatwire setup</span>
+
+<span class="c"># 3. start the daemon</span>
+<span class="s">chatwire start</span>
+
+<span class="c"># or run as a launchd service:</span>
+<span class="s">chatwire install-service</span></pre>
+  <p>Full guide: <a href="https://github.com/allenbina/chatwire/blob/main/docs/onboarding.md">onboarding.md</a> · plugin docs: <a href="https://github.com/allenbina/chatwire/blob/main/docs/plugin-arch.md">plugin-arch.md</a></p>
+
+  <h2>Press &amp; contact</h2>
+  <p>Press kit, bios, and outreach materials: <a href="https://github.com/allenbina/press">github.com/allenbina/press</a></p>
+  <p>Press email: <a href="mailto:allenfrijole+chatwire@gmail.com">allenfrijole+chatwire@gmail.com</a></p>
+  <p>Beta testers, contributors, and bug reports welcome via <a href="https://github.com/allenbina/chatwire/issues">GitHub Issues</a> or the project <a href="https://dsc.gg/chatwire">Discord</a>.</p>
+
+  <div class="socials">
+    <a href="https://github.com/allenbina/chatwire">github</a>
+    <a href="https://reddit.com/r/chatwire">r/chatwire</a>
+    <a href="https://x.com/chatwireapp">x / twitter</a>
+    <a href="https://dsc.gg/chatwire">discord</a>
+    <a href="https://github.com/allenbina/press">press</a>
+  </div>
+
+  <footer>
+    <p>chatwire is built and maintained by <a href="https://allenbina.github.io">Allen Bina</a>. MIT-licensed. Trademarks (iMessage, Telegram, etc.) are property of their respective owners.</p>
+    <p>Apple, iMessage, and macOS are trademarks of Apple Inc. chatwire is not affiliated with Apple Inc. or Telegram FZ-LLC.</p>
+  </footer>
+
+</main>
+
+<script>
+  function copyInstall(btn) {
+    var txt = document.getElementById('install-cmd').textContent;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(txt).then(function() {
+        btn.textContent = 'copied!';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 1800);
+      }, function() { fallback(); });
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); btn.textContent = 'copied!'; btn.classList.add('copied'); }
+      catch (e) { btn.textContent = 'select &amp; copy'; }
+      document.body.removeChild(ta);
+      setTimeout(function() { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 1800);
+    }
+  }
+</script>
+</body>
+</html>
