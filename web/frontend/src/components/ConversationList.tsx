@@ -120,7 +120,7 @@ export function ConversationList() {
   return (
     <nav aria-label="Conversations">
       {data.map((c) => (
-        <ConversationRow key={c.handle} convo={c} />
+        <ConversationRow key={convRouteKey(c)} convo={c} />
       ))}
     </nav>
   )
