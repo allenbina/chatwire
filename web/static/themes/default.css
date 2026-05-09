@@ -1,0 +1,58 @@
+/*
+ * Default theme. The first non-iOS look — generic blue primary and a
+ * portable system font stack with no vendor-specific keywords. Future
+ * themes (Dracula, Nord, Solarized, etc.) override these same --app-*
+ * slots.
+ *
+ * To create a new theme: copy this file to <slug>.css, change the values,
+ * register it in THEMES.md, and load it via <html data-theme="<slug>">.
+ * Any slot left unset falls back to the bridge's :root defaults.
+ */
+
+:root,
+[data-theme="default"] {
+  /* Surfaces */
+  --app-color-bg: #f7f7f8;
+  --app-color-surface: #ffffff;
+  --app-color-surface-alt: #fafbfc;
+  --app-color-surface-hover: #eef2ff;
+  --app-color-border: #d4d4d8;
+  --app-color-border-subtle: #ececef;
+
+  /* Text — matches Flowbite heading/body tokens */
+  --app-color-text: #111827;
+  --app-color-text-subtle: #374151;
+  --app-color-text-muted: #6b7280;
+  --app-color-text-faint: #9ca3af;
+
+  /* Accents — generic blue, no iOS. */
+  --app-color-primary: #3b82f6;
+  --app-color-primary-hover: #2563eb;
+  --app-color-on-primary: #ffffff;
+
+  /* Status */
+  --app-color-success: #137333;
+  --app-color-success-bg: #e6f4ea;
+  --app-color-success-border: #ceead6;
+  --app-color-warning: #795700;
+  --app-color-warning-bg: #fef7e0;
+  --app-color-warning-border: #feefc3;
+  --app-color-danger: #b91c1c;
+  --app-color-danger-bg: #fdecea;
+  --app-color-danger-border: #f5c2bc;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #e5e5ea;
+  --app-color-bubble-sms-bg: #22c55e;
+
+  /* Code blocks */
+  --app-color-code-bg: #1e1e1e;
+  --app-color-code-text: #f0f0f0;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #8aa;
+  --app-color-avatar-fallback-group-bg: #6c7d9e;
+
+  /* Typography — portable cross-OS, no vendor-specific keywords. */
+  --app-font-family: system-ui, sans-serif;
+}

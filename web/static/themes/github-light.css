@@ -1,0 +1,55 @@
+/*
+ * GitHub Light — Primer, https://primer.style/foundations/color  (MIT)
+ *
+ * Canonical palette (Primer Light defaults):
+ *   canvas-default #ffffff  canvas-subtle #f6f8fa  canvas-inset #f6f8fa
+ *   fg-default #1f2328  fg-muted #59636e  fg-subtle #6e7781
+ *   border-default #d1d9e0  border-muted #d8dee4
+ *   accent-fg #0969da  (blue)
+ *   success-fg #1a7f37  attention-fg #9a6700  danger-fg #d1242f
+ *   done-fg #8250df  (purple)
+ */
+
+[data-theme="github-light"] {
+  /* Surfaces */
+  --app-color-bg: #ffffff;
+  --app-color-surface: #ffffff;
+  --app-color-surface-alt: #f6f8fa;
+  --app-color-surface-hover: #eaeef2;
+  --app-color-border: #d1d9e0;
+  --app-color-border-subtle: #d8dee4;
+
+  /* Text */
+  --app-color-text: #1f2328;
+  --app-color-text-subtle: #59636e;
+  --app-color-text-muted: #6e7781;
+  --app-color-text-faint: #8c959f;
+
+  /* Accents */
+  --app-color-primary: #0969da;
+  --app-color-primary-hover: #0858bc;
+  --app-color-on-primary: #ffffff;
+
+  /* Status */
+  --app-color-success: #1a7f37;
+  --app-color-success-bg: #dafbe1;
+  --app-color-success-border: #aceebb;
+  --app-color-warning: #9a6700;
+  --app-color-warning-bg: #fff8c5;
+  --app-color-warning-border: #eac54f;
+  --app-color-danger: #d1242f;
+  --app-color-danger-bg: #ffebe9;
+  --app-color-danger-border: #ffcecb;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #eaeef2;
+  --app-color-bubble-sms-bg: #1a7f37;
+
+  /* Code */
+  --app-color-code-bg: #f6f8fa;
+  --app-color-code-text: #1f2328;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #0969da;
+  --app-color-avatar-fallback-group-bg: #8250df;
+}

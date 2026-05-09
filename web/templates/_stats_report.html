@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Message statistics — chatwire</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+
+<div class="max-w-2xl mx-auto px-4 py-8">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">📊 Message statistics</h1>
+    <a hx-get="/settings" hx-target="#main" hx-swap="innerHTML"
+       href="/settings"
+       class="text-sm text-blue-600 hover:underline">
+      ← Back to settings
+    </a>
+  </div>
+
+  <!-- Privacy note -->
+  <div class="mb-6 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+    All stats computed locally from your Messages database. No data leaves this machine.
+    Range: <strong>{{ date_range }}</strong>.
+  </div>
+
+  <!-- Sent vs Received -->
+  {% set grand_total = sent_total + received_total %}
+  <section class="mb-8 bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-gray-800 mb-3">Sent vs received</h2>
+    {% if grand_total > 0 %}
+    <div class="space-y-2">
+      <div class="flex items-center gap-3">
+        <span class="w-20 text-sm text-gray-500 text-right shrink-0">Sent</span>
+        <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+          <div class="h-5 rounded-full bg-blue-500"
+               style="width: {{ (sent_total / grand_total * 100) | round(1) }}%"></div>
+        </div>
+        <span class="w-16 text-sm font-medium text-gray-700 text-right shrink-0">{{ sent_total | int }}</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="w-20 text-sm text-gray-500 text-right shrink-0">Received</span>
+        <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+          <div class="h-5 rounded-full bg-emerald-500"
+               style="width: {{ (received_total / grand_total * 100) | round(1) }}%"></div>
+        </div>
+        <span class="w-16 text-sm font-medium text-gray-700 text-right shrink-0">{{ received_total | int }}</span>
+      </div>
+    </div>
+    <p class="mt-3 text-xs text-gray-500">
+      {{ grand_total | int }} messages total —
+      {{ (sent_total / grand_total * 100) | round(0) | int }}% sent,
+      {{ (received_total / grand_total * 100) | round(0) | int }}% received.
+    </p>
+    {% else %}
+    <p class="text-sm text-gray-400 italic">No messages in this date range.</p>
+    {% endif %}
+  </section>
+
+  <!-- Top contacts -->
+  <section class="mb-8 bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-gray-800 mb-3">Top contacts</h2>
+    {% if top_contacts %}
+    {% set max_count = top_contacts[0].count %}
+    <div class="space-y-2">
+      {% for c in top_contacts %}
+      <div class="flex items-center gap-3">
+        <span class="w-32 text-sm text-gray-700 truncate shrink-0" title="{{ c.handle }}">{{ c.name }}</span>
+        <div class="flex-1 bg-gray-100 rounded h-4 overflow-hidden">
+          <div class="h-4 rounded bg-indigo-400"
+               style="width: {{ (c.count / max_count * 100) | round(1) }}%"></div>
+        </div>
+        <span class="w-12 text-xs font-medium text-gray-600 text-right shrink-0">{{ c.count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="mt-3 text-xs text-gray-500">
+      Most-texted contact: <strong>{{ top_contacts[0].name }}</strong> ({{ top_contacts[0].count }} messages).
+    </p>
+    {% else %}
+    <p class="text-sm text-gray-400 italic">No data.</p>
+    {% endif %}
+  </section>
+
+  <!-- Hour of day heatmap -->
+  <section class="mb-8 bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-gray-800 mb-1">Activity by hour</h2>
+    <p class="text-xs text-gray-400 mb-3">Local time — darker = more messages.</p>
+    {% set hour_max = namespace(val=1) %}
+    {% for c in hour_counts %}{% if c > hour_max.val %}{% set hour_max.val = c %}{% endif %}{% endfor %}
+    <div class="flex gap-0.5">
+      {% for c in hour_counts %}
+      {% set pct = (c / hour_max.val * 100) | round(0) | int %}
+      <div class="flex-1 flex flex-col items-center gap-0.5" title="{{ loop.index0 }}:00 — {{ c }} messages">
+        <div class="w-full rounded-sm"
+             style="height: 32px; background: rgba(99,102,241, {{ '%.2f' | format(c / hour_max.val) }})"></div>
+        {% if loop.index0 % 6 == 0 %}
+        <span class="text-[9px] text-gray-400">{{ loop.index0 }}</span>
+        {% else %}
+        <span class="text-[9px] text-transparent select-none">·</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% set peak_hour = namespace(h=0, v=0) %}
+    {% for c in hour_counts %}{% if c > peak_hour.v %}{% set peak_hour.h = loop.index0 %}{% set peak_hour.v = c %}{% endif %}{% endfor %}
+    {% if peak_hour.v > 0 %}
+    <p class="mt-2 text-xs text-gray-500">
+      Peak hour: <strong>{{ peak_hour.h }}:00–{{ peak_hour.h }}:59</strong> ({{ peak_hour.v }} messages).
+    </p>
+    {% endif %}
+  </section>
+
+  <!-- Day of week -->
+  <section class="mb-8 bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-gray-800 mb-1">Activity by day of week</h2>
+    <p class="text-xs text-gray-400 mb-3">Mon–Sun — darker = more messages.</p>
+    {% set dow_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+    {% set dow_max = namespace(val=1) %}
+    {% for c in dow_counts %}{% if c > dow_max.val %}{% set dow_max.val = c %}{% endif %}{% endfor %}
+    <div class="flex gap-1">
+      {% for c in dow_counts %}
+      <div class="flex-1 flex flex-col items-center gap-1" title="{{ dow_labels[loop.index0] }} — {{ c }} messages">
+        <div class="w-full rounded"
+             style="height: 40px; background: rgba(16,185,129, {{ '%.2f' | format(c / dow_max.val) }})"></div>
+        <span class="text-[10px] text-gray-500">{{ dow_labels[loop.index0] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% set peak_dow = namespace(d=0, v=0) %}
+    {% for c in dow_counts %}{% if c > peak_dow.v %}{% set peak_dow.d = loop.index0 %}{% set peak_dow.v = c %}{% endif %}{% endfor %}
+    {% if peak_dow.v > 0 %}
+    <p class="mt-2 text-xs text-gray-500">
+      Busiest day: <strong>{{ dow_labels[peak_dow.d] }}</strong> ({{ peak_dow.v }} messages).
+    </p>
+    {% endif %}
+  </section>
+
+  <!-- Top group chats -->
+  {% if top_groups %}
+  <section class="mb-8 bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-gray-800 mb-3">Top group chats</h2>
+    {% set grp_max = top_groups[0].count %}
+    <div class="space-y-2">
+      {% for g in top_groups %}
+      <div class="flex items-center gap-3">
+        <span class="w-36 text-sm text-gray-700 truncate shrink-0" title="{{ g.name }}">{{ g.name }}</span>
+        <div class="flex-1 bg-gray-100 rounded h-4 overflow-hidden">
+          <div class="h-4 rounded bg-amber-400"
+               style="width: {{ (g.count / grp_max * 100) | round(1) }}%"></div>
+        </div>
+        <span class="w-12 text-xs font-medium text-gray-600 text-right shrink-0">{{ g.count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="mt-3 text-xs text-gray-500">
+      Most active group: <strong>{{ top_groups[0].name }}</strong> ({{ top_groups[0].count }} messages).
+    </p>
+  </section>
+  {% endif %}
+
+  <!-- Footer -->
+  <p class="text-center text-xs text-gray-400 mt-4">
+    Generated by chatwire &middot; all data stays on your Mac
+  </p>
+
+</div>
+</body>
+</html>

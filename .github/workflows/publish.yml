@@ -1,0 +1,87 @@
+name: Publish to PyPI
+
+# Triggered by pushing a tag like v0.2.0. Builds the sdist + wheel from
+# that tag's source tree, then publishes to PyPI via OIDC trusted publisher
+# (no API tokens — PyPI verifies the GitHub Actions JWT instead).
+#
+# One-time setup at https://pypi.org/manage/account/publishing/ before
+# this workflow can succeed:
+#   - PyPI Project:    chatwire
+#   - Owner:           allenbina
+#   - Repository name: chatwire
+#   - Workflow name:   publish.yml
+#   - Environment:     pypi
+# Add it as a "pending publisher" if the project doesn't exist yet — that
+# both reserves the name and grants the workflow permission to upload it.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build React frontend
+        working-directory: web/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install build
+        run: python -m pip install --upgrade build
+      - name: Build sdist + wheel
+        run: python -m build
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/chatwire
+    permissions:
+      # OIDC token for PyPI trusted publisher — no API token required.
+      id-token: write
+      # Needed by `gh release create` in the post-publish step below.
+      contents: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Create GitHub Release
+        # Promote the pushed tag to a proper Release so the in-app
+        # update-check (which queries /releases/latest) actually finds it.
+        # Runs only after PyPI upload succeeds — a failed publish should
+        # not leave behind a misleading Release.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --generate-notes \
+            --verify-tag

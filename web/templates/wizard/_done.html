@@ -1,0 +1,38 @@
+<section class="max-w-xl">
+  <h2 class="text-xl font-bold text-gray-900 mb-2">Setup complete</h2>
+  <p class="text-sm text-gray-600 mb-6">
+    Configuration saved to <code>~/.chatwire/config.json</code>
+    (chmod 600). The bridge agents need a restart to pick up new env vars.
+  </p>
+
+  <div class="mb-6 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+    <h3 class="text-base font-semibold text-gray-900 mb-2">Restart the agents</h3>
+    <p>From a terminal on this Mac:</p>
+    <pre><code>launchctl kickstart -k gui/$(id -u)/dev.chatwire.bridge
+launchctl kickstart -k gui/$(id -u)/dev.chatwire.web</code></pre>
+    <p>
+      <small>If you installed with a different label prefix, substitute that.
+      <code>chatwire doctor</code> lists the currently-loaded labels.</small>
+    </p>
+  </div>
+
+  <div class="mb-6 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+    <h3 class="text-base font-semibold text-gray-900 mb-2">What's next</h3>
+    <ul>
+      <li><a href="/">Open the main UI</a> — by the time you click, the web agent's restart will be visible (the page reloads itself).</li>
+      <li><a href="/setup?step=permissions">Re-run any wizard step</a> if you want to tweak settings.</li>
+      <li>Tail logs: <code>chatwire logs -f</code></li>
+    </ul>
+  </div>
+
+  <div class="flex gap-3 mt-6">
+    <button type="button"
+            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            hx-get="/setup/step/security"
+            hx-target="#wizard"
+            hx-swap="innerHTML">← Back</button>
+    <a href="/"
+       class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 inline-flex items-center">
+      Open the bridge →</a>
+  </div>
+</section>

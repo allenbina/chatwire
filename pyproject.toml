@@ -1,0 +1,122 @@
+# chatwire — pip-installable layout.
+#
+# Phase 4 introduces this so third-party integrations can declare a
+# `chatwire.integrations` entry point and be discovered automatically.
+# The repo keeps its flat layout (top-level modules + `integrations/`,
+# `migrations/`, `web/` packages); when this file shipped, no source files
+# moved.
+#
+# Naming history: project was originally branded `chat-bridge`. Renamed to
+# `chatwire` for v0.2.0 because PyPI's similarity check rejected
+# `chat-bridge` as too close to the unrelated `chatbridge` package. The
+# rename is consistent across PyPI dist name, GitHub repo, console script,
+# and config dir.
+#
+# Dev install:    pip install -e .
+# Wheel build:    python -m build
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chatwire"
+description = "macOS chat-relay bridge: iMessage <-> Telegram, web UI, and pluggable integrations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Allen Bina" }]
+keywords = ["imessage", "telegram", "macos", "bridge", "relay"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Chat",
+]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "pywebpush>=2.0",
+    "httpx",
+    "jsonschema>=4",  # validate integration SETTINGS_SCHEMA blocks at startup.
+    "cryptography>=2.6",  # Ed25519 plugin signature verification.
+    # macOS menu bar app — only functional on macOS (PyObjC dependency).
+    # Listed here so `pipx install chatwire` pulls it in on Mac.
+    "rumps>=0.4.0; sys_platform == 'darwin'",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/allenbina/chatwire"
+Issues = "https://github.com/allenbina/chatwire/issues"
+Sponsor = "https://github.com/sponsors/allenbina"
+
+[project.scripts]
+chatwire = "chatwire_cli:main"
+chatwire-toolbar = "chatwire_toolbar:main"
+
+# Third-party integrations register here. Built-in integrations under
+# integrations/<name>/ are discovered by directory walk and don't need
+# entry-point registration; the group exists so a `pip install
+# chatwire-<name>` plugin can declare its Integration class.
+#
+# Example, in a hypothetical chatwire-slack package's pyproject.toml:
+#
+#   [project.entry-points."chatwire.integrations"]
+#   slack = "chatwire_slack:SlackIntegration"
+#
+# At startup the bridge runs:
+#   importlib.metadata.entry_points(group="chatwire.integrations")
+# and instantiates each whose config block is present and enabled.
+[project.entry-points."chatwire.integrations"]
+
+[tool.setuptools]
+# Top-level single-file modules. Kept flat (rather than nested under a
+# `chatwire/` package) to avoid a sweeping import rewrite. The `web/`
+# launcher is its own subpackage; templates and static assets live there.
+py-modules = [
+    "_version",
+    "bridge",
+    "chatwire_cli",
+    "chatwire_toolbar",
+    "chat_db",
+    "chat_send",
+    "config",
+    "contacts",
+    "echo_log",
+    "prefix",
+    "verify",
+    "whitelist",
+]
+
+[tool.setuptools.packages.find]
+include = ["integrations*", "migrations*", "web*", "templates*"]
+
+[tool.setuptools.package-data]
+# Web UI ships its templates and static assets inline so a wheel install
+# can serve the UI without the source tree alongside.
+web = ["templates/**/*.html", "static/**/*", "frontend/dist/**/*"]
+# launchd plist templates rendered by `chatwire install-agents`. The CLI
+# resolves them relative to its own __file__, so they need to ship in the
+# wheel (not just the sdist) for a pipx install to work.
+templates = ["launchd/*.template"]
+
+[tool.setuptools.dynamic]
+version = { attr = "_version.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Flat layout: conftest.py at root inserts the project dir into sys.path so
+# top-level modules are importable without an editable install.
+addopts = "-v"

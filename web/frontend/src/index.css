@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/* Dracula design tokens as CSS custom properties */
+:root {
+  --color-bg-primary: #282a36;
+  --color-bg-secondary: #44475a;
+  --color-bg-tertiary: #21222c;
+  --color-text-primary: #f8f8f2;
+  --color-text-secondary: #6272a4;
+  --color-text-muted: #6272a4;
+  --color-accent: #bd93f9;
+  --color-accent-hover: #caa9fa;
+  --color-success: #50fa7b;
+  --color-warning: #f1fa8c;
+  --color-error: #ff5555;
+  --color-info: #8be9fd;
+  --color-border: #44475a;
+  --color-input-bg: #44475a;
+  --color-msg-me: #44475a;
+  --color-msg-them: #282a36;
+  --color-sidebar-bg: #21222c;
+  --color-sidebar-active: #44475a;
+  --color-sidebar-hover: #383a4a;
+}
+
+@theme {
+  --color-bg-primary: var(--color-bg-primary);
+  --color-bg-secondary: var(--color-bg-secondary);
+  --color-bg-tertiary: var(--color-bg-tertiary);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-error: var(--color-error);
+  --color-info: var(--color-info);
+  --color-border: var(--color-border);
+  --color-input-bg: var(--color-input-bg);
+  --color-msg-me: var(--color-msg-me);
+  --color-msg-them: var(--color-msg-them);
+  --color-sidebar-bg: var(--color-sidebar-bg);
+  --color-sidebar-active: var(--color-sidebar-active);
+  --color-sidebar-hover: var(--color-sidebar-hover);
+}

@@ -1,0 +1,58 @@
+/*
+ * Rosé Pine Dawn — https://rosepinetheme.com/  (MIT)
+ *
+ * "Dawn" variant — the light counterpart of the Rosé Pine family.
+ *
+ * Canonical palette (dawn):
+ *   base #faf4ed  surface #fffaf3  overlay #f2e9e1
+ *   muted #9893a5  subtle #797593  text #575279
+ *   highlight-low #f4ede8  highlight-med #dfdad9  highlight-high #cecacd
+ *   love #b4637a  gold #ea9d34  rose #d7827a
+ *   pine #286983  foam #56949f  iris #907aa9
+ *
+ * Iris (lavender) is the canonical brand accent; primary maps there.
+ */
+
+[data-theme="rose-pine-dawn"] {
+  /* Surfaces */
+  --app-color-bg: #faf4ed;
+  --app-color-surface: #fffaf3;
+  --app-color-surface-alt: #f2e9e1;
+  --app-color-surface-hover: #ece5de;
+  --app-color-border: #cecacd;
+  --app-color-border-subtle: #dfdad9;
+
+  /* Text */
+  --app-color-text: #575279;
+  --app-color-text-subtle: #6f6a8e;
+  --app-color-text-muted: #797593;
+  --app-color-text-faint: #9893a5;
+
+  /* Accents */
+  --app-color-primary: #907aa9;
+  --app-color-primary-hover: #7a649a;
+  --app-color-on-primary: #faf4ed;
+
+  /* Status */
+  --app-color-success: #286983;
+  --app-color-success-bg: #e8f3f6;
+  --app-color-success-border: #c0d8e0;
+  --app-color-warning: #ea9d34;
+  --app-color-warning-bg: #fdf0d9;
+  --app-color-warning-border: #f0d5a0;
+  --app-color-danger: #b4637a;
+  --app-color-danger-bg: #f9e8ed;
+  --app-color-danger-border: #e8c0cc;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #f2e9e1;
+  --app-color-bubble-sms-bg: #56949f;
+
+  /* Code */
+  --app-color-code-bg: #f2e9e1;
+  --app-color-code-text: #575279;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #286983;
+  --app-color-avatar-fallback-group-bg: #907aa9;
+}

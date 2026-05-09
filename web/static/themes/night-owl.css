@@ -1,0 +1,55 @@
+/*
+ * Night Owl — https://github.com/sdras/night-owl-vscode-theme  (MIT)
+ *
+ * Canonical palette:
+ *   bg #011627  surface #0b2942  selection #1d3b53
+ *   fg #d6deeb  comment #637777
+ *   blue #82aaff  cyan #7fdbca  green-yellow #addb67
+ *   orange #ecc48d  red #ef5350  pink #ff5874  purple #c792ea
+ *
+ * Night Owl's bg is a deep blue-black; its accents lean blue/green.
+ */
+
+[data-theme="night-owl"] {
+  /* Surfaces */
+  --app-color-bg: #011627;
+  --app-color-surface: #011627;
+  --app-color-surface-alt: #010d1a;
+  --app-color-surface-hover: #0e293f;
+  --app-color-border: #1d3b53;
+  --app-color-border-subtle: #0e293f;
+
+  /* Text */
+  --app-color-text: #d6deeb;
+  --app-color-text-subtle: #b8c0d3;
+  --app-color-text-muted: #8a93ad;
+  --app-color-text-faint: #637777;
+
+  /* Accents */
+  --app-color-primary: #82aaff;
+  --app-color-primary-hover: #618fec;
+  --app-color-on-primary: #011627;
+
+  /* Status */
+  --app-color-success: #addb67;
+  --app-color-success-bg: #2a3520;
+  --app-color-success-border: #455338;
+  --app-color-warning: #ecc48d;
+  --app-color-warning-bg: #3a3024;
+  --app-color-warning-border: #5a4938;
+  --app-color-danger: #ff5874;
+  --app-color-danger-bg: #3a1f29;
+  --app-color-danger-border: #6c2e3e;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #1d3b53;
+  --app-color-bubble-sms-bg: #addb67;
+
+  /* Code */
+  --app-color-code-bg: #010d1a;
+  --app-color-code-text: #d6deeb;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #82aaff;
+  --app-color-avatar-fallback-group-bg: #c792ea;
+}

@@ -1,0 +1,60 @@
+/*
+ * Catppuccin Latte — https://catppuccin.com/  (MIT)
+ *
+ * Light flavor of the Catppuccin family. All four flavors share the same
+ * accent palette and differ only in base/surface shades. Mauve is the
+ * canonical Catppuccin brand accent; we map it to primary across flavors.
+ *
+ * Canonical palette (latte):
+ *   base #eff1f5  mantle #e6e9ef  crust #dce0e8
+ *   text #4c4f69  subtext0 #6c6f85  subtext1 #5c5f77
+ *   surface0 #ccd0da  surface1 #bcc0cc  surface2 #acb0be
+ *   rosewater #dc8a78  flamingo #dd7878  pink #ea76cb  mauve #8839ef
+ *   red #d20f39  maroon #e64553  peach #fe640b  yellow #df8e1d
+ *   green #40a02b  teal #179299  sky #04a5e5  sapphire #209fb5
+ *   blue #1e66f5  lavender #7287fd
+ */
+
+[data-theme="catppuccin-latte"] {
+  /* Surfaces */
+  --app-color-bg: #eff1f5;
+  --app-color-surface: #ffffff;
+  --app-color-surface-alt: #e6e9ef;
+  --app-color-surface-hover: #ccd0da;
+  --app-color-border: #bcc0cc;
+  --app-color-border-subtle: #ccd0da;
+
+  /* Text */
+  --app-color-text: #4c4f69;
+  --app-color-text-subtle: #5c5f77;
+  --app-color-text-muted: #6c6f85;
+  --app-color-text-faint: #8c8fa1;
+
+  /* Accents */
+  --app-color-primary: #8839ef;
+  --app-color-primary-hover: #6c2dc0;
+  --app-color-on-primary: #ffffff;
+
+  /* Status */
+  --app-color-success: #40a02b;
+  --app-color-success-bg: #e0eed8;
+  --app-color-success-border: #b5d4a4;
+  --app-color-warning: #df8e1d;
+  --app-color-warning-bg: #f7ead0;
+  --app-color-warning-border: #e6c98a;
+  --app-color-danger: #d20f39;
+  --app-color-danger-bg: #f4d6dc;
+  --app-color-danger-border: #e3a0ab;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #ccd0da;
+  --app-color-bubble-sms-bg: #40a02b;
+
+  /* Code */
+  --app-color-code-bg: #dce0e8;
+  --app-color-code-text: #4c4f69;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #1e66f5;
+  --app-color-avatar-fallback-group-bg: #8839ef;
+}

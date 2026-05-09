@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en" data-theme="{{ web_theme }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if name %}{{ name }} — {% endif %}chatwire</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+          colors: {
+            app: {
+              bg: 'var(--app-color-bg)',
+              surface: 'var(--app-color-surface)',
+              'surface-alt': 'var(--app-color-surface-alt)',
+              'surface-hover': 'var(--app-color-surface-hover)',
+              border: 'var(--app-color-border)',
+              'border-subtle': 'var(--app-color-border-subtle)',
+              text: 'var(--app-color-text)',
+              'text-subtle': 'var(--app-color-text-subtle)',
+              'text-muted': 'var(--app-color-text-muted)',
+              'text-faint': 'var(--app-color-text-faint)',
+              primary: 'var(--app-color-primary)',
+              'primary-hover': 'var(--app-color-primary-hover)',
+              'on-primary': 'var(--app-color-on-primary)',
+              success: 'var(--app-color-success)',
+              'success-bg': 'var(--app-color-success-bg)',
+              warning: 'var(--app-color-warning)',
+              'warning-bg': 'var(--app-color-warning-bg)',
+              danger: 'var(--app-color-danger)',
+              'danger-bg': 'var(--app-color-danger-bg)',
+              'danger-border': 'var(--app-color-danger-border)',
+              'bubble-them': 'var(--app-color-bubble-them-bg)',
+              'bubble-sms': 'var(--app-color-bubble-sms-bg)',
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <!-- Theme bridge + active theme -->
+  <link rel="stylesheet" href="/static/themes/_bridge.css?v={{ version }}">
+  <link rel="stylesheet" href="/static/themes/{{ web_theme }}.css?v={{ version }}">
+  <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+  <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js" defer></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { display: flex; flex-direction: column; background: var(--app-color-bg); }
+    .popout-messages {
+      flex: 1;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body class="font-sans text-app-text">
+  {% set refresh_url = '/conversation?chat=' + (chat | urlencode) if is_group else '/conversation?handle=' + (handle | urlencode) %}
+  {% set events_url = '/events?chat=' + (chat | urlencode) if is_group else '/events?handle=' + (handle | urlencode) %}
+
+  <!-- Header: contact name + subtitle, no back button, no sidebar toggle -->
+  <header class="flex items-center gap-2 px-4 py-3 border-b border-app-border bg-app-surface flex-shrink-0">
+    <div class="flex-1 min-w-0">
+      <h2 class="text-base font-semibold text-app-text truncate">{{ name }}</h2>
+      <small class="text-sm text-app-text-muted truncate block">{{ subtitle }}</small>
+    </div>
+  </header>
+
+  <!-- Messages -->
+  <div class="messages popout-messages" id="messages" role="log" aria-live="polite" aria-label="Conversation messages">
+    {% if has_more %}
+    <div class="load-older flex justify-center py-4"
+         hx-get="{{ next_url }}"
+         hx-trigger="intersect once"
+         hx-swap="outerHTML">
+      <svg aria-hidden="true" class="w-6 h-6 text-app-text-faint animate-spin fill-app-primary"
+           viewBox="0 0 100 101" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z" fill="currentColor"/>
+        <path d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z" fill="currentFill"/>
+      </svg>
+    </div>
+    {% endif %}
+    {% include "_messages.html" %}
+  </div>
+
+  <div id="send-banner" class="send-banner" hidden></div>
+
+  <!-- Attachment preview strip -->
+  <div id="attach-preview" class="hidden flex items-center gap-2 px-4 py-2 border-t border-app-border bg-app-surface-alt">
+    <img id="attach-thumb" class="hidden w-12 h-12 object-cover rounded-lg" alt="preview">
+    <span id="attach-name" class="text-xs text-app-text-muted truncate flex-1"></span>
+    <button type="button" class="p-1 rounded-lg text-app-text-muted hover:text-red-500 hover:bg-app-surface-hover"
+            title="remove attachment"
+            onclick="var inp=document.getElementById('attach-input'); inp.value=''; document.getElementById('attach-preview').classList.add('hidden'); document.getElementById('attach-name').textContent=''; document.getElementById('attach-thumb').classList.add('hidden');">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
+  <!-- Composer -->
+  <form class="composer flex items-end gap-2 px-4 py-3 border-t border-app-border bg-app-surface flex-shrink-0"
+        hx-post="/send"
+        hx-trigger="submit"
+        hx-encoding="multipart/form-data"
+        hx-swap="none"
+        hx-on::before-request="window.__beforeSend(event)"
+        hx-on::after-request="window.__handleSendResponse(event, '{{ refresh_url }}')">
+    {% if is_group %}
+    <input type="hidden" name="chat" value="{{ chat }}">
+    {% else %}
+    <input type="hidden" name="handle" value="{{ handle }}">
+    {% endif %}
+    <label id="attach-label" class="attach-btn p-2 rounded-lg text-app-text-muted hover:bg-app-surface-hover cursor-pointer"
+           for="attach-input" title="attach a file">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+           viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+      </svg>
+    </label>
+    <button type="button" id="emoji-btn" class="emoji-btn p-2 rounded-lg text-app-text-muted hover:bg-app-surface-hover"
+            title="emoji" aria-label="insert emoji">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+        <line x1="9" y1="9" x2="9.01" y2="9"/>
+        <line x1="15" y1="9" x2="15.01" y2="9"/>
+      </svg>
+    </button>
+    <input id="attach-input" type="file" name="file" accept="image/*,video/*" class="hidden"
+           onchange="(function(el){
+             var preview = document.getElementById('attach-preview');
+             var nameEl = document.getElementById('attach-name');
+             if (!el.files[0]) { preview.classList.add('hidden'); nameEl.textContent = ''; return; }
+             nameEl.textContent = el.files[0].name;
+             var img = document.getElementById('attach-thumb');
+             if (el.files[0].type.startsWith('image/')) {
+               img.src = URL.createObjectURL(el.files[0]);
+               img.classList.remove('hidden');
+             } else { img.classList.add('hidden'); }
+             preview.classList.remove('hidden');
+           })(this)">
+    <input type="text" name="body" id="composer-body"
+           class="flex-1 block py-2.5 px-4 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-full focus:ring-blue-500 focus:border-blue-500"
+           placeholder="message {{ name }}…" autofocus
+           aria-label="Type a message">
+    <button type="submit" class="send-btn p-2 rounded-full bg-app-primary text-app-on-primary hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300"
+            aria-label="Send message">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+           viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+    <div id="emoji-popover" hidden>
+      <emoji-picker></emoji-picker>
+    </div>
+  </form>
+
+  <!-- SSE ticker (same events stream as main window) -->
+  <div id="ticker"
+       hx-ext="sse"
+       sse-connect="{{ events_url }}"
+       sse-swap="message"
+       hx-swap="none"
+       hx-on::sse-message="handlePopoutEvent(event)"
+       style="display:none">
+  </div>
+
+  <script>
+    // Optimistic send: same helpers as _conversation.html
+    window.__beforeSend = function(event) {
+      const form = event.detail.elt;
+      const body = form.querySelector('#composer-body');
+      const attachName = document.getElementById('attach-name');
+      const text = body ? body.value : '';
+      const attachLabel = attachName ? attachName.textContent : '';
+      form.__pending = { text: text, attach: attachLabel };
+
+      if (body) body.value = '';
+      if (attachName) attachName.textContent = '';
+      var preview = document.getElementById('attach-preview');
+      if (preview) preview.classList.add('hidden');
+      var thumb = document.getElementById('attach-thumb');
+      if (thumb) thumb.classList.add('hidden');
+
+      const messages = document.getElementById('messages');
+      if (!messages) return;
+      const ghost = document.createElement('div');
+      ghost.className = 'msg me ghost';
+      ghost.id = '__ghost_msg';
+      if (attachLabel) {
+        const a = document.createElement('div');
+        a.className = 'attach pending';
+        a.innerHTML = '<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>' + attachLabel;
+        ghost.appendChild(a);
+      }
+      if (text) {
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        const t = document.createElement('div');
+        t.className = 'text';
+        t.textContent = text;
+        bubble.appendChild(t);
+        ghost.appendChild(bubble);
+      }
+      const ts = document.createElement('div');
+      ts.className = 'ts';
+      const tag = document.createElement('span');
+      tag.className = 'delivery ghost-status bg-gray-100 text-gray-500 text-xs font-medium px-2 py-0.5 rounded-full';
+      tag.textContent = 'sending…';
+      ts.appendChild(tag);
+      ghost.appendChild(ts);
+      messages.appendChild(ghost);
+      messages.scrollTop = messages.scrollHeight;
+    };
+
+    window.__handleSendResponse = function(event, refreshUrl) {
+      const xhr = event.detail.xhr;
+      const banner = document.getElementById('send-banner');
+      const form = event.detail.elt;
+      const ghost = document.getElementById('__ghost_msg');
+      let payload = null;
+      try { payload = JSON.parse(xhr.responseText); } catch (_) {}
+
+      const restoreComposer = () => {
+        if (!form || !form.__pending) return;
+        const body = form.querySelector('#composer-body');
+        if (body && !body.value) body.value = form.__pending.text || '';
+        const an = document.getElementById('attach-name');
+        if (an && !an.textContent) an.textContent = form.__pending.attach || '';
+        form.__pending = null;
+      };
+
+      if (!event.detail.successful) {
+        if (banner) {
+          banner.textContent = 'send failed: ' + (payload && payload.detail || xhr.statusText || 'server error');
+          banner.classList.remove('info');
+          banner.hidden = false;
+        }
+        if (ghost) ghost.remove();
+        restoreComposer();
+        return;
+      }
+      const status = payload && payload.status;
+      const hint = payload && payload.hint;
+      const fellBack = payload && payload.fell_back_to_sms;
+      if (status === 'failed' && banner) {
+        banner.textContent = 'Not delivered: ' + (hint || 'unknown error');
+        banner.classList.remove('info');
+        banner.hidden = false;
+        if (ghost) ghost.remove();
+        restoreComposer();
+        return;
+      } else if (fellBack && banner) {
+        banner.textContent = 'Sent via SMS — iMessage unavailable for this recipient.';
+        banner.classList.add('info');
+        banner.hidden = false;
+      } else if (banner) {
+        banner.classList.remove('info');
+        banner.hidden = true;
+      }
+      if (ghost) {
+        const tag = ghost.querySelector('.ghost-status');
+        if (tag) tag.textContent = 'sent to server';
+      }
+      const fileEl = document.getElementById('attach-input');
+      if (fileEl) fileEl.value = '';
+      if (form) form.__pending = null;
+      window.location.reload();
+    };
+
+    // Auto-scroll to bottom on load
+    (function() {
+      const m = document.getElementById('messages');
+      function scrollToBottom() { if (m) m.scrollTop = m.scrollHeight; }
+      scrollToBottom();
+      setTimeout(scrollToBottom, 150);
+      setTimeout(scrollToBottom, 500);
+
+      if (m && typeof ResizeObserver !== 'undefined') {
+        let pinned = true;
+        m.addEventListener('scroll', () => {
+          pinned = (m.scrollHeight - m.scrollTop - m.clientHeight) < 80;
+        });
+        new ResizeObserver(() => { if (pinned) scrollToBottom(); }).observe(m);
+      }
+
+      // Emoji popover
+      const btn = document.getElementById('emoji-btn');
+      const pop = document.getElementById('emoji-popover');
+      const body = document.getElementById('composer-body');
+      if (!btn || !pop || !body) return;
+
+      function insertAtCursor(s) {
+        const start = body.selectionStart ?? body.value.length;
+        const end = body.selectionEnd ?? body.value.length;
+        body.value = body.value.slice(0, start) + s + body.value.slice(end);
+        const pos = start + s.length;
+        body.setSelectionRange(pos, pos);
+        body.focus();
+      }
+
+      btn.addEventListener('click', (e) => { e.stopPropagation(); pop.hidden = !pop.hidden; });
+      const picker = pop.querySelector('emoji-picker');
+      picker.addEventListener('emoji-click', (e) => { insertAtCursor(e.detail.unicode); pop.hidden = true; });
+      document.addEventListener('click', (e) => {
+        if (pop.hidden) return;
+        if (pop.contains(e.target) || btn.contains(e.target)) return;
+        pop.hidden = true;
+      });
+    })();
+
+    // SSE handler: reload popout when an event for this conversation arrives
+    function handlePopoutEvent(event) {
+      let evt;
+      try { evt = JSON.parse(event.detail.data); } catch(e) { return; }
+      {% if is_group %}
+      const myChat = {{ chat | tojson }};
+      const myHandle = '';
+      {% else %}
+      const myChat = '';
+      const myHandle = {{ handle | tojson }};
+      {% endif %}
+      const evtChat = evt.chat_guid || '';
+      const evtHandle = evt.handle || '';
+      const matches = (myChat && evtChat === myChat) ||
+                      (!myChat && myHandle && evtHandle === myHandle);
+      if (matches) {
+        window.location.reload();
+      }
+    }
+  </script>
+</body>
+</html>

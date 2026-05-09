@@ -1,0 +1,28 @@
+<section class="max-w-xl">
+  <h2 class="text-xl font-bold text-gray-900 mb-2">Step 3 — Whitelist</h2>
+  <p class="text-sm text-gray-600 mb-6">
+    Pick whose messages should be relayed. Anyone not on this list is
+    ignored — their messages stay in Messages.app on your Mac and never
+    reach Telegram or the web UI. You can change this any time later from
+    Settings.
+  </p>
+
+  <div hx-get="/settings"
+       hx-trigger="load"
+       hx-swap="outerHTML">
+    <p class="text-sm text-gray-400 animate-pulse">loading whitelist…</p>
+  </div>
+
+  <div class="flex gap-3 mt-6">
+    <button type="button"
+            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            hx-get="/setup/step/identity"
+            hx-target="#wizard"
+            hx-swap="innerHTML">← Back</button>
+    <button type="button"
+            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            hx-get="/setup/step/security"
+            hx-target="#wizard"
+            hx-swap="innerHTML">Continue →</button>
+  </div>
+</section>

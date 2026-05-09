@@ -1,0 +1,44 @@
+/* App-level color vocabulary — themes override these via :root + [data-theme="..."]. */
+:root {
+  /* Surfaces */
+  --app-color-bg: #f7f7f8;
+  --app-color-surface: #ffffff;
+  --app-color-surface-alt: #fafbfc;
+  --app-color-surface-hover: #eef2ff;
+  --app-color-border: #d4d4d8;
+  --app-color-border-subtle: #ececef;
+
+  /* Text — matches Flowbite heading/body tokens */
+  --app-color-text: #111827;
+  --app-color-text-subtle: #374151;
+  --app-color-text-muted: #6b7280;
+  --app-color-text-faint: #9ca3af;
+
+  /* Accents */
+  --app-color-primary: #3b82f6;
+  --app-color-primary-hover: #2563eb;
+  --app-color-on-primary: #ffffff;
+
+  /* Status */
+  --app-color-success: #137333;
+  --app-color-success-bg: #e6f4ea;
+  --app-color-success-border: #ceead6;
+  --app-color-warning: #795700;
+  --app-color-warning-bg: #fef7e0;
+  --app-color-warning-border: #feefc3;
+  --app-color-danger: #b91c1c;
+  --app-color-danger-bg: #fdecea;
+  --app-color-danger-border: #f5c2bc;
+
+  /* Message bubbles */
+  --app-color-bubble-them-bg: #e5e5ea;
+  --app-color-bubble-sms-bg: #22c55e;
+
+  /* Code / monospace surfaces */
+  --app-color-code-bg: #1e1e1e;
+  --app-color-code-text: #f0f0f0;
+
+  /* Avatar fallback fills */
+  --app-color-avatar-fallback-bg: #8aa;
+  --app-color-avatar-fallback-group-bg: #6c7d9e;
+}

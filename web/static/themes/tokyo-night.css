@@ -1,0 +1,57 @@
+/*
+ * Tokyo Night — https://github.com/folke/tokyonight.nvim  (MIT)
+ *
+ * Sourcing the "night" variant (the original/default of the family —
+ * "storm" is a slightly lighter sibling, "moon"/"day" are separate
+ * variants we'd ship as their own slugs if we ever wanted them).
+ *
+ * Canonical palette (night):
+ *   bg #1a1b26  bg_dark #16161e  bg_highlight #292e42  black #414868
+ *   fg #c0caf5  fg_dark #a9b1d6  fg_gutter #3b4261     comment #565f89
+ *   blue #7aa2f7  cyan #7dcfff  teal #1abc9c  green #9ece6a
+ *   yellow #e0af68  orange #ff9e64  red #f7768e  magenta #bb9af7
+ */
+
+[data-theme="tokyo-night"] {
+  /* Surfaces */
+  --app-color-bg: #1a1b26;
+  --app-color-surface: #1a1b26;
+  --app-color-surface-alt: #16161e;
+  --app-color-surface-hover: #292e42;
+  --app-color-border: #414868;
+  --app-color-border-subtle: #2a2e44;
+
+  /* Text */
+  --app-color-text: #c0caf5;
+  --app-color-text-subtle: #a9b1d6;
+  --app-color-text-muted: #828bb8;
+  --app-color-text-faint: #565f89;
+
+  /* Accents */
+  --app-color-primary: #7aa2f7;
+  --app-color-primary-hover: #5d87e0;
+  --app-color-on-primary: #1a1b26;
+
+  /* Status */
+  --app-color-success: #9ece6a;
+  --app-color-success-bg: #243025;
+  --app-color-success-border: #3c4d36;
+  --app-color-warning: #e0af68;
+  --app-color-warning-bg: #3a2f1f;
+  --app-color-warning-border: #5a4730;
+  --app-color-danger: #f7768e;
+  --app-color-danger-bg: #3a1f29;
+  --app-color-danger-border: #6c2e3e;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #292e42;
+  --app-color-bubble-sms-bg: #9ece6a;
+
+  /* Code */
+  --app-color-code-bg: #16161e;
+  --app-color-code-text: #c0caf5;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #7aa2f7;
+  --app-color-avatar-fallback-group-bg: #bb9af7;
+}

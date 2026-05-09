@@ -1,0 +1,27 @@
+.env
+state.json
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+*.log
+.claude/settings.local.json
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+
+# React frontend build artifacts
+web/frontend/node_modules/
+web/frontend/dist/
+
+# Internal dev state (lives in chatwire-dev repo)
+docs/HANDOFF*.md
+docs/greenfield-*.md
+docs/master-migration-plan.md
+docs/repo-split-plan.md
+scripts/chatwire-loop.sh
+scripts/chain-waves.sh
+scripts/wait_pypi.py

@@ -1,0 +1,58 @@
+/*
+ * Rosé Pine Moon — https://rosepinetheme.com/  (MIT)
+ *
+ * "Moon" variant — a softer dark theme in the Rosé Pine family.
+ *
+ * Canonical palette (moon):
+ *   base #232136  surface #2a273f  overlay #393552
+ *   muted #6e6a86  subtle #908caa  text #e0def4
+ *   highlight-low #2a283e  highlight-med #44415a  highlight-high #56526e
+ *   love #eb6f92  gold #f6c177  rose #ea9a97
+ *   pine #3e8fb0  foam #9ccfd8  iris #c4a7e7
+ *
+ * Iris (lavender) is the canonical brand accent; primary maps there.
+ */
+
+[data-theme="rose-pine-moon"] {
+  /* Surfaces */
+  --app-color-bg: #232136;
+  --app-color-surface: #2a273f;
+  --app-color-surface-alt: #2a273f;
+  --app-color-surface-hover: #393552;
+  --app-color-border: #44415a;
+  --app-color-border-subtle: #2a283e;
+
+  /* Text */
+  --app-color-text: #e0def4;
+  --app-color-text-subtle: #c8c4e8;
+  --app-color-text-muted: #908caa;
+  --app-color-text-faint: #6e6a86;
+
+  /* Accents */
+  --app-color-primary: #c4a7e7;
+  --app-color-primary-hover: #a888d0;
+  --app-color-on-primary: #232136;
+
+  /* Status */
+  --app-color-success: #9ccfd8;
+  --app-color-success-bg: #1f3338;
+  --app-color-success-border: #364c52;
+  --app-color-warning: #f6c177;
+  --app-color-warning-bg: #3a2f1f;
+  --app-color-warning-border: #5a4730;
+  --app-color-danger: #eb6f92;
+  --app-color-danger-bg: #3a2129;
+  --app-color-danger-border: #6c3144;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #393552;
+  --app-color-bubble-sms-bg: #9ccfd8;
+
+  /* Code */
+  --app-color-code-bg: #232136;
+  --app-color-code-text: #e0def4;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #3e8fb0;
+  --app-color-avatar-fallback-group-bg: #c4a7e7;
+}

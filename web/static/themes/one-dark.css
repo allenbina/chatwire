@@ -1,0 +1,53 @@
+/*
+ * One Dark — Atom's editor theme, https://github.com/atom/atom/tree/master/packages/one-dark-ui  (MIT)
+ *
+ * Canonical palette (atom one-dark):
+ *   bg #282c34  fg #abb2bf  comment #5c6370  selection #3e4451
+ *   blue #61afef  green #98c379  purple #c678dd  red #e06c75
+ *   orange #d19a66  yellow #e5c07b  cyan #56b6c2
+ *   gutter #4b5263
+ */
+
+[data-theme="one-dark"] {
+  /* Surfaces */
+  --app-color-bg: #282c34;
+  --app-color-surface: #282c34;
+  --app-color-surface-alt: #21252b;
+  --app-color-surface-hover: #2c313a;
+  --app-color-border: #3e4451;
+  --app-color-border-subtle: #2c313a;
+
+  /* Text */
+  --app-color-text: #abb2bf;
+  --app-color-text-subtle: #9da5b4;
+  --app-color-text-muted: #828997;
+  --app-color-text-faint: #5c6370;
+
+  /* Accents */
+  --app-color-primary: #61afef;
+  --app-color-primary-hover: #4a96d6;
+  --app-color-on-primary: #282c34;
+
+  /* Status */
+  --app-color-success: #98c379;
+  --app-color-success-bg: #25342b;
+  --app-color-success-border: #3a4d3c;
+  --app-color-warning: #e5c07b;
+  --app-color-warning-bg: #3a3120;
+  --app-color-warning-border: #5a4830;
+  --app-color-danger: #e06c75;
+  --app-color-danger-bg: #3a2026;
+  --app-color-danger-border: #6c2e38;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #3e4451;
+  --app-color-bubble-sms-bg: #98c379;
+
+  /* Code */
+  --app-color-code-bg: #21252b;
+  --app-color-code-text: #abb2bf;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #61afef;
+  --app-color-avatar-fallback-group-bg: #c678dd;
+}

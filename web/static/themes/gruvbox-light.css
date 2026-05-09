@@ -1,0 +1,65 @@
+/*
+ * Gruvbox Light — morhetz, https://github.com/morhetz/gruvbox  (MIT)
+ *
+ * Light sibling of the dark `gruvbox` theme shipped in 0.6.0.
+ *
+ * Canonical palette (light, medium contrast):
+ *   bg   #fbf1c7  bg_h #f9f5d7  bg_s #f2e5bc
+ *   bg1  #ebdbb2  bg2  #d5c4a1  bg3  #bdae93  bg4  #a89984
+ *   fg   #3c3836  fg2  #504945  fg3  #665c54  fg4  #7c6f64
+ *   gray #928374
+ *   bright_red    #9d0006   neutral_red    #cc241d
+ *   bright_green  #79740e   neutral_green  #98971a
+ *   bright_yellow #b57614   neutral_yellow #d79921
+ *   bright_blue   #076678   neutral_blue   #458588
+ *   bright_purple #8f3f71   neutral_purple #b16286
+ *   bright_aqua   #427b58   neutral_aqua   #689d6a
+ *   bright_orange #af3a03   neutral_orange #d65d0e
+ *
+ * Same warm-orange primary as gruvbox dark, using the light-palette
+ * bright_orange (#af3a03) for better contrast on the cream background.
+ */
+
+[data-theme="gruvbox-light"] {
+  /* Surfaces */
+  --app-color-bg: #fbf1c7;
+  --app-color-surface: #fbf1c7;
+  --app-color-surface-alt: #f9f5d7;
+  --app-color-surface-hover: #f2e5bc;
+  --app-color-border: #d5c4a1;
+  --app-color-border-subtle: #ebdbb2;
+
+  /* Text */
+  --app-color-text: #3c3836;
+  --app-color-text-subtle: #504945;
+  --app-color-text-muted: #7c6f64;
+  --app-color-text-faint: #928374;
+
+  /* Accents */
+  --app-color-primary: #af3a03;
+  --app-color-primary-hover: #8a2e02;
+  --app-color-on-primary: #fbf1c7;
+
+  /* Status */
+  --app-color-success: #79740e;
+  --app-color-success-bg: #f0edba;
+  --app-color-success-border: #c5c07a;
+  --app-color-warning: #b57614;
+  --app-color-warning-bg: #f5e6c3;
+  --app-color-warning-border: #d5b87a;
+  --app-color-danger: #9d0006;
+  --app-color-danger-bg: #f5d3d0;
+  --app-color-danger-border: #d5918a;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #f2e5bc;
+  --app-color-bubble-sms-bg: #79740e;
+
+  /* Code */
+  --app-color-code-bg: #f9f5d7;
+  --app-color-code-text: #3c3836;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #076678;
+  --app-color-avatar-fallback-group-bg: #8f3f71;
+}

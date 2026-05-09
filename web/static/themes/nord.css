@@ -1,0 +1,56 @@
+/*
+ * Nord — https://www.nordtheme.com/  (MIT)
+ *
+ * Canonical palette:
+ *   Polar Night  nord0 #2e3440  nord1 #3b4252  nord2 #434c5e  nord3 #4c566a
+ *   Snow Storm   nord4 #d8dee9  nord5 #e5e9f0  nord6 #eceff4
+ *   Frost        nord7 #8fbcbb  nord8 #88c0d0  nord9 #81a1c1  nord10 #5e81ac
+ *   Aurora       nord11 #bf616a  nord12 #d08770  nord13 #ebcb8b
+ *                nord14 #a3be8c  nord15 #b48ead
+ *
+ * Frost-blue (nord8) is Nord's signature UI accent; primary maps there.
+ */
+
+[data-theme="nord"] {
+  /* Surfaces */
+  --app-color-bg: #2e3440;
+  --app-color-surface: #2e3440;
+  --app-color-surface-alt: #292e39;
+  --app-color-surface-hover: #3b4252;
+  --app-color-border: #4c566a;
+  --app-color-border-subtle: #3b4252;
+
+  /* Text */
+  --app-color-text: #eceff4;
+  --app-color-text-subtle: #d8dee9;
+  --app-color-text-muted: #a8b1c0;
+  --app-color-text-faint: #6c7589;
+
+  /* Accents */
+  --app-color-primary: #88c0d0;
+  --app-color-primary-hover: #6fb1c4;
+  --app-color-on-primary: #2e3440;
+
+  /* Status */
+  --app-color-success: #a3be8c;
+  --app-color-success-bg: #2c3a2a;
+  --app-color-success-border: #44563d;
+  --app-color-warning: #ebcb8b;
+  --app-color-warning-bg: #3a3324;
+  --app-color-warning-border: #5a4f38;
+  --app-color-danger: #bf616a;
+  --app-color-danger-bg: #3a2426;
+  --app-color-danger-border: #5a3941;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #3b4252;
+  --app-color-bubble-sms-bg: #a3be8c;
+
+  /* Code */
+  --app-color-code-bg: #292e39;
+  --app-color-code-text: #eceff4;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #5e81ac;
+  --app-color-avatar-fallback-group-bg: #b48ead;
+}

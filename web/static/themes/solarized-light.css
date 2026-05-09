@@ -1,0 +1,51 @@
+/*
+ * Solarized Light — Ethan Schoonover, https://ethanschoonover.com/solarized/  (MIT)
+ *
+ * Same accent palette as Solarized Dark, with the bg/text shades
+ * mirrored: bg=base3, content shades step through base2→base1→base0
+ * →base00→base01. Blue stays primary.
+ */
+
+[data-theme="solarized-light"] {
+  /* Surfaces */
+  --app-color-bg: #fdf6e3;
+  --app-color-surface: #fdf6e3;
+  --app-color-surface-alt: #f5eed4;
+  --app-color-surface-hover: #eee8d5;
+  --app-color-border: #93a1a1;
+  --app-color-border-subtle: #eee8d5;
+
+  /* Text */
+  --app-color-text: #586e75;
+  --app-color-text-subtle: #657b83;
+  --app-color-text-muted: #839496;
+  --app-color-text-faint: #93a1a1;
+
+  /* Accents */
+  --app-color-primary: #268bd2;
+  --app-color-primary-hover: #1d6fa5;
+  --app-color-on-primary: #fdf6e3;
+
+  /* Status */
+  --app-color-success: #859900;
+  --app-color-success-bg: #eef0d6;
+  --app-color-success-border: #d2d9a3;
+  --app-color-warning: #b58900;
+  --app-color-warning-bg: #f5edcd;
+  --app-color-warning-border: #e3d7a0;
+  --app-color-danger: #dc322f;
+  --app-color-danger-bg: #f7dad8;
+  --app-color-danger-border: #ecb1ad;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #eee8d5;
+  --app-color-bubble-sms-bg: #859900;
+
+  /* Code */
+  --app-color-code-bg: #002b36;
+  --app-color-code-text: #93a1a1;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #268bd2;
+  --app-color-avatar-fallback-group-bg: #6c71c4;
+}

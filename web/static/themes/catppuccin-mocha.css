@@ -1,0 +1,58 @@
+/*
+ * Catppuccin Mocha — https://catppuccin.com/  (MIT)
+ *
+ * Darkest of the family — the most popular Catppuccin variant. Mauve primary.
+ *
+ * Canonical palette (mocha):
+ *   base #1e1e2e  mantle #181825  crust #11111b
+ *   text #cdd6f4  subtext0 #a6adc8  subtext1 #bac2de
+ *   surface0 #313244  surface1 #45475a  surface2 #585b70
+ *   rosewater #f5e0dc  flamingo #f2cdcd  pink #f5c2e7  mauve #cba6f7
+ *   red #f38ba8  maroon #eba0ac  peach #fab387  yellow #f9e2af
+ *   green #a6e3a1  teal #94e2d5  sky #89dceb  sapphire #74c7ec
+ *   blue #89b4fa  lavender #b4befe
+ */
+
+[data-theme="catppuccin-mocha"] {
+  /* Surfaces */
+  --app-color-bg: #1e1e2e;
+  --app-color-surface: #1e1e2e;
+  --app-color-surface-alt: #181825;
+  --app-color-surface-hover: #313244;
+  --app-color-border: #45475a;
+  --app-color-border-subtle: #2a2a3c;
+
+  /* Text */
+  --app-color-text: #cdd6f4;
+  --app-color-text-subtle: #bac2de;
+  --app-color-text-muted: #a6adc8;
+  --app-color-text-faint: #7f849c;
+
+  /* Accents */
+  --app-color-primary: #cba6f7;
+  --app-color-primary-hover: #b290e0;
+  --app-color-on-primary: #1e1e2e;
+
+  /* Status */
+  --app-color-success: #a6e3a1;
+  --app-color-success-bg: #243a26;
+  --app-color-success-border: #3d573b;
+  --app-color-warning: #f9e2af;
+  --app-color-warning-bg: #3a3320;
+  --app-color-warning-border: #5a4f30;
+  --app-color-danger: #f38ba8;
+  --app-color-danger-bg: #3a2228;
+  --app-color-danger-border: #6c3a44;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #313244;
+  --app-color-bubble-sms-bg: #a6e3a1;
+
+  /* Code */
+  --app-color-code-bg: #11111b;
+  --app-color-code-text: #cdd6f4;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #89b4fa;
+  --app-color-avatar-fallback-group-bg: #cba6f7;
+}

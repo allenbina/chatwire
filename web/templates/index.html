@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en" data-theme="{{ web_theme }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="app-version" content="{{ release_version }}">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="update-check-repo" content="{{ update_check_repo }}">
+  <title>iMessage bridge</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+          colors: {
+            app: {
+              bg: 'var(--app-color-bg)',
+              surface: 'var(--app-color-surface)',
+              'surface-alt': 'var(--app-color-surface-alt)',
+              'surface-hover': 'var(--app-color-surface-hover)',
+              border: 'var(--app-color-border)',
+              'border-subtle': 'var(--app-color-border-subtle)',
+              text: 'var(--app-color-text)',
+              'text-subtle': 'var(--app-color-text-subtle)',
+              'text-muted': 'var(--app-color-text-muted)',
+              'text-faint': 'var(--app-color-text-faint)',
+              primary: 'var(--app-color-primary)',
+              'primary-hover': 'var(--app-color-primary-hover)',
+              'on-primary': 'var(--app-color-on-primary)',
+              success: 'var(--app-color-success)',
+              'success-bg': 'var(--app-color-success-bg)',
+              warning: 'var(--app-color-warning)',
+              'warning-bg': 'var(--app-color-warning-bg)',
+              danger: 'var(--app-color-danger)',
+              'danger-bg': 'var(--app-color-danger-bg)',
+              'danger-border': 'var(--app-color-danger-border)',
+              'bubble-them': 'var(--app-color-bubble-them-bg)',
+              'bubble-sms': 'var(--app-color-bubble-sms-bg)',
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.css" rel="stylesheet">
+  <!-- Theme bridge + active theme — load before style.css so app rules win. -->
+  <link rel="stylesheet" href="/static/themes/_bridge.css?v={{ version }}">
+  <link rel="stylesheet" href="/static/themes/{{ web_theme }}.css?v={{ version }}">
+  <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+  {% if thumbnail_max_size == 'full' %}
+  <style>:root { --gallery-max-width: none; }</style>
+  {% elif thumbnail_max_size %}
+  <style>:root { --gallery-max-width: {{ thumbnail_max_size }}px; }</style>
+  {% endif %}
+  {% if custom_css %}
+  <style>{{ custom_css | safe }}</style>
+  {% endif %}
+  <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js" defer></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"></script>
+  <script src="/static/update-check.js?v={{ version }}" defer></script>
+</head>
+<body>
+  <a href="#messages" class="sr-only focus:not-sr-only fixed top-0 left-0 z-[9999] px-4 py-2 bg-app-primary text-app-on-primary text-sm font-medium rounded-br-lg">Skip to messages</a>
+  <div id="update-banner" class="update-banner" hidden>
+    <span>
+      <strong>Update available:</strong>
+      <span class="update-banner-version"></span>
+      &mdash;
+      <a class="update-banner-link" href="#" target="_blank" rel="noopener">release notes</a>
+    </span>
+    <button class="update-banner-dismiss ml-auto bg-transparent border-0 text-white opacity-85 hover:opacity-100 cursor-pointer text-xl leading-none p-0" type="button" aria-label="Dismiss">&times;</button>
+  </div>
+
+  <nav id="sidebar"
+       aria-label="Conversations"
+       class="bg-app-surface border-r border-app-border flex flex-col overflow-hidden h-screen"
+       hx-get="/conversations"
+       hx-trigger="load, every 30s"
+       hx-swap="innerHTML">
+    <p class="px-4 py-3 text-sm text-app-text-faint">loading…</p>
+  </nav>
+
+  <main id="main" aria-label="Chat">
+    <div class="placeholder flex items-center justify-center flex-1 text-sm text-app-text-faint">pick a conversation</div>
+  </main>
+
+  <div id="ticker"
+       hx-ext="sse"
+       sse-connect="/events"
+       sse-swap="message"
+       hx-swap="none"
+       hx-on::sse-message="handleEvent(event)"
+       style="display:none">
+  </div>
+
+  <script>
+    // Ask once on first interaction; also register service worker for
+    // web push (tab-closed notifications, desktop only for now).
+    document.addEventListener('click', function() {
+      setupPush().catch(e => console.warn('push setup skipped:', e));
+    }, { once: true });
+
+    function urlB64ToUint8(s) {
+      const pad = '='.repeat((4 - s.length % 4) % 4);
+      const b64 = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(b64);
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out;
+    }
+
+    async function setupPush() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if ('Notification' in window && Notification.permission === 'default') {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return;
+      } else if (Notification.permission !== 'granted') {
+        return;
+      }
+      const reg = await navigator.serviceWorker.register('/static/sw.js');
+      await navigator.serviceWorker.ready;
+      const keyRes = await fetch('/push/vapid-public-key');
+      if (!keyRes.ok) return;
+      const { key } = await keyRes.json();
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8(key),
+        });
+      }
+      await fetch('/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      });
+    }
+
+    // Live theme swap. Settings → Appearance posts the new slug; on
+    // success the form's hx-on::after-request handler calls this to
+    // recolor immediately without a reload. We replace the theme
+    // stylesheet's href and flip <html data-theme> — the bridge file
+    // keeps its own <link>, so the --app-* vocabulary stays mapped.
+    window.__applyTheme = function(slug) {
+      if (!slug) return;
+      document.documentElement.setAttribute('data-theme', slug);
+      const links = document.querySelectorAll(
+        'link[rel="stylesheet"][href*="/static/themes/"]'
+      );
+      for (const link of links) {
+        if (link.href.includes('/_bridge.css')) continue;
+        const url = new URL(link.href);
+        const m = url.pathname.match(/\/static\/themes\/[^/]+\.css$/);
+        if (!m) continue;
+        url.pathname = `/static/themes/${slug}.css`;
+        link.href = url.toString();
+      }
+    };
+
+    // Mobile nav: on phone, body behaves as a two-screen stack toggled by
+    // body.dataset.view. Any click into the sidebar list or settings gear
+    // counts as "navigate into main"; the back button in each view resets.
+    const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
+    function showMain() { document.body.dataset.view = 'main'; }
+    function showSidebar() { document.body.dataset.view = ''; }
+    window.__showSidebar = showSidebar;
+    document.addEventListener('click', (e) => {
+      const nav = e.target.closest('#sidebar .convolist a, #sidebar .gear');
+      if (nav) showMain();
+    });
+
+    // Notification-click deep link: /?open=<handle> or /?openChat=<guid>.
+    (function handleOpenParam() {
+      const params = new URLSearchParams(window.location.search);
+      const h = params.get('open');
+      const c = params.get('openChat');
+      if (!h && !c) return;
+      document.addEventListener('htmx:afterSwap', function onSidebar(evt) {
+        if (!evt.detail.target || evt.detail.target.id !== 'sidebar') return;
+        const url = c
+          ? '/conversation?chat=' + encodeURIComponent(c)
+          : '/conversation?handle=' + encodeURIComponent(h);
+        htmx.ajax('GET', url, '#main');
+        showMain();
+        document.removeEventListener('htmx:afterSwap', onSidebar);
+      });
+    })();
+
+    // Service worker → page messages (clicked a notification while tab open)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        const m = event.data || {};
+        if (m.type === 'open_chat' && m.chat) {
+          htmx.ajax('GET', '/conversation?chat=' + encodeURIComponent(m.chat), '#main');
+          showMain();
+        } else if (m.type === 'open_handle' && m.handle) {
+          htmx.ajax('GET', '/conversation?handle=' + encodeURIComponent(m.handle), '#main');
+          showMain();
+        }
+      });
+    }
+
+    // Auto-open the top conversation the first time the sidebar loads.
+    // On phone we stay on the list — the user picks which thread to enter.
+    document.addEventListener('htmx:afterSwap', function(evt) {
+      if (!evt.detail.target || evt.detail.target.id !== 'sidebar') return;
+      if (isPhone()) return;
+      const main = document.getElementById('main');
+      if (main && (main.dataset.handle || main.dataset.chat)) return;
+      const first = document.querySelector('#sidebar .convolist a');
+      if (!first) return;
+      const url = first.getAttribute('hx-get');
+      if (url) htmx.ajax('GET', url, '#main');
+    });
+
+    function showToast(msg, kind) {
+      const isErr = kind === 'err';
+      const toast = document.createElement('div');
+      toast.className = 'fixed bottom-4 right-4 z-50 flex items-center w-full max-w-xs p-4 bg-app-surface rounded-lg shadow-lg border border-app-border';
+      toast.setAttribute('role', 'alert');
+
+      const iconWrap = document.createElement('div');
+      iconWrap.className = 'inline-flex items-center justify-center shrink-0 w-8 h-8 rounded-lg ' +
+        (isErr ? 'text-red-500 bg-red-100' : 'text-green-500 bg-green-100');
+      iconWrap.innerHTML = isErr
+        ? '<svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20"><path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM10 15a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm1-4a1 1 0 0 1-2 0V6a1 1 0 0 1 2 0v5Z"/></svg>'
+        : '<svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20"><path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM15.75 7.18 8.906 14.025a.75.75 0 0 1-1.06 0L4.25 10.43a.75.75 0 0 1 1.06-1.062l3.094 3.094 6.282-6.281a.75.75 0 0 1 1.062 1.062Z"/></svg>';
+
+      const msgEl = document.createElement('div');
+      msgEl.className = 'ms-3 text-sm font-normal text-app-text';
+      if (typeof msg === 'string') { msgEl.textContent = msg; } else { msgEl.append(msg); }
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'ms-auto -mx-1.5 -my-1.5 bg-app-surface text-app-text-faint hover:text-app-text rounded-lg p-1.5 hover:bg-app-surface-hover inline-flex items-center justify-center h-8 w-8';
+      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.innerHTML = '<svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/></svg>';
+      closeBtn.addEventListener('click', () => toast.remove());
+
+      toast.append(iconWrap, msgEl, closeBtn);
+      document.body.appendChild(toast);
+      setTimeout(() => { if (toast.parentNode) toast.remove(); }, 2500);
+    }
+
+    document.body.addEventListener('contacts-synced', (e) => {
+      const d = e.detail || {};
+      showToast('Contacts synced — ' + (d.loaded || 0) + ' handles', 'ok');
+    });
+
+    document.body.addEventListener('htmx:responseError', (e) => {
+      const path = e.detail?.pathInfo?.requestPath || '';
+      if (path.includes('/refresh_contacts')) showToast('Sync failed', 'err');
+    });
+
+    // --- Unread count in page title ---
+    var __unreadCount = 0;
+    var __baseTitle = document.title;
+    function __updateTitle() {
+      document.title = __unreadCount > 0
+        ? '(' + __unreadCount + ') ' + __baseTitle
+        : __baseTitle;
+      if ('setAppBadge' in navigator) {
+        if (__unreadCount > 0) {
+          navigator.setAppBadge(__unreadCount).catch(function() {});
+        } else {
+          navigator.clearAppBadge().catch(function() {});
+        }
+      }
+    }
+    // Clear unread when user focuses the window or opens a conversation
+    window.addEventListener('focus', function() {
+      __unreadCount = 0;
+      __updateTitle();
+    });
+    document.addEventListener('htmx:afterSettle', function(e) {
+      var target = e.detail && e.detail.target;
+      if (target && target.id === 'main') {
+        var main = document.getElementById('main');
+        if (main && (main.dataset.handle || main.dataset.chat) &&
+            main.dataset.handle !== '__settings__' &&
+            main.dataset.handle !== '__plugins__') {
+          __unreadCount = 0;
+          __updateTitle();
+        }
+        // Focus compose box after conversation switch for screen-reader users
+        var composer = main && main.querySelector('#composer-body');
+        if (composer) { setTimeout(function() { composer.focus(); }, 50); }
+      }
+      // Mark active conversation with aria-current in the sidebar
+      if (target && target.id === 'sidebar') {
+        var main2 = document.getElementById('main');
+        var activeHandle = main2 && main2.dataset.handle;
+        var activeChat   = main2 && main2.dataset.chat;
+        document.querySelectorAll('#sidebar .convolist a').forEach(function(a) {
+          var url = a.getAttribute('hx-get') || '';
+          var isCurrent = (activeHandle && url.includes('handle=' + encodeURIComponent(activeHandle))) ||
+                          (activeChat   && url.includes('chat='   + encodeURIComponent(activeChat)));
+          if (isCurrent) {
+            a.setAttribute('aria-current', 'page');
+          } else {
+            a.removeAttribute('aria-current');
+          }
+        });
+      }
+    });
+
+    function handleEvent(event) {
+      let evt;
+      try { evt = JSON.parse(event.detail.data); } catch(e) { return; }
+      const main = document.getElementById('main');
+      const openHandle = main.dataset.handle || '';
+      const openChat = main.dataset.chat || '';
+
+      // Refresh sidebar always
+      htmx.ajax('GET', '/conversations', '#sidebar');
+
+      const evtChat = evt.chat_guid || '';
+      const evtHandle = evt.handle || '';
+
+      // Refresh the open thread if this event belongs to it.
+      if (evtChat && openChat && evtChat === openChat) {
+        htmx.ajax('GET', '/conversation?chat=' + encodeURIComponent(openChat), '#main');
+      } else if (!evtChat && evtHandle && openHandle && evtHandle === openHandle) {
+        htmx.ajax('GET', '/conversation?handle=' + encodeURIComponent(openHandle), '#main');
+      }
+
+      // Track unread for non-open inbound messages
+      if (evt.event === 'inbound') {
+        var isOpen = (evtChat && evtChat === openChat) ||
+                     (!evtChat && evtHandle && evtHandle === openHandle);
+        if (!isOpen && !document.hasFocus()) {
+          __unreadCount++;
+          __updateTitle();
+        }
+      }
+
+      // Browser notification for inbound to a non-open conversation.
+      if (evt.event !== 'inbound') return;
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      const body = (evt.text || '').replace('\ufffc', '').trim().slice(0, 120) || '(photo)';
+      if (evtChat && evtChat !== openChat) {
+        const group = evt.chat_name || 'Group';
+        const sender = evt.name || evtHandle || '';
+        const title = 'iMessage [' + group + ']' + (sender ? ' · ' + sender : '');
+        const n = new Notification(title, { body: body, tag: evtChat });
+        n.onclick = () => {
+          window.focus();
+          htmx.ajax('GET', '/conversation?chat=' + encodeURIComponent(evtChat), '#main');
+          showMain();
+        };
+      } else if (!evtChat && evtHandle && evtHandle !== openHandle) {
+        const n = new Notification('iMessage from ' + (evt.name || evtHandle), { body: body, tag: evtHandle });
+        n.onclick = () => {
+          window.focus();
+          htmx.ajax('GET', '/conversation?handle=' + encodeURIComponent(evtHandle), '#main');
+          showMain();
+        };
+      }
+    }
+    // Re-init Flowbite after every HTMX swap so dynamically loaded
+    // components (accordion, dropdowns, modals) are wired up.
+    document.addEventListener('htmx:afterSettle', function() {
+      if (typeof initFlowbite === 'function') initFlowbite();
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+/*
+ * Solarized Dark — Ethan Schoonover, https://ethanschoonover.com/solarized/  (MIT)
+ *
+ * Canonical palette:
+ *   base03 #002b36  base02 #073642  base01 #586e75  base00 #657b83
+ *   base0  #839496  base1  #93a1a1  base2  #eee8d5  base3  #fdf6e3
+ *   yellow #b58900  orange #cb4b16  red    #dc322f  magenta #d33682
+ *   violet #6c71c4  blue   #268bd2  cyan   #2aa198  green   #859900
+ *
+ * Solarized's defining contrast pattern is fixed: bg=base03, content
+ * shades step through base02→base01→base00→base0→base1, accents are
+ * the named colors. Blue is the primary UI accent.
+ */
+
+[data-theme="solarized-dark"] {
+  /* Surfaces */
+  --app-color-bg: #002b36;
+  --app-color-surface: #002b36;
+  --app-color-surface-alt: #001f27;
+  --app-color-surface-hover: #073642;
+  --app-color-border: #586e75;
+  --app-color-border-subtle: #073642;
+
+  /* Text */
+  --app-color-text: #93a1a1;
+  --app-color-text-subtle: #839496;
+  --app-color-text-muted: #657b83;
+  --app-color-text-faint: #586e75;
+
+  /* Accents */
+  --app-color-primary: #268bd2;
+  --app-color-primary-hover: #1d6fa5;
+  --app-color-on-primary: #002b36;
+
+  /* Status */
+  --app-color-success: #859900;
+  --app-color-success-bg: #1c2a14;
+  --app-color-success-border: #3a4824;
+  --app-color-warning: #b58900;
+  --app-color-warning-bg: #2a2210;
+  --app-color-warning-border: #4a3c20;
+  --app-color-danger: #dc322f;
+  --app-color-danger-bg: #2e1614;
+  --app-color-danger-border: #5a2826;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #073642;
+  --app-color-bubble-sms-bg: #859900;
+
+  /* Code */
+  --app-color-code-bg: #001f27;
+  --app-color-code-text: #93a1a1;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #268bd2;
+  --app-color-avatar-fallback-group-bg: #6c71c4;
+}

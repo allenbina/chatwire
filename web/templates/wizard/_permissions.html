@@ -1,0 +1,91 @@
+<section class="max-w-xl">
+  {% if preflight_warnings %}
+  <div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    <strong class="block mb-1">⚠ Pre-flight warnings</strong>
+    <ul class="list-disc list-inside space-y-1">
+      {% for w in preflight_warnings %}<li>{{ w }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <h2 class="text-xl font-bold text-gray-900 mb-2">Step 1 — macOS permissions</h2>
+  <p class="text-sm text-gray-600 mb-6">
+    The bridge needs two macOS privacy grants. Both are tied to the
+    python.org Python binary at
+    <code>/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app</code>
+    (your install path may vary). Apple does not allow these to be granted
+    by an installer — you'll click through System Settings yourself.
+  </p>
+
+  <div class="flex items-start gap-4 py-4 border-b border-gray-100">
+    <div class="flex-1 min-w-0">
+      <div class="probe-name">
+        <strong>Full Disk Access</strong>
+        <small>required to read <code>~/Library/Messages/chat.db</code></small>
+      </div>
+      <div class="probe-status probe-{{ fda.status }} mt-1 text-sm
+                  {% if fda.status == 'ok' %}text-green-600{% else %}text-red-600{% endif %}">
+        {% if fda.status == "ok" %}✓ {{ fda.detail }}
+        {% else %}✗ {{ fda.detail }}{% endif %}
+      </div>
+    </div>
+    <div class="probe-action flex-shrink-0">
+      <a href="x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+         class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 inline-flex items-center">
+        Open Settings</a>
+    </div>
+  </div>
+
+  <div class="flex items-start gap-4 py-4 border-b border-gray-100">
+    <div class="flex-1 min-w-0">
+      <div class="probe-name">
+        <strong>Automation → Messages</strong>
+        <small>required to send via AppleScript</small>
+      </div>
+      <div class="probe-status probe-{{ automation.status }} mt-1 text-sm
+                  {% if automation.status == 'ok' %}text-green-600{% else %}text-red-600{% endif %}">
+        {% if automation.status == "ok" %}✓ {{ automation.detail }}
+        {% else %}✗ {{ automation.detail }}{% endif %}
+      </div>
+    </div>
+    <div class="probe-action flex-shrink-0">
+      <a href="x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+         class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 inline-flex items-center">
+        Open Settings</a>
+    </div>
+  </div>
+
+  {# Auto-refresh: re-runs both probes every 30 s while this step is in the
+     DOM. The interval is cleaned up automatically when the element is removed
+     (e.g. after the user clicks Next →). #}
+  <div hidden
+       hx-post="/setup/check/permissions"
+       hx-target="#wizard"
+       hx-swap="innerHTML"
+       hx-trigger="every 30s"></div>
+
+  <div class="flex gap-3 mt-6">
+    <button type="button"
+            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            hx-post="/setup/check/permissions"
+            hx-target="#wizard"
+            hx-swap="innerHTML">
+      Refresh all
+    </button>
+    <button type="button"
+            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            {% if fda.status != "ok" or automation.status != "ok" %}disabled{% endif %}
+            hx-get="/setup/step/identity"
+            hx-target="#wizard"
+            hx-swap="innerHTML">
+      Next →
+    </button>
+  </div>
+
+  {% if fda.status != "ok" or automation.status != "ok" %}
+  <p class="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+    Both grants must show ✓ before you can advance. After granting in System
+    Settings, click Refresh all (or wait — the page checks automatically every
+    30 seconds).
+  </p>
+  {% endif %}
+</section>

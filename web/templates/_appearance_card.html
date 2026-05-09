@@ -1,0 +1,103 @@
+<div id="appearance-card">
+  <form class="appearance-form"
+        hx-post="/api/settings/theme"
+        hx-trigger="change from:select[name=theme]"
+        hx-target="#appearance-card"
+        hx-swap="outerHTML">
+    <label class="flex flex-col gap-1.5 text-sm text-app-text-subtle">
+      <span class="font-medium">Theme</span>
+      <select name="theme"
+              onchange="window.__applyTheme && window.__applyTheme(this.value)"
+              class="block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500">
+        {% for t in themes %}
+        <option value="{{ t.slug }}" {% if t.slug == web_theme %}selected{% endif %}>{{ t.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  <p class="mt-2 text-xs text-app-text-muted">Themes recolor the whole UI without a reload.</p>
+
+  <hr class="my-4 border-app-border">
+
+  <form class="time-format-form"
+        hx-post="/api/settings/time_format"
+        hx-trigger="change from:select[name=time_format]"
+        hx-target="#appearance-card"
+        hx-swap="outerHTML">
+    <label class="flex flex-col gap-1.5 text-sm text-app-text-subtle">
+      <span class="font-medium">Time format</span>
+      <select name="time_format"
+              class="block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500">
+        <option value="24h" {% if time_format != '12h' %}selected{% endif %}>24-hour (14:30)</option>
+        <option value="12h" {% if time_format == '12h' %}selected{% endif %}>12-hour (2:30 PM)</option>
+      </select>
+    </label>
+  </form>
+  <p class="mt-2 text-xs text-app-text-muted">Changes apply to all timestamps. Saved for all devices.</p>
+
+  <hr class="my-4 border-app-border">
+
+  <form class="history-limit-form"
+        hx-post="/api/settings/history_limit"
+        hx-trigger="change from:select[name=history_limit]"
+        hx-target="#appearance-card"
+        hx-swap="outerHTML">
+    <label class="flex flex-col gap-1.5 text-sm text-app-text-subtle">
+      <span class="font-medium">Messages to load</span>
+      <select name="history_limit"
+              class="block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500">
+        <option value="25"  {% if history_limit == 25  %}selected{% endif %}>25 messages</option>
+        <option value="50"  {% if history_limit == 50  %}selected{% endif %}>50 messages</option>
+        <option value="100" {% if history_limit == 100 %}selected{% endif %}>100 messages</option>
+        <option value="200" {% if history_limit == 200 %}selected{% endif %}>200 messages</option>
+      </select>
+    </label>
+  </form>
+  <p class="mt-2 text-xs text-app-text-muted">How many messages to load when opening a conversation. Reload the page to apply.</p>
+
+  <hr class="my-4 border-app-border">
+
+  <form class="thumbnail-size-form"
+        hx-post="/api/settings/thumbnail_max_size"
+        hx-trigger="change from:select[name=thumbnail_max_size]"
+        hx-target="#appearance-card"
+        hx-swap="outerHTML">
+    <label class="flex flex-col gap-1.5 text-sm text-app-text-subtle">
+      <span class="font-medium">Photo size in chat</span>
+      <select name="thumbnail_max_size"
+              class="block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500">
+        <option value="360"  {% if thumbnail_max_size == '360'  or not thumbnail_max_size %}selected{% endif %}>Small (360 px)</option>
+        <option value="720"  {% if thumbnail_max_size == '720'  %}selected{% endif %}>Medium (720 px)</option>
+        <option value="1080" {% if thumbnail_max_size == '1080' %}selected{% endif %}>Large (1080 px)</option>
+        <option value="full" {% if thumbnail_max_size == 'full' %}selected{% endif %}>Full (no limit)</option>
+      </select>
+    </label>
+  </form>
+  <p class="mt-2 text-xs text-app-text-muted">Max-width applied to photos in the message feed. Takes effect immediately.</p>
+
+  <hr class="my-4 border-app-border">
+
+  <label class="flex flex-col gap-1.5 text-sm text-app-text-subtle">
+    <span class="font-medium">Custom CSS</span>
+    <textarea id="custom-css-input"
+              rows="6"
+              style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.8rem;"
+              class="block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500 resize-y"
+              placeholder="/* e.g. body { background: #f0f0f0; } */"
+    >{{ custom_css }}</textarea>
+  </label>
+  <p class="mt-2 text-xs text-app-text-muted">Injected after theme styles. Applied on next page load.</p>
+  <button type="button"
+          class="mt-2 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+          onclick="(function(){
+            var css = document.getElementById('custom-css-input').value;
+            fetch('/api/settings/custom_css', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({custom_css: css})
+            }).then(function(r){ return r.json(); }).then(function(d){
+              if (d.ok) showToast('Custom CSS saved', 'ok');
+              else showToast('Save failed', 'err');
+            }).catch(function(){ showToast('Save failed', 'err'); });
+          })()">Save CSS</button>
+</div>

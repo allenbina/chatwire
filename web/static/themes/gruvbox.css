@@ -1,0 +1,67 @@
+/*
+ * Gruvbox — morhetz, https://github.com/morhetz/gruvbox  (MIT)
+ *
+ * Shipping the dark variant — Gruvbox's iconic look. (Gruvbox-light is
+ * a sibling we'd ship as `gruvbox-light` if there's appetite.)
+ *
+ * Canonical palette (dark, medium contrast):
+ *   bg   #282828  bg_h #1d2021  bg_s #32302f
+ *   bg1  #3c3836  bg2  #504945  bg3  #665c54  bg4  #7c6f64
+ *   fg   #ebdbb2  fg2  #d5c4a1  fg3  #bdae93  fg4  #a89984
+ *   gray #928374
+ *   bright_red    #fb4934   neutral_red    #cc241d
+ *   bright_green  #b8bb26   neutral_green  #98971a
+ *   bright_yellow #fabd2f   neutral_yellow #d79921
+ *   bright_blue   #83a598   neutral_blue   #458588
+ *   bright_purple #d3869b   neutral_purple #b16286
+ *   bright_aqua   #8ec07c   neutral_aqua   #689d6a
+ *   bright_orange #fe8019   neutral_orange #d65d0e
+ *
+ * Gruvbox's signature accent is its warm yellow/orange ramp; we use
+ * neutral_orange as primary for the warmest UI feel that doesn't
+ * collide with the warning slot (which uses bright_yellow).
+ */
+
+[data-theme="gruvbox"] {
+  /* Surfaces */
+  --app-color-bg: #282828;
+  --app-color-surface: #282828;
+  --app-color-surface-alt: #1d2021;
+  --app-color-surface-hover: #3c3836;
+  --app-color-border: #504945;
+  --app-color-border-subtle: #3c3836;
+
+  /* Text */
+  --app-color-text: #ebdbb2;
+  --app-color-text-subtle: #d5c4a1;
+  --app-color-text-muted: #a89984;
+  --app-color-text-faint: #928374;
+
+  /* Accents */
+  --app-color-primary: #d65d0e;
+  --app-color-primary-hover: #b3490a;
+  --app-color-on-primary: #282828;
+
+  /* Status */
+  --app-color-success: #b8bb26;
+  --app-color-success-bg: #2a2e15;
+  --app-color-success-border: #444a23;
+  --app-color-warning: #fabd2f;
+  --app-color-warning-bg: #3a2f10;
+  --app-color-warning-border: #5e4920;
+  --app-color-danger: #fb4934;
+  --app-color-danger-bg: #3a1d18;
+  --app-color-danger-border: #6c2e26;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #3c3836;
+  --app-color-bubble-sms-bg: #b8bb26;
+
+  /* Code */
+  --app-color-code-bg: #1d2021;
+  --app-color-code-text: #ebdbb2;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #458588;
+  --app-color-avatar-fallback-group-bg: #b16286;
+}

@@ -1,0 +1,58 @@
+/*
+ * Catppuccin Macchiato — https://catppuccin.com/  (MIT)
+ *
+ * Darker than Frappé, lighter than Mocha. Mauve primary.
+ *
+ * Canonical palette (macchiato):
+ *   base #24273a  mantle #1e2030  crust #181926
+ *   text #cad3f5  subtext0 #a5adcb  subtext1 #b8c0e0
+ *   surface0 #363a4f  surface1 #494d64  surface2 #5b6078
+ *   rosewater #f4dbd6  flamingo #f0c6c6  pink #f5bde6  mauve #c6a0f6
+ *   red #ed8796  maroon #ee99a0  peach #f5a97f  yellow #eed49f
+ *   green #a6da95  teal #8bd5ca  sky #91d7e3  sapphire #7dc4e4
+ *   blue #8aadf4  lavender #b7bdf8
+ */
+
+[data-theme="catppuccin-macchiato"] {
+  /* Surfaces */
+  --app-color-bg: #24273a;
+  --app-color-surface: #24273a;
+  --app-color-surface-alt: #1e2030;
+  --app-color-surface-hover: #363a4f;
+  --app-color-border: #494d64;
+  --app-color-border-subtle: #2f3247;
+
+  /* Text */
+  --app-color-text: #cad3f5;
+  --app-color-text-subtle: #b8c0e0;
+  --app-color-text-muted: #a5adcb;
+  --app-color-text-faint: #8087a2;
+
+  /* Accents */
+  --app-color-primary: #c6a0f6;
+  --app-color-primary-hover: #ad88de;
+  --app-color-on-primary: #24273a;
+
+  /* Status */
+  --app-color-success: #a6da95;
+  --app-color-success-bg: #243a2a;
+  --app-color-success-border: #3d563f;
+  --app-color-warning: #eed49f;
+  --app-color-warning-bg: #3a3324;
+  --app-color-warning-border: #5a4f38;
+  --app-color-danger: #ed8796;
+  --app-color-danger-bg: #3a242b;
+  --app-color-danger-border: #6c3a44;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #363a4f;
+  --app-color-bubble-sms-bg: #a6da95;
+
+  /* Code */
+  --app-color-code-bg: #181926;
+  --app-color-code-text: #cad3f5;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #8aadf4;
+  --app-color-avatar-fallback-group-bg: #c6a0f6;
+}

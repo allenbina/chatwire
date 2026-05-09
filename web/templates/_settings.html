@@ -1,0 +1,826 @@
+<div class="settings flex flex-col overflow-y-auto h-full"
+     hx-on::load="document.getElementById('main').dataset.handle = '__settings__'">
+  <header class="flex items-center gap-2 px-4 py-3 border-b border-app-border bg-app-surface flex-shrink-0">
+    <button type="button" class="back-btn p-2 rounded-lg text-app-text-muted hover:bg-app-surface-hover md:hidden"
+            aria-label="back to conversations"
+            onclick="window.__showSidebar && window.__showSidebar()">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+           viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+    </button>
+    <div class="flex-1 min-w-0">
+      <h2 class="text-sm font-semibold text-app-text truncate">Settings</h2>
+    </div>
+  </header>
+
+  <div class="p-4 flex-1 overflow-y-auto bg-app-bg">
+    <div id="settings-accordion" class="border border-app-border rounded-lg overflow-hidden">
+
+      <!-- Self handles -->
+      <h3 id="acc-head-handles">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-handles" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Self handles
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-handles" class="hidden" aria-labelledby="acc-head-handles">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border">
+          <ul class="space-y-1 text-sm text-app-text-subtle font-mono mb-2">
+            {% for h in self_handles %}
+            <li class="px-2 py-1 bg-app-surface-alt rounded">{{ h }}</li>
+            {% endfor %}
+          </ul>
+          <p class="text-xs text-app-text-muted">Edit <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">SELF_HANDLES</code> in <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">~/.chatwire/config.json</code> (or re-run <a href="/setup?step=identity" class="text-app-primary hover:underline">setup</a>) and reload the agent to change.</p>
+        </div>
+      </div>
+
+      <!-- Whitelist -->
+      <h3 id="acc-head-whitelist">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-whitelist" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5h6m-3 7v4m-2-2h4"/></svg>
+            Whitelist
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-whitelist" class="hidden" aria-labelledby="acc-head-whitelist">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border">
+          <form class="wl-add flex gap-2 mb-3"
+                hx-post="/whitelist/add"
+                hx-target="#wl-rows"
+                hx-swap="outerHTML"
+                hx-on::after-request="if(event.detail.successful) this.reset()">
+            <input type="text" name="input" list="contact-names" placeholder="handle, contact, or [Group] name" autofocus required autocomplete="off"
+                   class="flex-1 block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500">
+            <datalist id="contact-names">
+              {% for n in contact_names %}
+              <option value="{{ n }}"></option>
+              {% endfor %}
+            </datalist>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-app-on-primary bg-app-primary rounded-lg hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300">
+              Add
+            </button>
+          </form>
+          <p class="text-xs text-app-text-muted mb-3">Phone (<code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">+15551234567</code>), email, a Contacts name, or a named group chat.</p>
+
+          <div class="flex items-center gap-2 mb-3">
+            <button type="button"
+                    class="sync-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-app-text-subtle bg-app-surface border border-app-border rounded-lg hover:bg-app-surface-hover"
+                    title="reload Contacts lookup for autocomplete"
+                    hx-post="/refresh_contacts"
+                    hx-swap="none">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M12 4V1L7 6l5 5V7a5 5 0 0 1 5 5 5 5 0 0 1-.55 2.27l1.46 1.46A7 7 0 0 0 19 12a7 7 0 0 0-7-7zm-5.45 4.27L5.09 6.81A7 7 0 0 0 5 12a7 7 0 0 0 7 7v3l5-5-5-5v3a5 5 0 0 1-5-5 5 5 0 0 1 .55-2.73z"/>
+              </svg>
+              Sync contacts
+            </button>
+            <button type="button" id="wl-list-toggle"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-app-text-subtle bg-app-surface border border-app-border rounded-lg hover:bg-app-surface-hover"
+                    onclick="(function(btn){
+                      var list = document.getElementById('wl-list-collapsible');
+                      var isHidden = list.classList.toggle('hidden');
+                      btn.querySelector('.wl-toggle-arrow').style.transform = isHidden ? '' : 'rotate(180deg)';
+                      btn.querySelector('.wl-toggle-label').textContent = isHidden ? 'Show contacts' : 'Hide contacts';
+                    })(this)">
+              <svg class="wl-toggle-arrow w-3 h-3 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+              <span class="wl-toggle-label">Show contacts</span>
+              {% if rows %}<span class="text-app-text-faint">({{ rows | length }})</span>{% endif %}
+            </button>
+          </div>
+
+          <div id="wl-list-collapsible" class="hidden">
+            {% include "_whitelist_rows.html" %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Favorites -->
+      <h3 id="acc-head-favorites">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-favorites" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+            Favorites
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-favorites" class="hidden" aria-labelledby="acc-head-favorites">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border">
+          <form class="fav-add flex gap-2 mb-3"
+                hx-post="/api/favorites/add"
+                hx-target="#sidebar"
+                hx-swap="innerHTML"
+                hx-on::after-request="if(event.detail.successful) this.reset()">
+            <input type="text" name="handle" list="contact-names" placeholder="handle or contact name" autocomplete="off" required
+                   class="flex-1 block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500">
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-app-on-primary bg-app-primary rounded-lg hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300">
+              Add
+            </button>
+          </form>
+          <p class="text-xs text-app-text-muted mb-3">Pinned contacts appear at the top of the sidebar with a ★ gold star badge.</p>
+          {% include "_favorites_rows.html" %}
+        </div>
+      </div>
+
+      <!-- Password -->
+      <h3 id="acc-head-password">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-password" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1a5 5 0 0 0-5 5v3H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V11a2 2 0 0 0-2-2h-2V6a5 5 0 0 0-5-5zm0 2a3 3 0 0 1 3 3v3H9V6a3 3 0 0 1 3-3zm0 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+            Password
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-password" class="hidden" aria-labelledby="acc-head-password">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border">
+          {% include "_password_card.html" %}
+        </div>
+      </div>
+
+      <!-- Appearance -->
+      <h3 id="acc-head-appearance">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-appearance" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            Appearance
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-appearance" class="hidden" aria-labelledby="acc-head-appearance">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border">
+          {% include "_appearance_card.html" %}
+        </div>
+      </div>
+
+      <!-- Anti-spam -->
+      <h3 id="acc-head-antispam">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-antispam" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Anti-spam
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-antispam" class="hidden" aria-labelledby="acc-head-antispam">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border space-y-4">
+          <p class="text-xs text-app-text-muted">
+            chatwire monitors outbound messages for broadcast spam. If the same
+            message (after normalisation) is sent to too many different recipients,
+            sending is progressively throttled and you receive an ntfy alert.
+          </p>
+
+          <!-- Spam whitelist textarea -->
+          <form hx-post="/api/settings/spam_whitelist"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) this.querySelector('.save-ok').classList.remove('hidden'); setTimeout(()=>this.querySelector('.save-ok').classList.add('hidden'),2000)">
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1">
+              Broadcast-whitelist names
+            </label>
+            <p class="text-xs text-app-text-muted mb-2">
+              Contact names or words stripped from messages before broadcast
+              hashing. One entry per line. Personalised greetings ("Hi Alice,")
+              won't trigger false positives when Alice is listed here.
+            </p>
+            <textarea name="spam_whitelist" rows="5"
+                      class="w-full block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500 font-mono resize-y"
+                      placeholder="Alice&#10;Bob&#10;+15551234567">{{ spam_whitelist_text }}</textarea>
+            <div class="flex items-center gap-2 mt-2">
+              <button type="submit"
+                      class="px-4 py-2 text-sm font-medium text-app-on-primary bg-app-primary rounded-lg hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300">
+                Save
+              </button>
+              <span class="save-ok hidden text-xs text-green-600">Saved</span>
+            </div>
+          </form>
+
+          <!-- ntfy topic for spam alerts -->
+          <form hx-post="/api/settings/ntfy_topic"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) this.querySelector('.save-ok').classList.remove('hidden'); setTimeout(()=>this.querySelector('.save-ok').classList.add('hidden'),2000)">
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1">
+              ntfy topic for spam alerts
+            </label>
+            <p class="text-xs text-app-text-muted mb-2">
+              Your <a href="https://ntfy.sh" target="_blank" rel="noopener" class="text-app-primary hover:underline">ntfy.sh</a>
+              topic. Leave blank to suppress notifications.
+            </p>
+            <input type="text" name="ntfy_topic" value="{{ ntfy_topic }}"
+                   placeholder="my-topic-id"
+                   class="w-full block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500">
+            <div class="flex items-center gap-2 mt-2">
+              <button type="submit"
+                      class="px-4 py-2 text-sm font-medium text-app-on-primary bg-app-primary rounded-lg hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300">
+                Save
+              </button>
+              <span class="save-ok hidden text-xs text-green-600">Saved</span>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Notifications -->
+      <h3 id="acc-head-notifications">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-notifications" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            Notifications
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-notifications" class="hidden" aria-labelledby="acc-head-notifications">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border space-y-4">
+
+          <!-- Detail level -->
+          <form hx-post="/api/settings/notification_detail"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) this.querySelector('.save-ok').classList.remove('hidden'); setTimeout(()=>this.querySelector('.save-ok').classList.add('hidden'),2000)">
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1">
+              Notification detail
+            </label>
+            <p class="text-xs text-app-text-muted mb-2">
+              Controls how much information appears in web-push notifications.
+            </p>
+            <select name="notification_detail"
+                    class="w-full block py-2 px-3 text-sm text-app-text bg-app-surface-alt border border-app-border rounded-lg focus:ring-blue-500 focus:border-blue-500">
+              <option value="rich" {% if notification_detail == "rich" %}selected{% endif %}>Rich — sender name + message text</option>
+              <option value="sender_only" {% if notification_detail == "sender_only" %}selected{% endif %}>Sender only — name, no message text</option>
+              <option value="private" {% if notification_detail == "private" %}selected{% endif %}>Private — no name, no text</option>
+            </select>
+            <div class="flex items-center gap-2 mt-2">
+              <button type="submit"
+                      class="px-4 py-2 text-sm font-medium text-app-on-primary bg-app-primary rounded-lg hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300">
+                Save
+              </button>
+              <span class="save-ok hidden text-xs text-green-600">Saved</span>
+            </div>
+          </form>
+
+          <!-- Notify mode: all vs. selected contacts -->
+          {% if contacts %}
+          <div>
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1">
+              Who can notify you
+            </label>
+            <p class="text-xs text-app-text-muted mb-2">
+              Notify from all contacts, or only hand-picked ones.
+            </p>
+            <div class="flex gap-4 mb-2">
+              <label class="flex items-center gap-2 cursor-pointer text-sm">
+                <input type="radio" name="notify_mode_radio" value="all"
+                       {% if notify_mode != "selected" %}checked{% endif %}
+                       class="w-4 h-4 text-app-primary"
+                       hx-post="/api/settings/notify_mode"
+                       hx-vals='{"notify_mode": "all"}'
+                       hx-swap="none"
+                       hx-trigger="change"
+                       hx-on::after-request="document.getElementById('notify-selected-panel').classList.add('hidden')">
+                All contacts
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer text-sm">
+                <input type="radio" name="notify_mode_radio" value="selected"
+                       {% if notify_mode == "selected" %}checked{% endif %}
+                       class="w-4 h-4 text-app-primary"
+                       hx-post="/api/settings/notify_mode"
+                       hx-vals='{"notify_mode": "selected"}'
+                       hx-swap="none"
+                       hx-trigger="change"
+                       hx-on::after-request="document.getElementById('notify-selected-panel').classList.remove('hidden')">
+                Selected contacts only
+              </label>
+            </div>
+            <div id="notify-selected-panel" {% if notify_mode != "selected" %}class="hidden"{% endif %}>
+              <p class="text-xs text-app-text-muted mb-1">Checked contacts will trigger notifications.</p>
+              <ul class="space-y-1 max-h-48 overflow-y-auto border border-app-border rounded-lg p-2">
+                {% for handle, name in contacts.items() | sort(attribute='1') %}
+                <li class="flex items-center text-sm py-0.5">
+                  <label class="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                    <input type="checkbox"
+                           class="w-4 h-4 rounded border-app-border text-app-primary focus:ring-blue-400"
+                           {% if handle in notification_selected_contacts %}checked{% endif %}
+                           hx-post="/api/settings/notification_select_toggle"
+                           hx-vals='{"handle": "{{ handle }}", "selected": "{% if handle in notification_selected_contacts %}false{% else %}true{% endif %}"}'
+                           hx-swap="none"
+                           hx-trigger="change">
+                    <span class="text-app-text truncate">{{ name or handle }}</span>
+                  </label>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Per-contact mute list -->
+          {% if contacts %}
+          <div>
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1">
+              Mute contacts
+            </label>
+            <p class="text-xs text-app-text-muted mb-2">
+              Muted contacts produce no web-push notification at all.
+            </p>
+            <ul class="space-y-1 max-h-48 overflow-y-auto">
+              {% for handle, name in contacts.items() | sort(attribute='1') %}
+              <li class="flex items-center justify-between text-sm py-1 border-b border-app-border last:border-0">
+                <label class="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                  <input type="checkbox"
+                         class="w-4 h-4 rounded border-app-border text-red-500 focus:ring-red-400"
+                         {% if handle in notification_muted_contacts %}checked{% endif %}
+                         hx-post="/api/settings/notification_mute_toggle"
+                         hx-vals='{"handle": "{{ handle }}", "muted": "{% if handle in notification_muted_contacts %}false{% else %}true{% endif %}"}'
+                         hx-swap="none"
+                         hx-trigger="change">
+                  <span class="text-app-text truncate">{{ name or handle }}</span>
+                </label>
+                {% if handle in notification_muted_contacts %}
+                <span class="text-xs text-app-text-muted ml-2 shrink-0">muted</span>
+                {% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          <!-- Hiatus mode -->
+          <form hx-post="/api/settings/hiatus_settings"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) this.querySelector('.save-ok').classList.remove('hidden'); setTimeout(()=>this.querySelector('.save-ok').classList.add('hidden'),2000)">
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1">
+              Hiatus mode
+            </label>
+            <p class="text-xs text-app-text-muted mb-2">
+              Suppress notifications while you're actively chatting — no buzz if you just sent a message to that contact within the last N minutes.
+            </p>
+            <div class="flex items-center gap-3 mb-2">
+              <label class="flex items-center gap-2 cursor-pointer text-sm">
+                <input type="checkbox" name="hiatus_enabled" value="true"
+                       {% if hiatus_enabled %}checked{% endif %}
+                       class="w-4 h-4 rounded border-app-border text-app-primary focus:ring-blue-400">
+                Enable hiatus mode
+              </label>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-app-text-muted whitespace-nowrap" for="hiatus-mins">Silence window (minutes):</label>
+              <input type="number" id="hiatus-mins" name="hiatus_duration_minutes"
+                     value="{{ hiatus_duration_minutes }}" min="1" max="1440"
+                     class="w-20 py-1.5 px-2 text-sm text-app-text bg-app-bg border border-app-border rounded-lg focus:ring-2 focus:ring-blue-300">
+            </div>
+            <div class="flex items-center gap-2 mt-2">
+              <button type="submit"
+                      class="px-4 py-2 text-sm font-medium text-app-on-primary bg-app-primary rounded-lg hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300">
+                Save
+              </button>
+              <span class="save-ok hidden text-xs text-green-600">Saved</span>
+            </div>
+          </form>
+
+          <!-- Reminder timers -->
+          <form hx-post="/api/settings/reminder_settings"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) this.querySelector('.save-ok').classList.remove('hidden'); setTimeout(()=>this.querySelector('.save-ok').classList.add('hidden'),2000)">
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1">
+              Reminder timers
+            </label>
+            <p class="text-xs text-app-text-muted mb-2">
+              Push a daily reminder when you haven't heard from someone in N days. Checks once per day.
+            </p>
+            <div class="flex items-center gap-3 mb-2">
+              <label class="flex items-center gap-2 cursor-pointer text-sm">
+                <input type="checkbox" name="reminder_enabled" value="true"
+                       {% if reminder_enabled %}checked{% endif %}
+                       class="w-4 h-4 rounded border-app-border text-app-primary focus:ring-blue-400">
+                Enable reminders
+              </label>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-app-text-muted whitespace-nowrap" for="reminder-days">Remind after (days):</label>
+              <input type="number" id="reminder-days" name="reminder_days"
+                     value="{{ reminder_days }}" min="1" max="365"
+                     class="w-20 py-1.5 px-2 text-sm text-app-text bg-app-bg border border-app-border rounded-lg focus:ring-2 focus:ring-blue-300">
+            </div>
+            <div class="flex items-center gap-2 mt-2">
+              <button type="submit"
+                      class="px-4 py-2 text-sm font-medium text-app-on-primary bg-app-primary rounded-lg hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300">
+                Save
+              </button>
+              <span class="save-ok hidden text-xs text-green-600">Saved</span>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+      <!-- Advanced -->
+      <h3 id="acc-head-advanced">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-advanced" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+            Advanced
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-advanced" class="hidden" aria-labelledby="acc-head-advanced">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border space-y-5">
+
+          <!-- Port -->
+          <div>
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1"
+                   for="web-port">
+              Port
+            </label>
+            <div class="flex items-center gap-3">
+              <input type="number" id="web-port" name="port" min="1024" max="65535"
+                     value="{{ web_port }}"
+                     class="w-32 py-2 px-3 text-sm text-app-text bg-app-bg border border-app-border rounded-lg focus:ring-2 focus:ring-blue-300"
+                     hx-post="/api/settings/port"
+                     hx-trigger="change"
+                     hx-swap="none"
+                     hx-on::after-request="
+                       if(event.detail.successful){
+                         document.getElementById('port-restart-note').classList.remove('hidden');
+                       }">
+            </div>
+            <p id="port-restart-note" class="hidden mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Port change saved — restart chatwire web for it to take effect.
+            </p>
+          </div>
+
+          <!-- Listen on -->
+          <div>
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1"
+                   for="web-bind-select">
+              Listen on
+            </label>
+            <div class="flex items-center gap-2 flex-wrap">
+              <select id="web-bind-select"
+                      class="py-2 px-3 text-sm text-app-text bg-app-bg border border-app-border rounded-lg focus:ring-2 focus:ring-blue-300"
+                      onchange="
+                        var custom = document.getElementById('web-bind-custom');
+                        if(this.value === 'custom'){
+                          custom.classList.remove('hidden');
+                        } else {
+                          custom.classList.add('hidden');
+                          document.getElementById('web-bind-hidden').value = this.value;
+                          htmx.trigger('#web-bind-form', 'submit');
+                        }">
+                <option value="127.0.0.1" {% if web_bind == '127.0.0.1' or web_bind == 'localhost' %}selected{% endif %}>localhost only</option>
+                <option value="0.0.0.0" {% if web_bind == '0.0.0.0' %}selected{% endif %}>all interfaces</option>
+                <option value="custom" {% if web_bind not in ('127.0.0.1', 'localhost', '0.0.0.0') %}selected{% endif %}>custom…</option>
+              </select>
+              <form id="web-bind-form"
+                    hx-post="/api/settings/bind"
+                    hx-swap="none"
+                    style="display:contents;">
+                <input type="hidden" id="web-bind-hidden" name="bind" value="{{ web_bind }}">
+                <input type="text" id="web-bind-custom"
+                       value="{{ web_bind if web_bind not in ('127.0.0.1', 'localhost', '0.0.0.0') else '' }}"
+                       placeholder="e.g. 192.168.1.10"
+                       class="py-2 px-3 text-sm text-app-text bg-app-bg border border-app-border rounded-lg focus:ring-2 focus:ring-blue-300 {% if web_bind in ('127.0.0.1', 'localhost', '0.0.0.0') %}hidden{% endif %}"
+                       oninput="document.getElementById('web-bind-hidden').value = this.value"
+                       onchange="htmx.trigger('#web-bind-form', 'submit')">
+              </form>
+            </div>
+            <p id="bind-all-warning"
+               class="mt-1 text-xs text-red-600 dark:text-red-400 {% if web_bind != '0.0.0.0' %}hidden{% endif %}">
+              Warning: chatwire will accept connections from any network interface. Only use this if you are behind a trusted firewall.
+            </p>
+            <script>
+              document.getElementById('web-bind-select').addEventListener('change', function(){
+                var warn = document.getElementById('bind-all-warning');
+                if(this.value === '0.0.0.0'){
+                  warn.classList.remove('hidden');
+                } else {
+                  warn.classList.add('hidden');
+                }
+              });
+            </script>
+          </div>
+
+          <!-- Reverse proxy -->
+          <div>
+            <label class="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" id="proxy-headers-toggle"
+                     class="w-4 h-4 rounded border-app-border text-blue-600 focus:ring-blue-400"
+                     {% if web_proxy_headers %}checked{% endif %}
+                     hx-post="/api/settings/proxy_headers"
+                     hx-vals='js:{"proxy_headers": document.getElementById("proxy-headers-toggle").checked ? "true" : "false"}'
+                     hx-trigger="change"
+                     hx-swap="none">
+              <span class="text-sm font-medium text-app-text">Trust reverse proxy headers</span>
+            </label>
+            <p class="mt-1 text-xs text-app-text-muted ml-7">
+              When enabled, chatwire trusts <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">X-Forwarded-For</code>
+              and <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">X-Forwarded-Proto</code> headers from an
+              upstream proxy (e.g. nginx, Caddy). Do not enable if chatwire is exposed directly to the internet.
+            </p>
+          </div>
+
+          <!-- Service status -->
+          <div>
+            <p class="text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-2">
+              Service status
+            </p>
+            <table class="w-full text-sm border-collapse" id="service-status-table">
+              <tbody>
+                {% for svc_key, svc_label in [('bridge', 'dev.chatwire.bridge'), ('web', 'dev.chatwire.web'), ('keepawake', 'dev.chatwire.keepawake')] %}
+                <tr class="border-b border-app-border last:border-0" id="svc-row-{{ svc_key }}">
+                  <td class="py-2 text-app-text font-mono text-xs">{{ svc_label }}</td>
+                  <td class="py-2 px-3">
+                    <span class="svc-status inline-flex items-center gap-1 text-xs" id="svc-status-{{ svc_key }}">
+                      <span class="w-2 h-2 rounded-full bg-app-text-muted inline-block svc-dot"></span>
+                      <span class="svc-text">…</span>
+                    </span>
+                  </td>
+                  <td class="py-2 text-right">
+                    <button type="button"
+                            class="svc-toggle-btn px-3 py-1 text-xs rounded-lg border border-app-border text-app-text hover:bg-app-surface-hover"
+                            data-service="{{ svc_key }}"
+                            onclick="__svcToggle(this)">…</button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <script>
+              (function(){
+                function pollStatus(){
+                  fetch('/api/service/status')
+                    .then(function(r){ return r.json(); })
+                    .then(function(d){
+                      ['bridge','web','keepawake'].forEach(function(k){
+                        var running = d[k];
+                        var dot = document.querySelector('#svc-status-'+k+' .svc-dot');
+                        var txt = document.querySelector('#svc-status-'+k+' .svc-text');
+                        var btn = document.querySelector('[data-service="'+k+'"]');
+                        if(!dot) return;
+                        dot.className = 'w-2 h-2 rounded-full inline-block svc-dot ' + (running ? 'bg-green-500' : 'bg-red-400');
+                        txt.textContent = running ? 'running' : 'stopped';
+                        btn.textContent = running ? 'Stop' : 'Start';
+                        btn.dataset.action = running ? 'stop' : 'start';
+                      });
+                    })
+                    .catch(function(){});
+                }
+                window.__svcToggle = function(btn){
+                  var svc = btn.dataset.service;
+                  var action = btn.dataset.action;
+                  if(!action || action === '…') return;
+                  btn.disabled = true;
+                  fetch('/api/service/toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({service: svc, action: action})
+                  }).then(function(){ setTimeout(pollStatus, 800); })
+                    .catch(function(){ btn.disabled = false; });
+                };
+                pollStatus();
+                setInterval(pollStatus, 30000);
+              })();
+            </script>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- API -->
+      <h3 id="acc-head-api">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover border-b border-app-border gap-3"
+                data-target="#acc-body-api" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l3 3-3 3m5 0h3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+            API
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-api" class="hidden" aria-labelledby="acc-head-api">
+        <div class="px-5 py-4 bg-app-surface border-b border-app-border space-y-4">
+          <p class="text-xs text-app-text-muted">
+            REST API for programmatic access to chatwire.
+            Authenticate with <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">X-API-Key: &lt;key&gt;</code>
+            on all <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">/api/v1/</code> requests.
+            Endpoints: <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">POST /api/v1/send</code>,
+            <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">GET /api/v1/messages</code>,
+            <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">GET /api/v1/conversations</code>,
+            <code class="text-xs bg-app-surface-alt px-1 py-0.5 rounded">GET /api/v1/events</code>.
+          </p>
+
+          <div>
+            <label class="block text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-1">
+              Current API key
+            </label>
+            <p class="text-sm font-mono text-app-text mb-3" id="api-key-hint">{{ api_key_hint }}</p>
+
+            <!-- Revealed once after generation -->
+            <div id="api-key-reveal" class="hidden mb-3">
+              <label class="block text-xs text-app-text-muted mb-1">
+                New key — copy now, it will not be shown again
+              </label>
+              <input type="text" readonly id="api-key-value"
+                     class="w-full py-2 px-3 text-sm font-mono text-app-text bg-app-surface-alt border border-app-border rounded-lg select-all cursor-text"
+                     onclick="this.select()">
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button type="button"
+                      hx-post="/api/settings/api_key/generate"
+                      hx-swap="none"
+                      hx-on::after-request="
+                        if(event.detail.successful){
+                          var d=JSON.parse(event.detail.xhr.responseText);
+                          document.getElementById('api-key-hint').textContent=d.hint;
+                          var inp=document.getElementById('api-key-value');
+                          inp.value=d.key;
+                          document.getElementById('api-key-reveal').classList.remove('hidden');
+                          inp.select();
+                        }"
+                      class="px-4 py-2 text-sm font-medium text-app-on-primary bg-app-primary rounded-lg hover:bg-app-primary-hover focus:ring-4 focus:ring-blue-300">
+                Generate
+              </button>
+              <button type="button"
+                      id="api-key-revoke-btn"
+                      hx-post="/api/settings/api_key/revoke"
+                      hx-swap="none"
+                      hx-confirm="Revoke the API key? Any integrations using it will stop working."
+                      hx-on::after-request="
+                        if(event.detail.successful){
+                          document.getElementById('api-key-hint').textContent='Not set';
+                          document.getElementById('api-key-reveal').classList.add('hidden');
+                        }"
+                      class="px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100
+                             {% if api_key_hint == 'Not set' %}hidden{% endif %}">
+                Revoke
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if plugins %}
+      <!-- Plugins divider -->
+      <div class="flex items-center gap-3 px-5 py-2 bg-app-bg border-b border-app-border">
+        <span class="text-xs font-semibold text-app-text-muted uppercase tracking-wider">Plugins</span>
+        <div class="flex-1 border-t border-app-border"></div>
+      </div>
+
+      {% include "_plugin_sections.html" %}
+      {% endif %}
+
+      <!-- About -->
+      <h3 id="acc-head-about">
+        <button type="button"
+                class="acc-toggle flex items-center justify-between w-full px-5 py-4 font-medium text-sm text-app-text bg-app-surface-alt hover:bg-app-surface-hover gap-3"
+                data-target="#acc-body-about" aria-expanded="false">
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-app-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            About
+          </span>
+          <svg class="acc-arrow w-3 h-3 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+      </h3>
+      <div id="acc-body-about" class="hidden" aria-labelledby="acc-head-about">
+        <div class="px-5 py-4 bg-app-surface">
+          <div class="flex items-center gap-3 mb-4">
+            <div>
+              <p class="text-sm font-semibold text-app-text">chatwire <span class="font-normal text-app-text-muted">v{{ app_version }}</span></p>
+              <p class="text-xs text-app-text-muted mt-0.5">Made by <a href="https://github.com/allenbina" target="_blank" rel="noopener" class="text-app-primary hover:underline">Allen Bina</a></p>
+            </div>
+          </div>
+
+          <p class="text-xs text-app-text-muted mb-4">
+            Released under the
+            <a href="https://github.com/allenbina/chatwire/blob/main/LICENSE" target="_blank" rel="noopener" class="text-app-primary hover:underline">MIT License</a>.
+            Source code on
+            <a href="https://github.com/allenbina/chatwire" target="_blank" rel="noopener" class="text-app-primary hover:underline">GitHub</a>.
+          </p>
+
+          <p class="text-xs font-semibold text-app-text-muted uppercase tracking-wider mb-2">Key dependencies</p>
+          <ul class="space-y-1">
+            <li class="flex items-center justify-between text-xs">
+              <a href="https://fastapi.tiangolo.com" target="_blank" rel="noopener" class="text-app-text hover:text-app-primary">FastAPI</a>
+              <span class="text-app-text-faint">MIT</span>
+            </li>
+            <li class="flex items-center justify-between text-xs">
+              <a href="https://www.uvicorn.org" target="_blank" rel="noopener" class="text-app-text hover:text-app-primary">Uvicorn</a>
+              <span class="text-app-text-faint">BSD-3-Clause</span>
+            </li>
+            <li class="flex items-center justify-between text-xs">
+              <a href="https://jinja.palletsprojects.com" target="_blank" rel="noopener" class="text-app-text hover:text-app-primary">Jinja2</a>
+              <span class="text-app-text-faint">BSD-3-Clause</span>
+            </li>
+            <li class="flex items-center justify-between text-xs">
+              <a href="https://htmx.org" target="_blank" rel="noopener" class="text-app-text hover:text-app-primary">htmx</a>
+              <span class="text-app-text-faint">BSD-2-Clause</span>
+            </li>
+            <li class="flex items-center justify-between text-xs">
+              <a href="https://tailwindcss.com" target="_blank" rel="noopener" class="text-app-text hover:text-app-primary">Tailwind CSS</a>
+              <span class="text-app-text-faint">MIT</span>
+            </li>
+            <li class="flex items-center justify-between text-xs">
+              <a href="https://pypi.org/project/cryptography/" target="_blank" rel="noopener" class="text-app-text hover:text-app-primary">cryptography</a>
+              <span class="text-app-text-faint">Apache-2.0 &amp; BSD</span>
+            </li>
+            <li class="flex items-center justify-between text-xs">
+              <a href="https://pypi.org/project/httpx/" target="_blank" rel="noopener" class="text-app-text hover:text-app-primary">httpx</a>
+              <span class="text-app-text-faint">BSD-3-Clause</span>
+            </li>
+            <li class="flex items-center justify-between text-xs">
+              <a href="https://pypi.org/project/pywebpush/" target="_blank" rel="noopener" class="text-app-text hover:text-app-primary">pywebpush</a>
+              <span class="text-app-text-faint">MPL-2.0</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Settings footer -->
+    <div class="mt-3 flex items-center justify-center gap-3 text-xs text-app-text-faint">
+      <span>
+        chatwire v{{ app_version }}
+        {%- if chatwire_latest is defined and chatwire_latest and chatwire_latest != app_version %}
+        <span class="ml-1 text-amber-600">(v{{ chatwire_latest }} available)</span>
+        {%- endif %}
+      </span>
+      <span>&middot;</span>
+      <a href="https://github.com/allenbina/chatwire/issues" target="_blank" rel="noopener"
+         class="hover:text-app-text-muted">Report a bug</a>
+      <span>&middot;</span>
+      <a href="https://github.com/sponsors/allenbina" target="_blank" rel="noopener"
+         class="hover:text-app-text-muted">&hearts; Sponsor</a>
+    </div>
+
+    {% if plugins %}
+    <div class="mt-2 flex justify-center">
+      <a href="#" class="text-xs text-app-primary hover:underline"
+         hx-get="/plugins/browse" hx-target="#main" hx-swap="innerHTML">
+        Browse available plugins &rarr;
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function() {
+  // Custom accordion: toggle body visibility + rotate arrow on click.
+  // Flowbite's built-in accordion doesn't reliably init on HTMX-loaded content.
+  var container = document.getElementById('settings-accordion');
+  if (!container) return;
+
+  container.addEventListener('click', function(e) {
+    var btn = e.target.closest('.acc-toggle');
+    if (!btn) return;
+
+    var targetSel = btn.getAttribute('data-target');
+    var body = container.querySelector(targetSel);
+    if (!body) return;
+
+    var isOpen = !body.classList.contains('hidden');
+
+    // Toggle the clicked section (independent — other sections stay as-is).
+    if (isOpen) {
+      body.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+      var arrow = btn.querySelector('.acc-arrow');
+      if (arrow) arrow.style.transform = '';
+    } else {
+      body.classList.remove('hidden');
+      btn.setAttribute('aria-expanded', 'true');
+      var arrow = btn.querySelector('.acc-arrow');
+      if (arrow) arrow.style.transform = 'rotate(180deg)';
+    }
+  });
+})();
+</script>

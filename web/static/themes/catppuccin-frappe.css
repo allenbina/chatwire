@@ -1,0 +1,59 @@
+/*
+ * Catppuccin Frappé — https://catppuccin.com/  (MIT)
+ *
+ * Mid-dark flavor — softer than Macchiato/Mocha, the warmest of the
+ * dark Catppuccin trio. Mauve maps to primary, matching the family.
+ *
+ * Canonical palette (frappé):
+ *   base #303446  mantle #292c3c  crust #232634
+ *   text #c6d0f5  subtext0 #a5adce  subtext1 #b5bfe2
+ *   surface0 #414559  surface1 #51576d  surface2 #626880
+ *   rosewater #f2d5cf  flamingo #eebebe  pink #f4b8e4  mauve #ca9ee6
+ *   red #e78284  maroon #ea999c  peach #ef9f76  yellow #e5c890
+ *   green #a6d189  teal #81c8be  sky #99d1db  sapphire #85c1dc
+ *   blue #8caaee  lavender #babbf1
+ */
+
+[data-theme="catppuccin-frappe"] {
+  /* Surfaces */
+  --app-color-bg: #303446;
+  --app-color-surface: #303446;
+  --app-color-surface-alt: #292c3c;
+  --app-color-surface-hover: #414559;
+  --app-color-border: #51576d;
+  --app-color-border-subtle: #3e4154;
+
+  /* Text */
+  --app-color-text: #c6d0f5;
+  --app-color-text-subtle: #b5bfe2;
+  --app-color-text-muted: #a5adce;
+  --app-color-text-faint: #838ba7;
+
+  /* Accents */
+  --app-color-primary: #ca9ee6;
+  --app-color-primary-hover: #b288ce;
+  --app-color-on-primary: #303446;
+
+  /* Status */
+  --app-color-success: #a6d189;
+  --app-color-success-bg: #2c3a26;
+  --app-color-success-border: #46553a;
+  --app-color-warning: #e5c890;
+  --app-color-warning-bg: #3a3220;
+  --app-color-warning-border: #5a4f30;
+  --app-color-danger: #e78284;
+  --app-color-danger-bg: #3a2329;
+  --app-color-danger-border: #6c3942;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #414559;
+  --app-color-bubble-sms-bg: #a6d189;
+
+  /* Code */
+  --app-color-code-bg: #232634;
+  --app-color-code-text: #c6d0f5;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #8caaee;
+  --app-color-avatar-fallback-group-bg: #ca9ee6;
+}

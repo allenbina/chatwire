@@ -1,0 +1,55 @@
+/*
+ * Dracula — https://draculatheme.com/  (MIT)
+ *
+ * Canonical palette:
+ *   Background  #282a36   Current Line  #44475a   Foreground  #f8f8f2
+ *   Comment     #6272a4   Cyan          #8be9fd   Green       #50fa7b
+ *   Orange      #ffb86c   Pink          #ff79c6   Purple      #bd93f9
+ *   Red         #ff5555   Yellow        #f1fa8c
+ *
+ * Purple is Dracula's signature accent; primary maps there.
+ */
+
+[data-theme="dracula"] {
+  /* Surfaces */
+  --app-color-bg: #282a36;
+  --app-color-surface: #282a36;
+  --app-color-surface-alt: #21222c;
+  --app-color-surface-hover: #343746;
+  --app-color-border: #44475a;
+  --app-color-border-subtle: #353746;
+
+  /* Text */
+  --app-color-text: #f8f8f2;
+  --app-color-text-subtle: #d8d8d2;
+  --app-color-text-muted: #a8a8a2;
+  --app-color-text-faint: #6272a4;
+
+  /* Accents */
+  --app-color-primary: #bd93f9;
+  --app-color-primary-hover: #a679f0;
+  --app-color-on-primary: #282a36;
+
+  /* Status */
+  --app-color-success: #50fa7b;
+  --app-color-success-bg: #1d3a25;
+  --app-color-success-border: #2c5037;
+  --app-color-warning: #f1fa8c;
+  --app-color-warning-bg: #3a3a20;
+  --app-color-warning-border: #5a5a30;
+  --app-color-danger: #ff5555;
+  --app-color-danger-bg: #3a1f1f;
+  --app-color-danger-border: #6c2c2c;
+
+  /* Bubbles */
+  --app-color-bubble-them-bg: #44475a;
+  --app-color-bubble-sms-bg: #50fa7b;
+
+  /* Code */
+  --app-color-code-bg: #21222c;
+  --app-color-code-text: #f8f8f2;
+
+  /* Avatar fallbacks */
+  --app-color-avatar-fallback-bg: #6272a4;
+  --app-color-avatar-fallback-group-bg: #bd93f9;
+}

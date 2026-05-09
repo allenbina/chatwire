@@ -1,0 +1,212 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  background-color: var(--app-color-bg);
+  color: var(--app-color-text);
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+#main {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--app-color-bg);
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+/*
+ * Explicit CSS-variable color rules.
+ * The Tailwind CDN play mode can mangle var() references when generating
+ * color utilities (wrapping in rgb() which breaks hex custom properties).
+ * These rules guarantee theme colors apply regardless of CDN behavior.
+ */
+.text-app-text { color: var(--app-color-text) !important; }
+.text-app-text-subtle { color: var(--app-color-text-subtle) !important; }
+.text-app-text-muted { color: var(--app-color-text-muted) !important; }
+.text-app-text-faint { color: var(--app-color-text-faint) !important; }
+.text-app-on-primary { color: var(--app-color-on-primary) !important; }
+.text-app-primary { color: var(--app-color-primary) !important; }
+.text-app-success { color: var(--app-color-success) !important; }
+.text-app-warning { color: var(--app-color-warning) !important; }
+.text-app-danger { color: var(--app-color-danger) !important; }
+
+.bg-app-bg { background-color: var(--app-color-bg) !important; }
+.bg-app-surface { background-color: var(--app-color-surface) !important; }
+.bg-app-surface-alt { background-color: var(--app-color-surface-alt) !important; }
+.bg-app-surface-hover { background-color: var(--app-color-surface-hover) !important; }
+.bg-app-primary { background-color: var(--app-color-primary) !important; }
+.bg-app-primary-hover { background-color: var(--app-color-primary-hover) !important; }
+.bg-app-bubble-them { background-color: var(--app-color-bubble-them-bg) !important; }
+.bg-app-danger-bg { background-color: var(--app-color-danger-bg) !important; }
+.bg-app-warning-bg { background-color: var(--app-color-warning-bg) !important; }
+.bg-app-success-bg { background-color: var(--app-color-success-bg) !important; }
+
+.border-app-border { border-color: var(--app-color-border) !important; }
+.border-app-border-subtle { border-color: var(--app-color-border-subtle) !important; }
+.border-app-danger-border { border-color: var(--app-color-danger-border) !important; }
+
+.divide-app-border-subtle > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--app-color-border-subtle) !important;
+}
+
+.fill-app-primary { fill: var(--app-color-primary) !important; }
+
+/* Hover variants — only apply on hover */
+.hover\:bg-app-surface-hover:hover { background-color: var(--app-color-surface-hover) !important; }
+.hover\:bg-app-primary-hover:hover { background-color: var(--app-color-primary-hover) !important; }
+.hover\:text-app-text:hover { color: var(--app-color-text) !important; }
+.hover\:text-app-text-subtle:hover { color: var(--app-color-text-subtle) !important; }
+.hover\:text-app-danger:hover { color: var(--app-color-danger) !important; }
+
+/* Ghost bubble: JS-created optimistic message has no Tailwind classes */
+.msg.me.ghost {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+.msg.me.ghost .bubble {
+  max-width: 20rem;
+  padding: 0.5rem 1rem;
+  border-radius: 1rem;
+  border-bottom-right-radius: 0.125rem;
+  background: var(--app-color-primary);
+  color: var(--app-color-on-primary);
+  font-size: 0.875rem;
+}
+.msg.me.ghost .ts {
+  font-size: 0.75rem;
+  color: var(--app-color-text-faint);
+  margin-top: 0.25rem;
+}
+
+/* ---------------------------------------------------------------
+ * Gallery grid: multi-photo layout inside a message bubble.
+ * Classes applied by the _messages.html template based on image count.
+ * --------------------------------------------------------------- */
+.gallery-grid {
+  display: grid;
+  gap: 2px;
+  max-width: var(--gallery-max-width, 320px);
+  overflow: hidden;
+  border-radius: 1rem;
+}
+/* 1 photo: full width — same visual as existing single-image behaviour */
+.gallery-grid.gallery-1  { grid-template-columns: 1fr; }
+/* 2 photos: 50/50 side by side */
+.gallery-grid.gallery-2  { grid-template-columns: 1fr 1fr; }
+/* 3 photos: large left (66%), two stacked right (33% each) */
+.gallery-grid.gallery-3  { grid-template-columns: 2fr 1fr; }
+.gallery-grid.gallery-3 .gallery-item:first-child { grid-row: span 2; }
+/* 4 photos: 2×2 grid */
+.gallery-grid.gallery-4  { grid-template-columns: 1fr 1fr; }
+/* 5+ photos: 2×2 grid showing 4 cells, 4th has "+N" overlay */
+.gallery-grid.gallery-5p { grid-template-columns: 1fr 1fr; }
+
+.gallery-grid .gallery-item {
+  position: relative;
+  overflow: hidden;
+  /* Consistent cell height so grids look uniform */
+  aspect-ratio: 1 / 1;
+}
+.gallery-grid.gallery-1 .gallery-item { aspect-ratio: unset; }
+.gallery-grid .gallery-item a.media { display: block; width: 100%; height: 100%; }
+.gallery-grid .gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* "+N more" overlay on the 4th cell when there are 5+ images */
+.gallery-overflow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1.5rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------
+ * Lightbox thumbnail strip (inside #media-dialog)
+ * --------------------------------------------------------------- */
+#media-thumb-strip {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.55);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.3) transparent;
+}
+#media-thumb-strip img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.6;
+  border: 2px solid transparent;
+  flex-shrink: 0;
+  transition: opacity .15s, border-color .15s;
+}
+#media-thumb-strip img.active {
+  opacity: 1;
+  border-color: #fff;
+}
+
+/* --- Tablet: narrower sidebar, still two-pane --- */
+@media (min-width: 768px) and (max-width: 1023px) {
+  body { grid-template-columns: 280px 1fr; }
+}
+
+/* --- Phone: single-pane stack toggled by body[data-view] --- */
+@media (max-width: 767px) {
+  body { grid-template-columns: 1fr; }
+
+  /* Default: show sidebar, hide main. data-view="main" flips it. */
+  body:not([data-view="main"]) #main { display: none; }
+  body[data-view="main"] #sidebar { display: none; }
+  body[data-view="main"] #main { display: flex; }
+}
+
+/* --- Accessibility: screen-reader only --- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.sr-only:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
