@@ -65,6 +65,8 @@ Two things happened on May 4 in close sequence:
 1. The OSS-prep work in the POC repo wrapped, and a new repo — `chatwire-dev` — was spun up as the new private dev surface. The old repo got archived in spirit, kept around for history.
 2. **I upgraded from Claude Pro ($20) to Claude Max ($100).** Reason: I was tired of waiting for tokens to refresh. The throughput delta was the inflection point of the whole project.
 
+![Me, begging for tokens, mid-build](./assets/branding/need-ai-tokens.png)
+
 This is the single biggest lesson from the build: **the marginal cost of more Claude tokens is dramatically lower than the marginal cost of waiting for them.** Once I stopped throttling, the project's velocity changed shape.
 
 > "Went from babysitting a terminal to running a finely-oiled machine."
@@ -171,3 +173,5 @@ A short list, biased towards the things I think will be useful for someone consi
 ## Want to support this work?
 
 [github.com/sponsors/allenbina](https://github.com/sponsors/allenbina)
+
+If enough people throw $100 at this, I'll build a native macOS app that does exactly the same thing but wastes 200 MB. *Jk* — I'll use [Tauri](https://tauri.app/) and waste 15.
