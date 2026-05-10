@@ -199,7 +199,18 @@
     .stats { grid-template-columns: 1fr; }
     .install { flex-direction: column; align-items: stretch; }
     .install code { white-space: pre-wrap; word-break: break-all; }
+    .team-grid { grid-template-columns: 1fr 1fr; }
   }
+
+  /* team grid */
+  .team-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0 1.5rem; }
+  .team-card { text-align: center; padding: 0.5rem; }
+  .team-card .pic { width: 88px; height: 88px; border-radius: 50%; margin: 0 auto 0.5rem; background: var(--bg-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .team-card .pic img { width: 100%; height: 100%; object-fit: cover; }
+  .team-card .pic .bot { font-size: 2.4rem; line-height: 1; }
+  .team-card strong { display: block; color: var(--fg); font-size: 0.92rem; }
+  .team-card .role { display: block; font-size: 0.78rem; color: var(--accent); letter-spacing: 0.03em; margin-top: 0.1rem; }
+  .team-card .quip { display: block; font-size: 0.72rem; color: var(--fg-faint); font-style: italic; margin-top: 0.4rem; line-height: 1.45; }
 </style>
 </head>
 <body>
@@ -308,6 +319,47 @@
     <div class="stat"><span class="num">1</span><span class="label">developer</span></div>
   </div>
   <p>The full build journey — three repos, ~377 commits, the Pro→Max upgrade, MCP integration, and the laptop-to-server autonomy handoff — is in <a href="https://github.com/allenbina/chatwire/blob/main/JOURNEY.md">JOURNEY.md</a>. The project's stance on automation and bulk-send is in <a href="https://github.com/allenbina/chatwire/blob/main/PHILOSOPHY.md">PHILOSOPHY.md</a>. The <a href="https://github.com/allenbina/press">press kit</a> has bios and outreach materials.</p>
+
+  <h2>The team</h2>
+  <p>In the spirit of full transparency:</p>
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="pic"><img src="img/team/allen-placeholder.svg" alt="Allen Bina"></div>
+      <strong>Allen Bina</strong>
+      <span class="role">CEO</span>
+      <span class="quip">"Vision, strategy, rage-quitting at 2am"</span>
+    </div>
+    <div class="team-card">
+      <div class="pic"><img src="img/team/allen-placeholder.svg" alt="Allen Bina"></div>
+      <strong>Allen Bina</strong>
+      <span class="role">CFO</span>
+      <span class="quip">"Approved every expense"</span>
+    </div>
+    <div class="team-card">
+      <div class="pic"><img src="img/team/allen-placeholder.svg" alt="Allen Bina"></div>
+      <strong>Allen Bina</strong>
+      <span class="role">CTO</span>
+      <span class="quip">"Argues with Engineering daily"</span>
+    </div>
+    <div class="team-card">
+      <div class="pic"><img src="img/team/allen-placeholder.svg" alt="Allen Bina"></div>
+      <strong>Allen Bina</strong>
+      <span class="role">Marketing</span>
+      <span class="quip">"Tweets occasionally"</span>
+    </div>
+    <div class="team-card">
+      <div class="pic"><span class="bot" aria-label="robot">🤖</span></div>
+      <strong>Claude</strong>
+      <span class="role">Engineering</span>
+      <span class="quip">"401 commits, 0 sick days"</span>
+    </div>
+    <div class="team-card">
+      <div class="pic"><img src="img/team/allen-placeholder.svg" alt="Allen Bina"></div>
+      <strong>Allen Bina</strong>
+      <span class="role">Customer Support</span>
+      <span class="quip">"Reads every GitHub issue"</span>
+    </div>
+  </div>
 
   <h2>Install</h2>
 <pre class="steps"><span class="c"># 1. install</span>
