@@ -3,12 +3,17 @@ import { createRoot } from 'react-dom/client'
 import ReactDOM from 'react-dom'
 import './index.css'
 import App from './App.tsx'
-import { applyTheme } from './hooks/useTheme.ts'
 import { registerSlot } from './plugins/registry.ts'
 
-// Apply the persisted theme immediately (before first render) to avoid FOUC.
-const saved = localStorage.getItem('chatwire-theme')
-applyTheme(saved ?? 'dracula')
+// Apply persisted color scheme + structural style before first render to avoid FOUC.
+document.documentElement.setAttribute(
+  'data-theme',
+  localStorage.getItem('chatwire-theme') ?? 'dracula',
+)
+document.documentElement.setAttribute(
+  'data-style',
+  localStorage.getItem('chatwire-style') ?? 'default',
+)
 
 // ---------------------------------------------------------------------------
 // Built-in plugin registrations (lazy — not in the main bundle)

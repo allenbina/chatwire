@@ -28,7 +28,7 @@ function linkify(text: string): string {
     URL_RE,
     (url) =>
       `<a href="${url}" target="_blank" rel="noopener noreferrer"
-          class="text-[--color-info] underline hover:text-[--color-accent]"
+          class="text-[--info] underline hover:text-primary"
         >${url}</a>`,
   )
 }
@@ -76,11 +76,11 @@ function FileAttachment({ att }: { att: Attachment }) {
       target="_blank"
       rel="noopener noreferrer"
       download={att.name}
-      className="flex items-center gap-2 px-3 py-2 rounded bg-[--color-bg-tertiary]
-                 text-xs text-[--color-text-primary] hover:text-[--color-accent] transition-colors"
+      className="flex items-center gap-2 px-3 py-2 rounded bg-muted
+                 text-xs text-foreground hover:text-primary transition-colors"
     >
       <svg
-        className="w-4 h-4 shrink-0 text-[--color-text-muted]"
+        className="w-4 h-4 shrink-0 text-muted-foreground"
         fill="none"
         stroke="currentColor"
         strokeWidth={2}
@@ -92,7 +92,7 @@ function FileAttachment({ att }: { att: Attachment }) {
         <polyline points="14 2 14 8 20 8" />
       </svg>
       <span className="truncate max-w-[200px]">{att.name}</span>
-      {sizeStr && <span className="shrink-0 text-[--color-text-muted]">{sizeStr}</span>}
+      {sizeStr && <span className="shrink-0 text-muted-foreground">{sizeStr}</span>}
     </a>
   )
 }
@@ -123,8 +123,8 @@ function PreviewCard({ preview }: { preview: LinkPreview }) {
       href={preview.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="block mt-1 rounded border border-[--color-border] overflow-hidden
-                 hover:border-[--color-accent] transition-colors max-w-xs"
+      className="block mt-1 rounded border border-border overflow-hidden
+                 hover:border-primary transition-colors max-w-xs"
     >
       {imgSrc && (
         <img
@@ -134,15 +134,15 @@ function PreviewCard({ preview }: { preview: LinkPreview }) {
           loading="lazy"
         />
       )}
-      <div className="px-3 py-2 bg-[--color-bg-tertiary]">
+      <div className="px-3 py-2 bg-muted">
         {preview.title && (
-          <p className="text-sm font-medium text-[--color-text-primary] truncate">{preview.title}</p>
+          <p className="text-sm font-medium text-foreground truncate">{preview.title}</p>
         )}
         {preview.description && (
-          <p className="text-xs text-[--color-text-muted] mt-0.5 line-clamp-2">{preview.description}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{preview.description}</p>
         )}
         {preview.url && (
-          <p className="text-xs text-[--color-info] mt-0.5 truncate">{preview.url}</p>
+          <p className="text-xs text-[--info] mt-0.5 truncate">{preview.url}</p>
         )}
       </div>
     </a>
@@ -171,7 +171,7 @@ function DeliveryBadge({ status, hint }: { status: string; hint?: string }) {
   }
   // ghost / other
   return (
-    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 text-[--color-warning]" title={hint}>
+    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 text-[--warning]" title={hint}>
       {status}
     </Badge>
   )
@@ -220,7 +220,7 @@ export function MessageBubble({ msg, pending = false }: MessageBubbleProps) {
       {otherAtts.length > 0 && (
         <div
           className={[
-            'rounded-2xl overflow-hidden flex flex-col gap-0.5',
+            'rounded-[var(--radius-bubble)] overflow-hidden flex flex-col gap-0.5',
             isMine ? 'rounded-br-sm' : 'rounded-bl-sm',
             'max-w-xs',
           ].join(' ')}
@@ -235,10 +235,10 @@ export function MessageBubble({ msg, pending = false }: MessageBubbleProps) {
       {(msg.text || msg.link_preview) && !msg.link_preview && msg.text && (
         <div
           className={[
-            'rounded-2xl px-3 py-2 text-sm break-words',
+            'rounded-[var(--radius-bubble)] p-[var(--spacing-message)] text-[length:var(--font-size-message)] break-words',
             isMine
-              ? 'rounded-br-sm bg-[--color-msg-me] text-[--color-text-primary]'
-              : 'rounded-bl-sm bg-[--color-msg-them] text-[--color-text-primary]',
+              ? 'rounded-br-sm bg-[--msg-me] text-foreground'
+              : 'rounded-bl-sm bg-[--msg-them] text-foreground',
           ].join(' ')}
         >
           <p
@@ -252,10 +252,10 @@ export function MessageBubble({ msg, pending = false }: MessageBubbleProps) {
       {msg.link_preview && (
         <div
           className={[
-            'rounded-2xl px-3 py-2 text-sm break-words',
+            'rounded-[var(--radius-bubble)] p-[var(--spacing-message)] text-[length:var(--font-size-message)] break-words',
             isMine
-              ? 'rounded-br-sm bg-[--color-msg-me] text-[--color-text-primary]'
-              : 'rounded-bl-sm bg-[--color-msg-them] text-[--color-text-primary]',
+              ? 'rounded-br-sm bg-[--msg-me] text-foreground'
+              : 'rounded-bl-sm bg-[--msg-them] text-foreground',
           ].join(' ')}
         >
           {msg.text && (
@@ -271,7 +271,7 @@ export function MessageBubble({ msg, pending = false }: MessageBubbleProps) {
       {/* Timestamp + status */}
       <div
         className={[
-          'flex items-center gap-1 text-[10px] text-[--color-text-muted]',
+          'flex items-center gap-1 text-[10px] text-muted-foreground',
           isMine ? 'flex-row-reverse' : '',
         ].join(' ')}
       >

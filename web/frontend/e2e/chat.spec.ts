@@ -33,7 +33,7 @@ test.describe('Chat flow', () => {
   })
 
   test('conversation list loads', async ({ page }) => {
-    await page.goto('/app/')
+    await page.goto('/')
 
     // MOCK_CONVERSATIONS[0] is a handle conversation with name: 'Alice'
     const alice = page.getByText(MOCK_CONVERSATIONS[0].name)
@@ -45,13 +45,13 @@ test.describe('Chat flow', () => {
   })
 
   test('clicking a conversation navigates to the chat URL', async ({ page }) => {
-    await page.goto('/app/')
+    await page.goto('/')
 
     // Click the first conversation in the list by display name
     await page.getByText(MOCK_CONVERSATIONS[0].name).first().click()
 
-    // URL should update to /app/chat/:handle (React Router navigate + basename prepend)
-    await page.waitForURL(/\/app\/chat\//, { timeout: 5_000 })
+    // URL should update to /chat/:handle
+    await page.waitForURL(/\/chat\//, { timeout: 5_000 })
 
     // Compose box appears once a conversation is active (independent of virtualizer)
     const compose = page.getByRole('textbox', { name: /type a message/i })
@@ -65,7 +65,7 @@ test.describe('Chat flow', () => {
         ? MOCK_CONVERSATIONS[0].handle
         : (MOCK_CONVERSATIONS[0] as { guid: string }).guid
     )
-    await page.goto(`/app/chat/${handle}`)
+    await page.goto(`/chat/${handle}`)
 
     // Wait for the compose box — signals that the conversation loaded
     const compose = page.getByRole('textbox', { name: /type a message/i })

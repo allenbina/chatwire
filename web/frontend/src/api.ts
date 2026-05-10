@@ -51,7 +51,10 @@ export interface HandleConversation {
   preview: string
   has_media: boolean
   last_dt: number
+  last_rowid: number
+  last_seen_rowid: number
   n: number
+  unseen: boolean
   all_handles: string[]
   is_favorite: boolean
   last: string
@@ -65,16 +68,61 @@ export interface GroupConversation {
   preview: string
   has_media: boolean
   last_dt: number
+  last_rowid: number
+  last_seen_rowid: number
   n: number
+  unseen: boolean
   is_favorite: boolean
   last: string
 }
 
 export type Conversation = HandleConversation | GroupConversation
 
-/** Returns the routing key (URL-safe identifier) for a conversation. */
+/** Convert a display name to a URL-safe slug (lowercase, hyphens, no specials). */
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')                     // decompose accented chars
+    .replace(/[\u0300-\u036f]/g, '')      // strip combining marks
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'conversation'
+}
+
+/**
+ * Returns the routing key (URL path segment) for a conversation.
+ *
+ * When the conversation has a display name, a slugified version is used so
+ * URLs are human-readable (/chat/sarah-chen instead of /chat/%2B14695551234).
+ * Group GUIDs are always used as-is (they're already URL-safe opaque tokens).
+ */
 export function convRouteKey(c: Conversation): string {
-  return c.kind === 'group' ? c.guid : c.handle
+  const name = c.name?.trim()
+  if (c.kind === 'handle') {
+    return name ? slugify(name) : c.handle
+  }
+  // For groups: slugify the name if present, fall back to GUID.
+  return name ? slugify(name) : c.guid
+}
+
+/**
+ * Resolve a URL slug or raw handle/guid back to the conversation's real handle.
+ *
+ * If `param` already looks like a raw handle (+, @, or ; present), return it
+ * unchanged. Otherwise search `conversations` for a matching route key.
+ *
+ * Returns null when `conversations` is empty (still loading) or no match.
+ */
+export function resolveConvoHandle(
+  param: string,
+  conversations: Conversation[],
+): string | null {
+  if (!param) return null
+  // Already a raw handle — phone (+), email (@), or group GUID (;)
+  if (/[+@;]/.test(param)) return param
+  const convo = conversations.find((c) => convRouteKey(c) === param)
+  if (!convo) return null
+  return convo.kind === 'group' ? convo.guid : convo.handle
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +133,7 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { credentials: 'same-origin', ...init })
   if (res.status === 401) {
     // Session expired — redirect to the React login page preserving current location.
-    window.location.href = `/app/login?next=${encodeURIComponent(window.location.pathname)}`
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`
     throw new Error('Unauthenticated')
   }
   if (!res.ok) {
@@ -102,6 +150,18 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
 export async function fetchConversations(): Promise<Conversation[]> {
   const data = await fetchJson<{ conversations: Conversation[] }>('/api/ui/conversations')
   return data.conversations
+}
+
+export async function markSeen(conversationId: string, lastRowid: number): Promise<void> {
+  await fetchJson('/api/ui/read-state', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversation_id: conversationId, last_rowid: lastRowid }),
+  })
+}
+
+export async function markAllSeen(): Promise<void> {
+  await fetchJson('/api/ui/read-state/all', { method: 'POST' })
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +232,7 @@ export async function sendFile(
     body: fd,
   })
   if (res.status === 401) {
-    window.location.href = `/app/login?next=${encodeURIComponent(window.location.pathname)}`
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`
     throw new Error('Unauthenticated')
   }
   if (!res.ok) {
@@ -188,4 +248,58 @@ export async function sendFile(
 
 export async function fetchThemes(): Promise<{ themes: string[]; current: string }> {
   return fetchJson('/api/ui/themes')
+}
+
+// ---------------------------------------------------------------------------
+// Contact info sheet
+// ---------------------------------------------------------------------------
+
+export interface HandleRow {
+  handle: string
+  capability: string
+  cap_class: string
+}
+
+export interface MemberRow {
+  handle: string
+  name: string
+  capability: string
+  cap_class: string
+}
+
+export interface MediaEntry {
+  path: string
+  name: string
+  mime: string
+  kind: 'image' | 'video'
+}
+
+export interface HandleContactInfo {
+  kind: 'handle'
+  handle: string
+  name: string
+  subtitle: string
+  handles: HandleRow[]
+  media: MediaEntry[]
+}
+
+export interface GroupContactInfo {
+  kind: 'group'
+  chat: string
+  name: string
+  subtitle: string
+  members: MemberRow[]
+  media: MediaEntry[]
+}
+
+export type ContactInfo = HandleContactInfo | GroupContactInfo
+
+export async function fetchContactInfo(id: string, isGroup: boolean): Promise<ContactInfo> {
+  const params = new URLSearchParams(isGroup ? { guid: id } : { handle: id })
+  return fetchJson(`/api/ui/contact-info?${params}`)
+}
+
+export async function removeFromWhitelist(id: string, isGroup: boolean): Promise<void> {
+  const params = new URLSearchParams(isGroup ? { guid: id } : { handle: id })
+  await fetchJson(`/api/ui/whitelist?${params}`, { method: 'DELETE' })
 }

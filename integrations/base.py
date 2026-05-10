@@ -32,9 +32,14 @@ __all__ = [
     "BridgeContext",
     "InboundMessage",
     "Integration",
+    "OfficialMessage",
+    "SanitizedEvent",
     "SendOutcome",
     "SendTarget",
 ]
+
+# Re-export sandbox types so integrations can import from one place.
+from integrations.sandbox import OfficialMessage, SanitizedEvent  # noqa: E402
 
 
 @dataclass
@@ -209,6 +214,22 @@ class Integration(Protocol):
     Examples: "telegram", "webhook", "web", "slack". Must be a valid
     Python identifier so it can also be a module name."""
 
+    TIER: str
+    """Sandbox tier. Controls what data this integration may receive.
+
+    Values:
+      "ui"       — No data access. CSS/theme/frontend slots only.
+      "notify"   — SanitizedEvent only (sender display name, no text/PII).
+      "official" — OfficialMessage (text + opaque conv ID). Must be reviewed
+                   and signed by project maintainer.
+      "core"     — Built-in component; bypasses sandboxing entirely. Never
+                   installable separately.
+
+    Default for backward compatibility: ``"official"``.
+    Third-party plugins built with the SDK default to ``"notify"`` (safe by
+    default — see ``packages/sdk/``).
+    """
+
     SETTINGS_SCHEMA: dict
     """JSON Schema describing this integration's config block. The web UI's
     settings page renders form controls from this; the core uses it to
@@ -243,8 +264,30 @@ class Integration(Protocol):
         echo dedup; the integration just decides how to render this event
         on its surface (post to Telegram, push to a webhook, store in a
         DB, etc.).
+
+        Called only for ``"official"`` tier plugins that do NOT implement
+        ``on_official_message()``.  New official plugins should implement
+        ``on_official_message()`` instead; ``on_inbound()`` is kept for
+        backward compatibility.
+
+        ``"notify"`` tier plugins receive ``on_notify()`` instead.
+        ``"ui"`` tier plugins receive no bridge hooks at all.
         """
         ...
+
+    # ------------------------------------------------------------------
+    # Optional sandbox hooks — NOT required Protocol members.
+    # The bridge calls these (when present) instead of on_inbound() for
+    # sandboxed tiers. Integrations that omit them are skipped silently.
+    #
+    # async def on_notify(self, event: SanitizedEvent) -> None:
+    #     """Called for 'notify'-tier integrations. No PII — sender display
+    #     name, is_group, group_name, has_attachment, timestamp only."""
+    #
+    # async def on_official_message(self, msg: OfficialMessage) -> None:
+    #     """Called for 'official'-tier integrations instead of on_inbound().
+    #     Receives text + opaque conversation ID. No raw handles/paths."""
+    # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
     # Optional transform hooks — NOT required Protocol members.

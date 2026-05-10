@@ -6,9 +6,12 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { Toaster as Sonner } from 'sonner'
-import { THEME_MAP } from '../../themes'
+import { allSchemes } from '../../hooks/useTheme'
 
 type ToasterProps = React.ComponentProps<typeof Sonner>
+
+// Light scheme names set — used to derive Sonner's light/dark mode.
+const lightSchemes = new Set(allSchemes.filter((s) => s.isLight).map((s) => s.name))
 
 /**
  * Sonner toaster wired to our runtime theme system.
@@ -21,7 +24,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
   const stored = typeof window !== 'undefined'
     ? (localStorage.getItem('chatwire-theme') ?? 'dracula')
     : 'dracula'
-  const isLight = THEME_MAP[stored]?.isLight ?? false
+  const isLight = lightSchemes.has(stored)
   const scheme: ToasterProps['theme'] = isLight ? 'light' : 'dark'
 
   return (

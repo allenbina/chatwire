@@ -49,25 +49,25 @@ export function StatsWidget() {
 
   return (
     <div
-      className="border-t border-[--color-border] px-3 py-3 text-xs text-[--color-text-muted]"
+      className="border-t border-border px-3 py-3 text-xs text-muted-foreground"
       role="complementary"
       aria-label="Message statistics"
     >
       {/* Header row */}
       <div className="flex items-center justify-between mb-2">
-        <span className="font-semibold text-[--color-text-secondary] uppercase tracking-wider text-[10px]">
+        <span className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
           Stats
         </span>
       </div>
 
       {/* Sent / received bar */}
-      <p className="text-[10px] text-[--color-text-muted] mb-1">
+      <p className="text-[10px] text-muted-foreground mb-1">
         {rangeLabel[data.date_range ?? '30d'] ?? data.date_range} · {total.toLocaleString()} msgs
       </p>
       {total > 0 && (
-        <div className="flex h-1.5 rounded-full overflow-hidden bg-[--color-bg-tertiary] mb-2">
+        <div className="flex h-1.5 rounded-full overflow-hidden bg-muted mb-2">
           <div
-            className="bg-[--color-accent] h-full transition-all"
+            className="bg-primary h-full transition-all"
             style={{ width: `${sentPct}%` }}
             aria-label={`${sentPct}% sent`}
           />
@@ -86,7 +86,7 @@ export function StatsWidget() {
               <span className="truncate max-w-[120px]" title={c.handle}>
                 {c.name}
               </span>
-              <span className="shrink-0 font-mono text-[--color-text-primary]">
+              <span className="shrink-0 font-mono text-foreground">
                 {c.count.toLocaleString()}
               </span>
             </div>

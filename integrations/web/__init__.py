@@ -31,6 +31,7 @@ log = logging.getLogger("chatwire.web")
 
 class WebIntegration:
     NAME = "web"
+    TIER = "core"  # Built-in web UI; bypasses sandboxing; never separately installable.
     DISPLAY_NAME = "Web UI"
     DESCRIPTION = "Run the web interface in-process"
     ICON = "🌐"

@@ -55,13 +55,13 @@ LOGIN_WINDOW_S = 15 * 60
 _PUBLIC_PATHS = frozenset({
     "/logout", "/healthz", "/version",
     "/favicon.ico", "/favicon.svg",
-    "/app/login",              # React login page (SPA route) — must load without a cookie
-    "/app/manifest.webmanifest",  # PWA manifest
+    "/login",                 # React login page (SPA route) — must load without a cookie
+    "/manifest.webmanifest",  # PWA manifest
     "/api/ui/auth/login",     # React login JSON endpoint — must be reachable without a cookie
 })
 _PUBLIC_PREFIXES = (
     "/static/",
-    "/app/assets/",  # React SPA JS/CSS chunks — must load for the login page
+    "/assets/",  # React SPA JS/CSS chunks — must load for the login page
 )
 
 

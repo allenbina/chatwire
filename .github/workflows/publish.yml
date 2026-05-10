@@ -24,10 +24,10 @@ name: Publish to PyPI
 #   HOMEBREW_TAP_TOKEN — classic PAT with `repo` scope on allenbina/homebrew-tap
 #                        (the default GITHUB_TOKEN can't write to other repos)
 
+# DISABLED: This is the private dev repo (chatwire-dev).
+# Publishing happens from the public chatwire repo only.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:  # manual-only, never auto-triggers
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────

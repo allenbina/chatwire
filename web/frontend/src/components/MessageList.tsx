@@ -12,16 +12,17 @@
  * Performance: the message list is virtualised with @tanstack/react-virtual
  * so only ~30 DOM nodes are rendered regardless of conversation length.
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { fetchMessages, fetchOlderMessages, type Message } from '../api'
+import { fetchMessages, fetchOlderMessages, markSeen, type Message } from '../api'
 import { useChatStore } from '../store'
 import { MessageBubble } from './MessageBubble'
 
 interface MessageListProps {
   handle: string
   isGroup?: boolean
+  lastSeenRowid?: number
 }
 
 // Stable empty array — avoids returning a new [] on every render when there
@@ -29,7 +30,7 @@ interface MessageListProps {
 // useSyncExternalStore's getSnapshot cache check.
 const EMPTY_OPTIMISTIC: never[] = []
 
-export function MessageList({ handle, isGroup = false }: MessageListProps) {
+export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: MessageListProps) {
   const queryClient = useQueryClient()
   const optimistic = useChatStore((s) => s.optimistic[handle] ?? EMPTY_OPTIMISTIC)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -38,6 +39,10 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
   const [olderMsgs, setOlderMsgs] = useState<Message[]>([])
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [hasMore, setHasMore] = useState(false)
+  // Pill: captures last-seen rowid at mount so new SSE messages don't inflate count
+  const initialSeenRowidRef = useRef(lastSeenRowid)
+  const [showPill, setShowPill] = useState(false)
+  const pillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['messages', handle],
@@ -60,6 +65,55 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
 
   const recentMessages: Message[] = data?.messages ?? []
   const allMessages = [...olderMsgs, ...recentMessages, ...optimistic]
+
+  // ---------------------------------------------------------------------------
+  // Unread pill — "N new messages ↓"
+  // ---------------------------------------------------------------------------
+
+  // New messages = those with rowid above the snapshot taken at mount.
+  const newMessageCount = useMemo(
+    () => allMessages.filter((m) => m.rowid > initialSeenRowidRef.current && !m.from_me).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allMessages.length],
+  )
+  const firstNewIndex = useMemo(
+    () => allMessages.findIndex((m) => m.rowid > initialSeenRowidRef.current && !m.from_me),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allMessages.length],
+  )
+
+  // Show pill once when messages first load and there are unseen ones and user isn't at bottom.
+  const pillShownRef = useRef(false)
+  useEffect(() => {
+    if (!pillShownRef.current && newMessageCount > 0 && allMessages.length > 0) {
+      pillShownRef.current = true
+      setShowPill(true)
+      pillTimerRef.current = setTimeout(() => {
+        setShowPill(false)
+        markSeen(handle, allMessages[allMessages.length - 1]?.rowid ?? 0)
+      }, 3000)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allMessages.length])
+
+  // Capture lastSeenRowid snapshot on handle change
+  useEffect(() => {
+    initialSeenRowidRef.current = lastSeenRowid
+    pillShownRef.current = false
+    setShowPill(false)
+    if (pillTimerRef.current) clearTimeout(pillTimerRef.current)
+  }, [handle, lastSeenRowid])
+
+  function dismissPill() {
+    setShowPill(false)
+    if (pillTimerRef.current) clearTimeout(pillTimerRef.current)
+    if (firstNewIndex >= 0) {
+      virtualizer.scrollToIndex(firstNewIndex, { align: 'start' })
+    } else {
+      scrollToBottom()
+    }
+    markSeen(handle, allMessages[allMessages.length - 1]?.rowid ?? 0)
+  }
 
   // ---------------------------------------------------------------------------
   // Virtualiser — renders only the visible slice of allMessages
@@ -111,7 +165,7 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[--color-text-muted] text-sm animate-pulse">
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm animate-pulse">
         Loading messages&hellip;
       </div>
     )
@@ -119,7 +173,7 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
 
   if (isError) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[--color-error] text-sm">
+      <div className="flex-1 flex items-center justify-center text-destructive text-sm">
         Failed to load messages.
       </div>
     )
@@ -144,8 +198,8 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
             <button
               onClick={loadOlder}
               disabled={loadingOlder}
-              className="text-xs text-[--color-accent] border border-[--color-accent] rounded-full
-                         px-4 py-1 hover:bg-[--color-bg-secondary] disabled:opacity-50
+              className="text-xs text-primary border border-primary rounded-full
+                         px-4 py-1 hover:bg-card disabled:opacity-50
                          disabled:cursor-not-allowed transition-colors"
             >
               {loadingOlder ? 'Loading\u2026' : 'Load older messages'}
@@ -154,7 +208,7 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
         )}
 
         {allMessages.length === 0 && (
-          <p className="text-center text-sm text-[--color-text-muted] mt-8 px-4">
+          <p className="text-center text-sm text-muted-foreground mt-8 px-4">
             No messages yet.
           </p>
         )}
@@ -181,7 +235,7 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
               >
                 {/* Sender label for incoming group messages */}
                 {isGroup && !msg.from_me && msg.sender_name && (
-                  <p className="text-[10px] text-[--color-text-muted] mb-0.5 ml-1">
+                  <p className="text-[10px] text-muted-foreground mb-0.5 ml-1">
                     {msg.sender_name}
                   </p>
                 )}
@@ -195,13 +249,27 @@ export function MessageList({ handle, isGroup = false }: MessageListProps) {
         </div>
       </div>
 
+      {/* New-messages pill */}
+      {showPill && newMessageCount > 0 && (
+        <button
+          onClick={dismissPill}
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-10
+                     flex items-center gap-1.5 px-3 py-1.5 rounded-full shadow-md text-xs font-medium
+                     bg-primary text-primary-foreground
+                     hover:opacity-90 transition-opacity"
+          aria-label={`${newMessageCount} new messages, scroll to first`}
+        >
+          {newMessageCount === 1 ? '1 new message' : `${newMessageCount} new messages`} ↓
+        </button>
+      )}
+
       {/* Scroll-to-bottom button */}
       {showScrollBtn && (
         <button
           onClick={scrollToBottom}
           className="absolute bottom-4 right-4 w-9 h-9 rounded-full shadow-lg
-                     bg-[--color-accent] text-[--color-bg-primary] text-lg flex items-center justify-center
-                     hover:bg-[--color-accent-hover] transition-colors"
+                     bg-primary text-primary-foreground text-lg flex items-center justify-center
+                     hover:bg-primary/90 transition-colors"
           aria-label="Scroll to bottom"
         >
           &#8595;

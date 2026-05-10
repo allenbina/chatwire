@@ -45,6 +45,7 @@ log = logging.getLogger("chatwire.webhook")
 
 class WebhookIntegration:
     NAME = "webhook"
+    TIER = "official"  # Reviewed built-in; forwards full message content.
     DISPLAY_NAME = "Webhook"
     DESCRIPTION = "POST every inbound iMessage to a URL"
     ICON = "🔗"

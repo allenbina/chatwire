@@ -2,12 +2,12 @@
  * App root: QueryClientProvider + BrowserRouter.
  *
  * Routes:
- *   /app/login        → LoginPage    (public — no auth required)
- *   /app/             → ChatPage (no handle — shows empty state)
- *   /app/chat/:handle → ChatPage (active conversation)
- *   /app/settings     → SettingsPage  (lazy-loaded)
- *   /app/popout       → PopoutPage    (lazy-loaded)
- *   *                 → redirect to /app/
+ *   /login        → LoginPage    (public — no auth required)
+ *   /             → ChatPage (no handle — shows empty state)
+ *   /chat/:handle → ChatPage (active conversation)
+ *   /settings     → SettingsPage  (lazy-loaded)
+ *   /popout       → PopoutPage    (lazy-loaded)
+ *   *             → redirect to /
  *
  * SettingsPage and PopoutPage are lazy-loaded so they don't land in the
  * main bundle. The main bundle shrinks; each page gets its own chunk that
@@ -41,7 +41,7 @@ const queryClient = new QueryClient({
 // connection; visible mainly on first cold visit).
 function PageLoading() {
   return (
-    <div className="flex-1 flex items-center justify-center text-[--color-text-muted] text-sm animate-pulse">
+    <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm animate-pulse">
       Loading&hellip;
     </div>
   )
@@ -50,7 +50,7 @@ function PageLoading() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/app">
+      <BrowserRouter basename="/">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ChatPage />} />

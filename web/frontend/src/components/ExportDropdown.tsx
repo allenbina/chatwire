@@ -47,7 +47,7 @@ export function ExportDropdown({ handle, isGroup }: ExportDropdownProps) {
         aria-label="Export conversation"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="p-2 rounded-lg text-[--color-text-muted] hover:bg-[--color-sidebar-hover]
+        className="p-2 rounded-lg text-muted-foreground hover:bg-accent
                    transition-colors flex items-center gap-1 text-sm"
         title="Export"
       >
@@ -63,7 +63,7 @@ export function ExportDropdown({ handle, isGroup }: ExportDropdownProps) {
         <div
           role="menu"
           className="absolute right-0 top-full mt-1 z-20 min-w-[180px] rounded-lg shadow-lg
-                     bg-[--color-bg-tertiary] border border-[--color-border] py-1 text-sm"
+                     bg-muted border border-border py-1 text-sm"
         >
           {links.map(({ label, href }) => (
             <a
@@ -72,7 +72,7 @@ export function ExportDropdown({ handle, isGroup }: ExportDropdownProps) {
               role="menuitem"
               download
               onClick={() => setOpen(false)}
-              className="block px-4 py-2 text-[--color-text-primary] hover:bg-[--color-sidebar-hover]
+              className="block px-4 py-2 text-foreground hover:bg-accent
                          transition-colors"
             >
               {label}

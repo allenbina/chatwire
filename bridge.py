@@ -17,6 +17,7 @@ doesn't relay our own send back through every integration.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import logging
 import os
@@ -42,7 +43,9 @@ from chat_send import (
 )
 from whitelist import all_groups as wl_all_groups, all_handles as wl_all
 from integrations.base import BridgeContext, SendOutcome, SendTarget
+from integrations.sandbox import ConversationMap, OfficialMessage, SanitizedEvent, SandboxedContext
 from verify import PluginNotTrusted, verify_plugin
+from web.plugin_audit import log_event as _audit_log
 
 logging.basicConfig(
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -71,6 +74,58 @@ DEBUG_MIRROR_FILE = os.environ.get("DEBUG_MIRROR_FILE", "").strip() or None
 
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 STATE_PATH = STATE_DIR / "state.json"
+_PID_LOCK_PATH = STATE_DIR / "bridge.pid"
+
+
+# ---------- single-instance lock ----------
+
+def acquire_pid_lock(lock_path: Path = _PID_LOCK_PATH) -> None:
+    """Ensure only one bridge process runs at a time.
+
+    Writes the current PID to *lock_path*. If a lock file already exists and
+    the recorded PID is alive, exit with a human-readable error. Stale lock
+    files (process dead or PID recycled) are silently replaced.
+
+    Registers ``release_pid_lock`` via ``atexit`` so the file is removed on
+    clean exit and on most unhandled-exception exits.
+    """
+    pid = os.getpid()
+
+    if lock_path.exists():
+        try:
+            old_pid = int(lock_path.read_text().strip())
+        except (ValueError, OSError):
+            old_pid = None
+
+        if old_pid is not None and old_pid != pid:
+            try:
+                os.kill(old_pid, 0)  # signal 0 = existence check, no signal sent
+                alive = True
+            except ProcessLookupError:
+                alive = False
+            except PermissionError:
+                # Process exists but belongs to another user — treat as alive.
+                alive = True
+
+            if alive:
+                raise SystemExit(
+                    f"chatwire bridge is already running (PID {old_pid}).\n"
+                    f"Stop the existing instance before starting a new one, or\n"
+                    f"remove {lock_path} if the process is genuinely gone."
+                )
+
+    lock_path.write_text(str(pid))
+    atexit.register(release_pid_lock, lock_path)
+
+
+def release_pid_lock(lock_path: Path = _PID_LOCK_PATH) -> None:
+    """Remove the PID lock file if it still contains our own PID."""
+    try:
+        if lock_path.exists() and lock_path.read_text().strip() == str(os.getpid()):
+            lock_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
 
 # ---------- relay scope ----------
 
@@ -513,11 +568,173 @@ def _build_integrations(cfg: dict) -> list:
 
 # ---------- poll loop ----------
 
-async def poll_loop(reader: ChatDBReader, integrations: list) -> None:
+def _notification_depth_for(plugin_name: str, cfg: dict) -> str:
+    """Return the notification depth level for a given plugin name.
+
+    Reads from config: notifications.notification_depth.<plugin_name> with
+    fallback to notifications.notification_depth.default, then "sender".
+
+    Three levels:
+      "minimal"  — no sender name, no text ("New message")
+      "sender"   — sender display name only (default for third-party)
+      "preview"  — sender name + first ~50 chars of message text (opt-in)
+    """
+    notif = cfg.get("notifications") or {}
+    depth_map = notif.get("notification_depth") or {}
+    return depth_map.get(plugin_name) or depth_map.get("default") or "sender"
+
+
+def _build_sanitized_event(
+    msg: InboundMessage,
+    display_name: str | None,
+    depth: str = "sender",
+) -> SanitizedEvent:
+    """Build a SanitizedEvent from a raw InboundMessage.
+
+    The ``depth`` parameter controls how much information is populated:
+      "minimal"  — sender_display_name=None, preview=None
+      "sender"   — sender_display_name=display_name, preview=None (default)
+      "preview"  — sender_display_name=display_name, preview=first 50 chars
+    """
+    import datetime
+    sender = None if depth == "minimal" else display_name
+    preview: str | None = None
+    if depth == "preview" and msg.text:
+        preview = msg.text[:50]
+    return SanitizedEvent(
+        event="message",
+        sender_display_name=sender,
+        is_group=msg.is_group,
+        group_name=msg.chat_name if msg.is_group else None,
+        has_attachment=bool(msg.attachments),
+        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        preview=preview,
+    )
+
+
+def _build_official_message(
+    msg: InboundMessage,
+    display_name: str,
+    conv_map: ConversationMap,
+) -> OfficialMessage:
+    """Build an OfficialMessage from a raw InboundMessage.
+    Attachment file paths are read as bytes; raw handles are never exposed."""
+    import datetime
+    real_id = msg.chat_guid if msg.is_group else msg.handle
+    conversation_id = conv_map.get_or_create(real_id)
+
+    attachments = []
+    for att in msg.attachments:
+        try:
+            mime = getattr(att, "mime_type", None) or "application/octet-stream"
+            filename = getattr(att, "filename", None) or ""
+            data = att.path.read_bytes() if att.path and att.path.exists() else b""
+            attachments.append({"data": data, "mime": mime, "filename": filename})
+        except Exception:
+            log.exception("failed to read attachment bytes for official plugin")
+
+    return OfficialMessage(
+        conversation_id=conversation_id,
+        sender_display_name=display_name,
+        text=msg.text,
+        is_group=msg.is_group,
+        group_name=msg.chat_name if msg.is_group else None,
+        attachments=attachments,
+        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        is_from_me=msg.is_from_me,
+    )
+
+
+async def _fan_out(
+    integrations: list,
+    msg: InboundMessage,
+    conv_map: ConversationMap,
+    contacts: dict[str, str],
+    cfg: dict | None = None,
+) -> None:
+    """Dispatch one inbound message to all integrations, gated by tier.
+
+    Tier routing:
+      "ui"       — skip entirely (no bridge hooks for UI plugins)
+      "notify"   — call on_notify(SanitizedEvent) if defined; skipped when
+                   message is already seen (read_state) by any interface
+      "official" — call on_official_message(OfficialMessage) if defined,
+                   else fall back to on_inbound(msg) for backward compat
+      "core"     — call on_inbound(msg) directly (full access, no sandbox)
+
+    For "notify" tier, the per-plugin notification depth is read from config
+    (notifications.notification_depth.<plugin_name>) and used to gate what
+    fields are populated in the SanitizedEvent.
+    """
+    if cfg is None:
+        cfg = {}
+
+    # Resolve display name once; used by both notify and official paths.
+    handle_lc = msg.handle.lower()
+    display_name = contacts.get(handle_lc) or msg.handle
+
+    # For the notify tier we need the conversation_id to check read state.
+    # Use the same ID scheme as read_state: group chat GUID or handle.
+    conv_id_for_read_state = msg.chat_guid if msg.is_group else msg.handle
+
+    for integ in integrations:
+        tier = getattr(integ, "TIER", "official")
+        name = getattr(integ, "NAME", "?")
+        try:
+            if tier == "ui":
+                # UI plugins get no bridge hooks at all.
+                continue
+            elif tier == "notify":
+                fn = getattr(integ, "on_notify", None)
+                if fn is not None:
+                    # Skip-if-seen: suppress the notification when the
+                    # conversation has already been acknowledged by any
+                    # interface (web UI, XMPP, …) up to or past this rowid.
+                    try:
+                        from read_state import get_last_seen as _get_last_seen
+                        last_seen = _get_last_seen(conv_id_for_read_state)
+                        if last_seen >= msg.rowid:
+                            continue
+                    except Exception:
+                        log.exception(
+                            "read_state check failed for notify plugin %s; proceeding", name
+                        )
+                    depth = _notification_depth_for(name, cfg)
+                    event = _build_sanitized_event(msg, display_name, depth)
+                    await fn(event)
+            elif tier == "official":
+                fn = getattr(integ, "on_official_message", None)
+                if fn is not None:
+                    official_msg = _build_official_message(msg, display_name, conv_map)
+                    await fn(official_msg)
+                else:
+                    # Backward-compat: official plugins that still use on_inbound().
+                    await integ.on_inbound(msg)
+            else:
+                # "core" or anything unrecognised: full access, on_inbound().
+                await integ.on_inbound(msg)
+        except PermissionError as exc:
+            log.warning("integration %s tier violation (tier=%s): %s", name, tier, exc)
+            _audit_log("tier_violation", plugin=name, tier=tier, detail=str(exc))
+        except Exception:
+            log.exception("integration %s fan-out failed (tier=%s)", name, tier)
+
+
+async def poll_loop(reader: ChatDBReader, integrations: list, conv_map: ConversationMap) -> None:
     log.info("poll loop starting (interval=%.1fs, integrations=%s, relay_handles=%s)",
              POLL_INTERVAL_S,
              [getattr(i, "NAME", "?") for i in integrations],
              sorted(relay_handles()))
+
+    # Build a live contacts reference from the first core-tier integration's
+    # context or fall back to an empty dict. In practice BridgeContextImpl
+    # exposes .contacts directly — we reach it via the poll_loop caller (amain).
+    # Pass contacts separately to _fan_out via a closure over the BridgeContextImpl
+    # reference stored here. We resolve it once per batch (contacts is mutable).
+    # Actually, we stored contacts in ctx.contacts; pass ctx into poll_loop.
+    # Refactored: poll_loop receives the real ctx for name resolution only.
+    # (poll_loop itself never exposes ctx to plugins — _fan_out does the gating.)
+
     while True:
         try:
             messages = reader.poll()
@@ -557,20 +774,22 @@ async def poll_loop(reader: ChatDBReader, integrations: list) -> None:
                 )
                 if transformed_text != msg.text:
                     msg = _dc_replace(msg, text=transformed_text)
-                for integ in integrations:
-                    try:
-                        await integ.on_inbound(msg)
-                    except Exception:
-                        log.exception("integration %s on_inbound failed",
-                                      getattr(integ, "NAME", "?"))
+                await _fan_out(integrations, msg, conv_map, _contacts_ref, CFG)
         except Exception:
             log.exception("poll iteration failed; sleeping and retrying")
         await asyncio.sleep(POLL_INTERVAL_S)
 
 
+# Module-level mutable reference so poll_loop can reach contacts without
+# holding a direct ctx reference. Set by amain() after building ctx.
+_contacts_ref: dict[str, str] = {}
+
+
 # ---------- main ----------
 
 async def amain() -> None:
+    acquire_pid_lock()
+
     if not (SELF_HANDLES or wl_all()):
         raise SystemExit(
             "SELF_HANDLES or WHITELIST_HANDLES must contain at least one handle"
@@ -580,6 +799,11 @@ async def amain() -> None:
     reader.initialize_to_now()
     contacts = load_contacts()
     ctx = BridgeContextImpl(contacts=contacts, chatdb=reader)
+
+    # One ConversationMap per bridge process lifetime. Maps opaque UUIDs ↔
+    # real handles so official plugins can send replies without seeing raw
+    # phone numbers or email addresses.
+    conv_map = ConversationMap()
 
     integrations = _build_integrations(CFG)
     ctx.integrations = integrations
@@ -593,12 +817,24 @@ async def amain() -> None:
     log.info("starting; integrations=%s relay=%s",
              [i.NAME for i in integrations], sorted(relay_handles()))
 
+    # Wire the contacts dict into the module-level reference so poll_loop's
+    # _fan_out() can resolve display names without holding a ctx reference.
+    global _contacts_ref
+    _contacts_ref = ctx.contacts
+
     started: list = []
     try:
         for integ in integrations:
-            await integ.start(ctx)
+            tier = getattr(integ, "TIER", "official")
+            # core tier: pass real context unchanged.
+            # All other tiers: wrap in SandboxedContext.
+            if tier == "core":
+                start_ctx = ctx
+            else:
+                start_ctx = SandboxedContext(ctx, tier, conv_map)
+            await integ.start(start_ctx)
             started.append(integ)
-        await poll_loop(reader, integrations)
+        await poll_loop(reader, integrations, conv_map)
     finally:
         for integ in reversed(started):
             try:

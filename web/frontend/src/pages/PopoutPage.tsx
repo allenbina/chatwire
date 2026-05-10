@@ -46,19 +46,19 @@ export function PopoutPage() {
 
   if (!handle) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[--color-bg-primary]
-                      text-[--color-text-muted] text-sm">
+      <div className="h-screen flex items-center justify-center bg-background
+                      text-muted-foreground text-sm">
         No conversation specified. Pass <code>?handle=X</code> or <code>?chat=X</code>.
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[--color-bg-primary] text-[--color-text-primary]">
+    <div className="flex flex-col h-screen bg-background text-foreground">
       {/* Minimal header */}
-      <header className="flex items-center px-4 py-2 border-b border-[--color-border]
-                         bg-[--color-bg-tertiary] flex-shrink-0">
-        <span className="text-sm font-medium text-[--color-text-primary] truncate">
+      <header className="flex items-center px-4 py-2 border-b border-border
+                         bg-muted flex-shrink-0">
+        <span className="text-sm font-medium text-foreground truncate">
           {isGroup ? handle.split(';').pop() || handle : handle}
         </span>
       </header>

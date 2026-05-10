@@ -1,0 +1,45 @@
+/* Structural themes — layout, spacing, border-radius, shadows
+ *
+ * Applied via data-style attribute on <html>:
+ *   document.documentElement.setAttribute('data-style', 'default')
+ *
+ * Components reference: var(--radius-bubble), var(--spacing-message), etc.
+ * These are independent of color schemes — any style + any scheme combination works.
+ */
+
+:root,
+[data-style="default"] {
+  --radius:              1rem;
+  --radius-bubble:       1.25rem;
+  --radius-input:        9999px;
+  --spacing-message:     0.75rem;
+  --spacing-sidebar:     0.625rem;
+  --font-size-message:   0.875rem;
+  --font-size-sidebar:   0.875rem;
+  --shadow-card:         0 1px 2px rgba(0,0,0,.05);
+  --sidebar-width:       320px;
+}
+
+[data-style="compact"] {
+  --radius:              0.375rem;
+  --radius-bubble:       0.5rem;
+  --radius-input:        0.5rem;
+  --spacing-message:     0.375rem;
+  --spacing-sidebar:     0.375rem;
+  --font-size-message:   0.8125rem;
+  --font-size-sidebar:   0.8125rem;
+  --shadow-card:         none;
+  --sidebar-width:       280px;
+}
+
+[data-style="flat"] {
+  --radius:              0;
+  --radius-bubble:       0.25rem;
+  --radius-input:        0.25rem;
+  --spacing-message:     0.5rem;
+  --spacing-sidebar:     0.5rem;
+  --font-size-message:   0.875rem;
+  --font-size-sidebar:   0.875rem;
+  --shadow-card:         none;
+  --sidebar-width:       320px;
+}

@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "./styles/themes.css";
+@import "./styles/schemes.css";
 
 /* Screen-reader-only utility — hides element visually but keeps it in the a11y tree */
 .sr-only {
@@ -24,123 +26,46 @@
   white-space: normal;
 }
 
-/* ── App design tokens (default: Dracula) ───────────────────────────────────
+/* ── Tailwind v4 @theme ──────────────────────────────────────────────────────
  *
- * The useTheme hook (hooks/useTheme.ts) overwrites these at runtime.
- * shadcn/ui variables (--background, --primary, …) immediately below
- * point here so every theme applies to shadcn components automatically.
- */
-:root {
-  /* App theme tokens */
-  --color-bg-primary:     #282a36;
-  --color-bg-secondary:   #44475a;
-  --color-bg-tertiary:    #21222c;
-  --color-text-primary:   #f8f8f2;
-  --color-text-secondary: #6272a4;
-  --color-text-muted:     #6272a4;
-  --color-accent:         #bd93f9;
-  --color-accent-hover:   #caa9fa;
-  --color-success:        #50fa7b;
-  --color-warning:        #f1fa8c;
-  --color-error:          #ff5555;
-  --color-info:           #8be9fd;
-  --color-border:         #44475a;
-  --color-input-bg:       #44475a;
-  --color-msg-me:         #44475a;
-  --color-msg-them:       #282a36;
-  --color-sidebar-bg:     #21222c;
-  --color-sidebar-active: #44475a;
-  --color-sidebar-hover:  #383a4a;
-
-  /* ── shadcn/ui CSS variables bridged to app tokens ──────────────────────
-   *
-   * shadcn components reference these names.  By mapping them to our
-   * --color-* tokens they automatically pick up every theme switch.
-   */
-  --background:          var(--color-bg-primary);
-  --foreground:          var(--color-text-primary);
-  --card:                var(--color-bg-secondary);
-  --card-foreground:     var(--color-text-primary);
-  --popover:             var(--color-bg-secondary);
-  --popover-foreground:  var(--color-text-primary);
-  --primary:             var(--color-accent);
-  --primary-foreground:  var(--color-bg-primary);
-  --secondary:           var(--color-bg-secondary);
-  --secondary-foreground: var(--color-text-primary);
-  --muted:               var(--color-bg-tertiary);
-  --muted-foreground:    var(--color-text-muted);
-  /* --accent is shadcn's "subtle highlight" bg (dropdown hover, etc.) */
-  --accent:              var(--color-bg-secondary);
-  --accent-foreground:   var(--color-text-primary);
-  --destructive:         var(--color-error);
-  --destructive-foreground: var(--color-text-primary);
-  --border:              var(--color-border);
-  --input:               var(--color-input-bg);
-  --ring:                var(--color-accent);
-  --radius:              0.5rem;
-  /* Sidebar */
-  --sidebar:             var(--color-sidebar-bg);
-  --sidebar-foreground:  var(--color-text-primary);
-  --sidebar-primary:     var(--color-accent);
-  --sidebar-primary-foreground: var(--color-bg-primary);
-  --sidebar-accent:      var(--color-sidebar-active);
-  --sidebar-accent-foreground: var(--color-text-primary);
-  --sidebar-border:      var(--color-border);
-  --sidebar-ring:        var(--color-accent);
-}
-
-/* ── Tailwind v4 @theme — register Tailwind utility classes ─────────────────
+ * Registers CSS custom properties as Tailwind utility colors.
+ * Values use hsl(var(--name)) so Tailwind generates valid CSS colors from
+ * the space-separated HSL triplets defined in schemes.css.
  *
- * Variables here generate utility classes (bg-background, text-foreground,
- * bg-primary, etc.).  Values are CSS-variable references so themes remain
- * dynamic at runtime.
+ * shadcn convention: --background = "231 15% 18%" (no hsl() wrapper in the
+ * property itself). The wrapper is added here in @theme so the generated
+ * utility is: background-color: hsl(var(--background)).
  *
- * NOTE: --color-accent below maps to shadcn's --accent (subtle hover bg)
- * so that shadcn dropdown/menu hover states look correct.  The app's strong
- * accent color is still accessible via the inline syntax `text-[--color-accent]`
- * (resolves the :root value directly, bypassing the Tailwind utility).
+ * [data-theme="nord"] blocks in schemes.css change --background etc. at
+ * runtime. Tailwind utilities automatically pick up the new value because
+ * the generated CSS uses var() — no extra registration per theme needed.
  */
 @theme {
-  /* App token utilities (bg-bg-primary, text-text-primary, …) */
-  --color-bg-primary:     var(--color-bg-primary);
-  --color-bg-secondary:   var(--color-bg-secondary);
-  --color-bg-tertiary:    var(--color-bg-tertiary);
-  --color-text-primary:   var(--color-text-primary);
-  --color-text-secondary: var(--color-text-secondary);
-  --color-text-muted:     var(--color-text-muted);
-  --color-accent-strong:  var(--color-accent);
-  --color-accent-hover:   var(--color-accent-hover);
-  --color-success:        var(--color-success);
-  --color-warning:        var(--color-warning);
-  --color-error:          var(--color-error);
-  --color-info:           var(--color-info);
-  --color-border:         var(--color-border);
-  --color-input-bg:       var(--color-input-bg);
-  --color-msg-me:         var(--color-msg-me);
-  --color-msg-them:       var(--color-msg-them);
-  --color-sidebar-bg:     var(--color-sidebar-bg);
-  --color-sidebar-active: var(--color-sidebar-active);
-  --color-sidebar-hover:  var(--color-sidebar-hover);
+  /* shadcn standard utilities */
+  --color-background:           hsl(var(--background));
+  --color-foreground:           hsl(var(--foreground));
+  --color-card:                 hsl(var(--card));
+  --color-card-foreground:      hsl(var(--card-foreground));
+  --color-popover:              hsl(var(--popover));
+  --color-popover-foreground:   hsl(var(--popover-foreground));
+  --color-primary:              hsl(var(--primary));
+  --color-primary-foreground:   hsl(var(--primary-foreground));
+  --color-secondary:            hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted:                hsl(var(--muted));
+  --color-muted-foreground:     hsl(var(--muted-foreground));
+  --color-accent:               hsl(var(--accent));
+  --color-accent-foreground:    hsl(var(--accent-foreground));
+  --color-destructive:          hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border:               hsl(var(--border));
+  --color-input:                hsl(var(--input));
+  --color-ring:                 hsl(var(--ring));
 
-  /* shadcn utilities (bg-background, text-foreground, bg-primary, …) */
-  --color-background:          var(--background);
-  --color-foreground:          var(--foreground);
-  --color-card:                var(--card);
-  --color-card-foreground:     var(--card-foreground);
-  --color-popover:             var(--popover);
-  --color-popover-foreground:  var(--popover-foreground);
-  --color-primary:             var(--primary);
-  --color-primary-foreground:  var(--primary-foreground);
-  --color-secondary:           var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted:               var(--muted);
-  --color-muted-foreground:    var(--muted-foreground);
-  --color-accent:              var(--accent);
-  --color-accent-foreground:   var(--accent-foreground);
-  --color-destructive:         var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-input:               var(--input);
-  --color-ring:                var(--ring);
+  /* Alias so bg-tertiary keeps working (maps to muted surface) */
+  --color-tertiary:             hsl(var(--muted));
+
+  /* Radius utilities — driven by structural theme (themes.css) */
   --radius-sm:  calc(var(--radius) - 4px);
   --radius-md:  calc(var(--radius) - 2px);
   --radius-lg:  var(--radius);

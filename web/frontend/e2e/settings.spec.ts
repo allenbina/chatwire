@@ -1,5 +1,5 @@
 /**
- * settings.spec.ts — navigate to /app/settings, open Appearance accordion,
+ * settings.spec.ts — navigate to /settings, open Appearance accordion,
  * change theme, verify CSS custom properties update on :root.
  */
 import { test, expect } from '@playwright/test'
@@ -51,14 +51,14 @@ test.describe('Settings page', () => {
   })
 
   test('settings page renders the Appearance accordion', async ({ page }) => {
-    await page.goto('/app/settings')
+    await page.goto('/settings')
 
     const accordion = page.getByRole('button', { name: /Appearance/i })
     await expect(accordion).toBeVisible({ timeout: 5_000 })
   })
 
   test('opening Appearance accordion reveals theme swatches', async ({ page }) => {
-    await page.goto('/app/settings')
+    await page.goto('/settings')
 
     const accordion = page.getByRole('button', { name: /Appearance/i })
     await accordion.click()
@@ -69,7 +69,7 @@ test.describe('Settings page', () => {
   })
 
   test('clicking a theme button updates :root CSS custom properties', async ({ page }) => {
-    await page.goto('/app/settings')
+    await page.goto('/settings')
 
     const accordion = page.getByRole('button', { name: /Appearance/i })
     await accordion.click()

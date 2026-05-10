@@ -29,12 +29,50 @@ from typing import Any
 __all__ = [
     "BaseIntegration",
     "PluginManifest",
+    "SanitizedEvent",
     "chatwire_plugin",
     "registry",
     "__version__",
 ]
 
 __version__ = "0.1.0"
+
+# ---------------------------------------------------------------------------
+# SanitizedEvent — re-exported from integrations.sandbox when available,
+# otherwise a local copy so the SDK works standalone.
+# ---------------------------------------------------------------------------
+
+try:
+    from integrations.sandbox import SanitizedEvent  # noqa: F401 (re-export)
+except ImportError:
+    # Standalone SDK install: define a local copy with the same fields.
+    @dataclass
+    class SanitizedEvent:  # type: ignore[no-redef]
+        """No-PII event delivered to ``notify``-tier plugins via ``on_notify()``.
+
+        Fields
+        ------
+        event : str
+            ``"message"`` or ``"reaction"``.
+        sender_display_name : str | None
+            Resolved display name (never a raw phone number or email).
+            ``None`` when notification depth is ``"minimal"``.
+        is_group : bool
+        group_name : str | None
+        has_attachment : bool
+        timestamp : str
+            ISO 8601 UTC string.
+        preview : str | None
+            First ~50 chars of message text — only set when notification
+            depth is ``"preview"`` (opt-in by the user). Default ``None``.
+        """
+        event: str
+        sender_display_name: str | None
+        is_group: bool
+        group_name: str | None
+        has_attachment: bool
+        timestamp: str
+        preview: str | None = None
 
 # ---------------------------------------------------------------------------
 # Global plugin registry
@@ -115,6 +153,20 @@ class BaseIntegration(abc.ABC):
     """
 
     NAME: str  # must be set by subclass
+    TIER: str = "notify"
+    """Sandbox tier — safe default for third-party plugins.
+
+    New plugins start at ``"notify"`` so they never accidentally receive PII.
+    Override to ``"official"`` only after the plugin has been reviewed and
+    signed by the chatwire project maintainer.
+
+    Values:
+      ``"notify"``   — receives ``SanitizedEvent`` via ``on_notify()``.
+                       No message text, no raw handles, no file paths.
+      ``"official"`` — receives ``OfficialMessage`` via
+                       ``on_official_message()``. Reviewed + signed only.
+      ``"ui"``       — no bridge hooks at all (CSS/theme plugins).
+    """
     VERSION: str = "0.1.0"
     AUTHOR: str = ""
     DISPLAY_NAME: str = ""
@@ -145,6 +197,17 @@ class BaseIntegration(abc.ABC):
         Use this to cancel tasks and release resources.
         """
 
+    async def on_notify(self, event: "SanitizedEvent") -> None:
+        """Called for ``notify``-tier plugins when a new message arrives.
+
+        Receives a :class:`SanitizedEvent` with NO PII — sender display name,
+        group info, attachment flag, and timestamp only.  Message text, phone
+        numbers, email addresses, and file paths are never included.
+
+        Override this to send push notifications, blink an LED, etc.
+        The default implementation does nothing.
+        """
+
     async def on_message_received(self, msg: Any) -> None:
         """Called for every inbound iMessage event delivered to this plugin.
 
@@ -153,6 +216,10 @@ class BaseIntegration(abc.ABC):
         - ``handle: str`` — sender handle (e.g. ``"+15551234567"``)
         - ``is_from_me: bool``
         - ``chat_guid: str | None``
+
+        .. deprecated::
+            New plugins should implement :meth:`on_notify` (for ``notify``
+            tier) or ``on_official_message`` (for ``official`` tier) instead.
         """
 
     async def on_message_sent(self, msg: Any) -> None:
@@ -184,7 +251,12 @@ class BaseIntegration(abc.ABC):
         await self.on_shutdown()
 
     async def on_inbound(self, msg: Any) -> None:
-        """Bridge-facing event hook — delegates to ``on_message_received``."""
+        """Bridge-facing event hook — delegates to ``on_message_received``.
+
+        Called only by ``official``/``core`` tiers when ``on_official_message``
+        is not defined (backward compat). ``notify``-tier plugins receive
+        ``on_notify()`` instead and this is never called.
+        """
         await self.on_message_received(msg)
 
     # ------------------------------------------------------------------

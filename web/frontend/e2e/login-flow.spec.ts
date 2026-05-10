@@ -2,10 +2,10 @@
  * login-flow.spec.ts — smoke test for the full login → settings → sign out flow.
  *
  * Covers:
- *   1. /app/login renders a password input associated to its label
+ *   1. /login renders a password input associated to its label
  *   2. Submitting the correct password POSTs to /api/ui/auth/login and
- *      follows the `next` redirect to /app/
- *   3. From /app/ the user can navigate to /app/settings which renders the
+ *      follows the `next` redirect to /
+ *   3. From /* the user can navigate to /settings which renders the
  *      Appearance accordion button
  *   4. Clicking "Sign out" navigates the browser to /logout
  *
@@ -17,15 +17,15 @@ import { installMocks } from './mocks'
 
 test.describe('Login → Settings → Sign out flow', () => {
   test.beforeEach(async ({ page }) => {
-    // Install standard authenticated mocks so pages beyond /app/login can load.
+    // Install standard authenticated mocks so pages beyond /login can load.
     await installMocks(page)
 
-    // Login endpoint: accept any password, redirect to /app/
+    // Login endpoint: accept any password, redirect to /
     await page.route('/api/ui/auth/login', (r) =>
       r.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ ok: true, next: '/app/' }),
+        body: JSON.stringify({ ok: true, next: '/' }),
       })
     )
 
@@ -49,8 +49,8 @@ test.describe('Login → Settings → Sign out flow', () => {
     )
   })
 
-  test('step 1: /app/login renders a labelled password input', async ({ page }) => {
-    await page.goto('/app/login')
+  test('step 1: /login renders a labelled password input', async ({ page }) => {
+    await page.goto('/login')
 
     // The <label htmlFor="password"> + <input id="password"> pair must be present.
     const input = page.getByLabel('Password')
@@ -63,32 +63,32 @@ test.describe('Login → Settings → Sign out flow', () => {
     await expect(btn).toBeEnabled()
   })
 
-  test('step 2: submitting the form redirects to /app/', async ({ page }) => {
-    await page.goto('/app/login')
+  test('step 2: submitting the form redirects to /', async ({ page }) => {
+    await page.goto('/login')
 
     await page.getByLabel('Password').fill('hunter2')
 
     // Click submit and wait for the hard navigation triggered by
-    // window.location.href = data.next ('/app/').
+    // window.location.href = data.next ('/').
     await Promise.all([
-      page.waitForURL(/\/app\/$/, { timeout: 8_000 }),
+      page.waitForURL(/\/$/, { timeout: 8_000 }),
       page.getByRole('button', { name: /sign in/i }).click(),
     ])
 
-    expect(page.url()).toMatch(/\/app\/$/)
+    expect(page.url()).toMatch(/\/$/)
   })
 
-  test('step 3: /app/settings renders after login', async ({ page }) => {
+  test('step 3: /settings renders after login', async ({ page }) => {
     // Skip the login form and navigate directly to settings (mocks make
     // it appear as if the user is already authenticated).
-    await page.goto('/app/settings')
+    await page.goto('/settings')
 
     const accordion = page.getByRole('button', { name: /Appearance/i })
     await expect(accordion).toBeVisible({ timeout: 5_000 })
   })
 
   test('step 4: "Sign out" link navigates to /logout', async ({ page }) => {
-    await page.goto('/app/settings')
+    await page.goto('/settings')
 
     // Wait for settings to render before clicking sign out
     await page.getByRole('button', { name: /Appearance/i }).waitFor({ timeout: 5_000 })
@@ -105,20 +105,20 @@ test.describe('Login → Settings → Sign out flow', () => {
     expect(page.url()).toMatch(/\/logout/)
   })
 
-  test('full smoke: login → /app/ → settings → sign out in one flow', async ({ page }) => {
+  test('full smoke: login → /* → settings → sign out in one flow', async ({ page }) => {
     // --- 1. Start at login page ---
-    await page.goto('/app/login')
+    await page.goto('/login')
     await expect(page.getByLabel('Password')).toBeVisible({ timeout: 5_000 })
 
     // --- 2. Log in ---
     await page.getByLabel('Password').fill('hunter2')
     await Promise.all([
-      page.waitForURL(/\/app\/$/, { timeout: 8_000 }),
+      page.waitForURL(/\/$/, { timeout: 8_000 }),
       page.getByRole('button', { name: /sign in/i }).click(),
     ])
 
     // --- 3. Navigate to settings ---
-    await page.goto('/app/settings')
+    await page.goto('/settings')
     await expect(page.getByRole('button', { name: /Appearance/i })).toBeVisible({ timeout: 5_000 })
 
     // --- 4. Sign out ---

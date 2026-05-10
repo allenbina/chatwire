@@ -31,13 +31,37 @@ export type SlotName =
   | 'settings.page'
   | 'compose.extension'
 
+/**
+ * Security tier for plugin registrations.
+ *
+ * - `core`     — Built-in system component. Renders directly in the React tree.
+ * - `official` — Reviewed + signed by project maintainer. Renders directly.
+ * - `notify`   — Third-party notification plugin. Rendered inside a sandboxed iframe.
+ * - `ui`       — Third-party UI/theme plugin. Rendered inside a sandboxed iframe.
+ */
+export type PluginTier = 'core' | 'official' | 'notify' | 'ui'
+
 export interface SlotRegistration {
   /** A unique key for this registration (defaults to component.displayName). */
   key: string
-  /** The React component to render in the slot. */
+  /** The React component to render in the slot (used for core/official tiers). */
   component: ComponentType<SlotProps>
   /** Arbitrary props passed through to the component at render time. */
   props?: Record<string, unknown>
+  /**
+   * Security tier. Determines the rendering path:
+   * - `core` / `official` → render directly in the host React tree (trusted).
+   * - `notify` / `ui`     → render via PluginFrame (sandboxed iframe, no DOM access).
+   *
+   * Defaults to `'core'` for backward compatibility.
+   */
+  tier: PluginTier
+  /**
+   * For sandboxed (notify/ui) plugins: URL of the JS bundle to load inside
+   * the iframe. When provided alongside tier='ui'|'notify', SlotRenderer
+   * will use PluginFrame instead of rendering the component directly.
+   */
+  src?: string
 }
 
 /** Props that every slot component receives from <SlotRenderer>. */
@@ -75,13 +99,29 @@ let _keyCounter = 0
 export function registerSlot(
   slot: SlotName,
   component: ComponentType<SlotProps>,
-  options: { key?: string; props?: Record<string, unknown> } = {},
+  options: {
+    key?: string
+    props?: Record<string, unknown>
+    /**
+     * Security tier for this registration.
+     * Defaults to `'core'`. Third-party plugins should set `'notify'` or `'ui'`.
+     */
+    tier?: PluginTier
+    /**
+     * URL of the JS bundle for sandboxed (notify/ui) plugins.
+     * When set, SlotRenderer renders via PluginFrame instead of the component.
+     */
+    src?: string
+  } = {},
 ): void {
   const key = options.key ?? component.displayName ?? component.name ?? `slot-${++_keyCounter}`
   const existing = _slots.get(slot) ?? []
   // Deduplicate by key — re-registering replaces the old entry.
   const filtered = existing.filter((r) => r.key !== key)
-  _slots.set(slot, [...filtered, { key, component, props: options.props }])
+  _slots.set(slot, [
+    ...filtered,
+    { key, component, props: options.props, tier: options.tier ?? 'core', src: options.src },
+  ])
 }
 
 /**

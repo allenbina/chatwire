@@ -40,6 +40,7 @@ except ImportError:  # fallback if SDK isn't on path at all
 @chatwire_plugin
 class StatsIntegration(BaseIntegration):
     NAME = "stats"
+    TIER = "ui"  # Web-only; no bridge hooks; receives no data.
     DISPLAY_NAME = "Message statistics"
     DESCRIPTION = "Messaging analytics computed locally from your chat.db."
     ICON = "📊"

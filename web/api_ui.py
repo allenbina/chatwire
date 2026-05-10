@@ -99,6 +99,40 @@ async def ui_conversations():
     return {"conversations": convos}
 
 
+# ---------------------------------------------------------------------------
+# Read-state endpoints
+# ---------------------------------------------------------------------------
+
+class ReadStateIn(BaseModel):
+    conversation_id: str
+    last_rowid: int
+
+
+@router.get("/read-state")
+async def ui_get_read_state():
+    """Return {conversation_id: last_seen_rowid} across all interfaces."""
+    from read_state import get_all_last_seen  # noqa: PLC0415
+    mapping = await asyncio.to_thread(get_all_last_seen)
+    return mapping
+
+
+@router.post("/read-state")
+async def ui_mark_seen(body: ReadStateIn):
+    """Mark a conversation as seen from the web interface up to last_rowid."""
+    from read_state import mark_seen  # noqa: PLC0415
+    await asyncio.to_thread(mark_seen, body.conversation_id, "web", body.last_rowid)
+    return {"ok": True}
+
+
+@router.post("/read-state/all")
+async def ui_mark_all_seen():
+    """Mark all conversations as seen (clear unread badges)."""
+    from read_state import mark_all_seen  # noqa: PLC0415
+    convos = await asyncio.to_thread(_list_conversations)
+    await asyncio.to_thread(mark_all_seen, "web", convos)
+    return {"ok": True}
+
+
 @router.get("/messages")
 async def ui_messages(
     handle: str = Query(""),
@@ -249,6 +283,149 @@ async def ui_themes_set(theme: str = Form(...)):
     return {"ok": True, "theme": theme}
 
 
+@router.get("/settings/accent_color")
+async def ui_settings_accent_color():
+    """Return the user-configured accent color override, or empty string if unset."""
+    import config as _cfg  # noqa: PLC0415
+    cfg = _cfg.load_config()
+    web = cfg.get("web") or {}
+    return {"accent_color": web.get("accent_color", "")}
+
+
+@router.post("/settings/accent_color")
+async def ui_settings_accent_color_set(color: str = Form(...)):
+    """Persist an accent color override to config.
+
+    ``color`` must be a 6-digit hex CSS color (``#rrggbb``) or an empty
+    string to clear the override and revert to the theme default.
+    """
+    import re  # noqa: PLC0415
+    import config as _cfg  # noqa: PLC0415
+    if color and not re.match(r"^#[0-9a-fA-F]{6}$", color):
+        raise HTTPException(400, "color must be #rrggbb or empty string")
+    cfg = _cfg.load_config()
+    web = cfg.setdefault("web", {})
+    if color:
+        web["accent_color"] = color
+    else:
+        web.pop("accent_color", None)
+    _cfg.save_config(cfg)
+    return {"ok": True, "accent_color": color}
+
+
+@router.get("/settings/custom_css")
+async def ui_settings_custom_css_get():
+    """Return the user-defined custom CSS, or empty string if unset."""
+    import config as _cfg  # noqa: PLC0415
+    cfg = _cfg.load_config()
+    web = cfg.get("web") or {}
+    return {"custom_css": web.get("custom_css", "")}
+
+
+# ---------------------------------------------------------------------------
+# Scoped API key management
+# ---------------------------------------------------------------------------
+
+class ApiKeyCreateBody(BaseModel):
+    name: str
+    scopes: list[str]
+
+
+class ApiKeyUpdateBody(BaseModel):
+    name: str
+    scopes: list[str]
+
+
+@router.get("/api-keys")
+async def ui_api_keys_list():
+    """Return all API keys (no hashes — safe for UI display)."""
+    from web.api_keys import load_keys  # noqa: PLC0415
+    keys = await asyncio.to_thread(load_keys)
+    return {"keys": [k.to_display() for k in keys]}
+
+
+@router.post("/api-keys")
+async def ui_api_keys_create(body: ApiKeyCreateBody):
+    """Create a new scoped API key.
+
+    Returns the plaintext key once — it is not recoverable after this call.
+    """
+    import time as _time  # noqa: PLC0415
+    from web.api_keys import ALL_SCOPES, APIKey, generate_key, hash_key, load_keys, save_keys  # noqa: PLC0415
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    invalid = [s for s in body.scopes if s not in ALL_SCOPES]
+    if invalid:
+        raise HTTPException(400, f"unknown scopes: {invalid!r}")
+    if not body.scopes:
+        raise HTTPException(400, "at least one scope is required")
+
+    plaintext = await asyncio.to_thread(generate_key)
+    key_hash = await asyncio.to_thread(hash_key, plaintext)
+    prefix = plaintext[4:12]  # 8 hex chars after "cwk_"
+    entry = APIKey(
+        name=name,
+        key_hash=key_hash,
+        scopes=list(body.scopes),
+        created_at=_time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        prefix=prefix,
+    )
+
+    def _save():
+        from web.api_keys import load_keys as _load, save_keys as _save  # noqa: PLC0415
+        keys = _load()
+        keys.append(entry)
+        _save(keys)
+
+    await asyncio.to_thread(_save)
+    return {"key": plaintext, "info": entry.to_display()}
+
+
+@router.delete("/api-keys/{prefix}")
+async def ui_api_keys_delete(prefix: str):
+    """Delete the key whose prefix matches (8 hex chars)."""
+    def _delete():
+        from web.api_keys import load_keys, save_keys  # noqa: PLC0415
+        keys = load_keys()
+        new_keys = [k for k in keys if k.prefix != prefix]
+        if len(new_keys) == len(keys):
+            raise HTTPException(404, "key not found")
+        save_keys(new_keys)
+
+    await asyncio.to_thread(_delete)
+    return {"ok": True, "deleted": prefix}
+
+
+@router.patch("/api-keys/{prefix}")
+async def ui_api_keys_update(prefix: str, body: ApiKeyUpdateBody):
+    """Rename a key and/or update its scopes (identified by prefix)."""
+    from web.api_keys import ALL_SCOPES  # noqa: PLC0415
+    invalid = [s for s in body.scopes if s not in ALL_SCOPES]
+    if invalid:
+        raise HTTPException(400, f"unknown scopes: {invalid!r}")
+    if not body.scopes:
+        raise HTTPException(400, "at least one scope is required")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    def _update():
+        from web.api_keys import load_keys, save_keys  # noqa: PLC0415
+        keys = load_keys()
+        for k in keys:
+            if k.prefix == prefix:
+                k.name = name
+                k.scopes = list(body.scopes)
+                save_keys(keys)
+                return k.to_display()
+        raise HTTPException(404, "key not found")
+
+    result = await asyncio.to_thread(_update)
+    return {"ok": True, "key": result}
+
+
 # ---------------------------------------------------------------------------
 # Settings read endpoints for the React UI
 # ---------------------------------------------------------------------------
@@ -302,7 +479,54 @@ async def ui_settings_notifications():
         "hiatus_duration_minutes": int(notif.get("hiatus_duration_minutes", 10)),
         "reminder_enabled": bool(notif.get("reminder_enabled", False)),
         "reminder_days": int(notif.get("reminder_days", 7)),
+        "notification_depth": notif.get("notification_depth") or {},
     }
+
+
+class NotificationDepthBody(BaseModel):
+    """Per-plugin notification depth settings.
+
+    ``depths`` maps plugin names to depth levels:
+      "minimal"  — no sender name, no content
+      "sender"   — sender display name only (default)
+      "preview"  — sender name + first ~50 chars of message text
+
+    The special key ``"default"`` sets the fallback for all unnamed plugins.
+    """
+    depths: dict[str, str]
+
+
+@router.get("/settings/notification_depth")
+async def ui_settings_notification_depth():
+    """Return per-plugin notification depth map."""
+    import config as _cfg  # noqa: PLC0415
+    cfg = _cfg.load_config()
+    notif = cfg.get("notifications") or {}
+    return {"notification_depth": notif.get("notification_depth") or {}}
+
+
+@router.post("/settings/notification_depth")
+async def ui_settings_notification_depth_set(body: NotificationDepthBody):
+    """Persist per-plugin notification depth settings.
+
+    Validates each depth value is one of: "minimal", "sender", "preview".
+    Unknown plugin names (and the "default" key) are accepted without
+    validation — the bridge reads them verbatim.
+    """
+    valid_depths = {"minimal", "sender", "preview"}
+    for plugin_name, depth in body.depths.items():
+        if depth not in valid_depths:
+            raise HTTPException(
+                400,
+                f"Invalid depth {depth!r} for plugin {plugin_name!r}. "
+                f"Must be one of: {', '.join(sorted(valid_depths))}",
+            )
+    import config as _cfg  # noqa: PLC0415
+    cfg = _cfg.load_config()
+    notif = cfg.setdefault("notifications", {})
+    notif["notification_depth"] = body.depths
+    _cfg.save_config(cfg)
+    return {"ok": True, "notification_depth": body.depths}
 
 
 @router.get("/settings/antispam")
@@ -579,5 +803,56 @@ async def ui_stats():
             "hour_counts": hour_counts,
             "dow_counts": dow_counts,
         }
+
+
+# ---------------------------------------------------------------------------
+# Contact info sheet
+# ---------------------------------------------------------------------------
+
+@router.get("/contact-info")
+async def ui_contact_info(
+    handle: str | None = Query(None),
+    guid: str | None = Query(None),
+):
+    """Return metadata + shared media for the contact info sheet.
+
+    Pass ``handle`` for 1:1 conversations, ``guid`` for group chats.
+    """
+    if not handle and not guid:
+        raise HTTPException(400, "handle or guid required")
+
+    def _get():
+        from web.main import contact_for, contact_for_group  # noqa: PLC0415
+        if guid:
+            return contact_for_group(guid)
+        return contact_for(handle)
+
+    try:
+        return await asyncio.to_thread(_get)
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@router.delete("/whitelist")
+async def ui_whitelist_remove(
+    handle: str | None = Query(None),
+    guid: str | None = Query(None),
+):
+    """Remove one handle or group GUID from the whitelist."""
+    if not handle and not guid:
+        raise HTTPException(400, "handle or guid required")
+
+    def _remove():
+        import whitelist as wl  # noqa: PLC0415
+        if guid:
+            wl.remove_group(guid)
+            return {"ok": True, "removed": guid}
+        wl.remove(handle)
+        return {"ok": True, "removed": handle}
+
+    try:
+        return await asyncio.to_thread(_remove)
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
 
     return await asyncio.to_thread(_compute)

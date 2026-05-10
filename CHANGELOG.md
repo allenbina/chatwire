@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-05-10
+
+### Added
+- **Scoped API keys** (#26): Multiple named API keys with per-key permission
+  scopes (`trigger_actions`, `read_conversations`, `send_messages`,
+  `manage_settings`). Keys use the `cwk_` prefix + 32 hex chars and are
+  stored PBKDF2-SHA256-hashed in `~/.chatwire/api_keys.json` (chmod 600).
+  Authenticate via `Authorization: Bearer cwk_<key>`.
+  Settings UI: create / delete / copy keys with scope checkboxes.
+- **Mark all read** (#19): "Mark all read" button in the sidebar clears all
+  unread badges; also calls `navigator.clearAppBadge()` on supported
+  browsers (PWA / Android). Keyboard shortcut `Shift+Escape` works from
+  anywhere in the app.
+- **Appearance quick-link** (#10): Sidebar footer now has an "Appearance"
+  link that navigates to `/settings#appearance` and auto-opens the
+  Appearance accordion section.
+- **Hash-driven settings accordion** (#9): `SettingsPage` reads the URL
+  hash on mount and on hash changes to open the matching section and
+  scroll it into view — enables deep-linking to any settings section.
+
+### Changed
+- `web/main.py` auth gate: Bearer token path added before cookie path —
+  `Authorization: Bearer cwk_…` header is validated against the API key
+  store and the required scope is checked against the route map before
+  falling through to cookie auth.
+
 ## [1.11.0] - 2026-05-10
 
 ### Changed

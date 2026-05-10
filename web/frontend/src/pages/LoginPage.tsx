@@ -1,7 +1,7 @@
 /**
  * LoginPage — React replacement for the Jinja2 _login.html template.
  *
- * Rendered at /app/login (React Router route "/login", basename "/app").
+ * Rendered at /login (React Router route "/login", basename "/app").
  * The auth-gate middleware in main.py redirects unauthenticated requests
  * here with an optional ?next= param; on success we follow it.
  *
@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input'
 
 export function LoginPage() {
   const [searchParams] = useSearchParams()
-  const nextParam = searchParams.get('next') || '/app/'
+  const nextParam = searchParams.get('next') || '/'
 
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -41,7 +41,7 @@ export function LoginPage() {
 
       if (resp.ok) {
         const data = await resp.json()
-        window.location.href = data.next || '/app/'
+        window.location.href = data.next || '/'
         return
       }
 
@@ -65,7 +65,7 @@ export function LoginPage() {
       className="min-h-screen flex items-center justify-center bg-background"
     >
       <div
-        className="rounded-xl shadow-lg w-full max-w-sm mx-4 p-8
+        className="rounded-[var(--radius)] shadow-[var(--shadow-card)] w-full max-w-sm mx-4 p-8
                    bg-card border border-border"
       >
         <h1 className="text-2xl font-bold mb-1 text-foreground">

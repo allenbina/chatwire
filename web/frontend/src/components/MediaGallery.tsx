@@ -162,7 +162,7 @@ export function MediaGallery({ images, senderName, fromMe }: MediaGalleryProps) 
           const thumbSrc = `/attachment?path=${encodeURIComponent(att.path)}&size=thumb`
           const altText = `Image sent by ${senderName ?? 'You'}`
           return (
-            <div key={i} className="relative aspect-square overflow-hidden bg-[--color-bg-secondary]">
+            <div key={i} className="relative aspect-square overflow-hidden bg-card">
               <button
                 type="button"
                 className="block w-full h-full"
@@ -206,10 +206,10 @@ export function MediaGallery({ images, senderName, fromMe }: MediaGalleryProps) 
 
 export function PendingAttachment({ name }: { name: string }) {
   return (
-    <div className="flex items-center gap-2 text-sm text-[--color-text-muted] px-4 py-2">
+    <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-2">
       <svg
         aria-hidden="true"
-        className="w-4 h-4 animate-spin text-[--color-accent]"
+        className="w-4 h-4 animate-spin text-primary"
         viewBox="0 0 24 24"
         fill="none"
       >

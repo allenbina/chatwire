@@ -1,0 +1,20 @@
+[
+  {
+    "name": "chatwire-ntfy",
+    "pypi": "chatwire-ntfy",
+    "description": "Push notifications via ntfy.sh or a self-hosted ntfy server. Instant alerts on every inbound iMessage.",
+    "author": "allenbina",
+    "signed": true,
+    "homepage": "https://github.com/allenbina/chatwire-ntfy",
+    "icon": "🔔"
+  },
+  {
+    "name": "chatwire-telegram",
+    "pypi": "chatwire-telegram",
+    "description": "Relay iMessages to and from a Telegram bot. Two-way bridge with full group chat support.",
+    "author": "allenbina",
+    "signed": true,
+    "homepage": "https://github.com/allenbina/chatwire-telegram",
+    "icon": "💬"
+  }
+]

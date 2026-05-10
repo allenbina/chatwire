@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  base: '/app/',
+  base: '/',
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -16,16 +16,16 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      scope: '/app/',
-      base: '/app/',
+      scope: '/',
+      base: '/',
       filename: 'sw.js',
       manifest: {
         name: 'chatwire',
         short_name: 'chatwire',
         description: 'iMessage bridge web client',
         display: 'standalone',
-        start_url: '/app/',
-        scope: '/app/',
+        start_url: '/',
+        scope: '/',
         theme_color: '#bd93f9',
         background_color: '#282a36',
         icons: [
@@ -43,7 +43,13 @@ export default defineConfig({
             src: 'icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
+          },
+          {
+            src: 'icons/icon-512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
@@ -82,7 +88,7 @@ export default defineConfig({
           // Built JS/CSS/images — CacheFirst (hashed filenames, safe to
           // serve from cache forever)
           {
-            urlPattern: /\/app\/assets\/.+\.(js|css|png|svg|woff2)$/,
+            urlPattern: /\/assets\/.+\.(js|css|png|svg|woff2)$/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'static-assets',
@@ -106,8 +112,8 @@ export default defineConfig({
           },
         ],
         // Offline fallback: serve the SPA shell when a navigation fails
-        navigateFallback: '/app/index.html',
-        navigateFallbackAllowlist: [/^\/app/],
+        navigateFallback: '/index.html',
+        navigateFallbackAllowlist: [/^\//],
       },
     }),
   ],

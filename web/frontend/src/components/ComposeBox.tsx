@@ -6,13 +6,13 @@
  * - Optimistic message added to zustand on submit; real message arrives
  *   via SSE / react-query refetch and the optimistic entry is cleared.
  * - Rate-limit / spam errors shown via Sonner toast.
- * - Paperclip button opens a file picker; selected file is uploaded and
+ * - ImagePlus button opens a file picker; selected file is uploaded and
  *   sent via POST /api/ui/upload with a pending indicator.
  */
 import { useState, useRef, KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Paperclip, Send } from 'lucide-react'
+import { ImagePlus, Send } from 'lucide-react'
 import { sendMessage, sendFile } from '../api'
 import { useChatStore, nextOptimisticId } from '../store'
 import { SlotRenderer } from '../plugins/SlotRenderer'
@@ -131,11 +131,11 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
   }
 
   return (
-    <div className="border-t border-[--color-border] bg-[--color-bg-primary] px-4 py-3">
+    <div className="border-t border-border bg-background px-4 py-3">
       <SlotRenderer slot="compose.extension" handle={handle} />
       <div
-        className="flex items-end gap-2 rounded-xl border border-[--color-border]
-                   bg-[--color-input-bg] px-2 py-1.5 focus-within:border-[--color-accent] transition-colors"
+        className="flex items-end gap-2 rounded-[var(--radius-input)] border border-border
+                   bg-input px-2 py-1.5 focus-within:border-primary transition-colors"
       >
         {/* Hidden file input */}
         <input
@@ -155,10 +155,10 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
           disabled={sending}
           aria-label="Attach file"
           title="Attach file"
-          className="flex-shrink-0 h-7 w-7 text-[--color-text-muted] hover:text-[--color-accent]
+          className="flex-shrink-0 h-7 w-7 text-muted-foreground hover:text-primary
                      hover:bg-transparent"
         >
-          <Paperclip className="h-4 w-4" />
+          <ImagePlus className="h-4 w-4" />
         </Button>
 
         {/* Message textarea */}
@@ -173,7 +173,7 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
           disabled={sending}
           aria-label="Type a message"
           className="flex-1 min-h-0 resize-none border-0 bg-transparent shadow-none
-                     text-sm text-[--color-text-primary] placeholder:text-[--color-text-muted]
+                     text-sm text-foreground placeholder:text-muted-foreground
                      focus-visible:ring-0 focus-visible:ring-offset-0 p-1 leading-snug"
           style={{ maxHeight: '144px' }}
         />
@@ -189,7 +189,7 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
           <Send className="h-4 w-4" />
         </Button>
       </div>
-      <p className="mt-1 text-[10px] text-[--color-text-muted]">
+      <p className="mt-1 text-[10px] text-muted-foreground">
         Enter to send &nbsp;&#183;&nbsp; Shift+Enter for newline
       </p>
     </div>

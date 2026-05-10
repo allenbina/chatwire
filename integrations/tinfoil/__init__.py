@@ -107,6 +107,7 @@ class TinfoilIntegration:
     """Built-in integration for AES-256-GCM symmetric message encryption."""
 
     NAME = "tinfoil"
+    TIER = "official"  # Reviewed built-in; needs raw text for encryption.
     DISPLAY_NAME = "Tinfoil Hat"
     DESCRIPTION = (
         "End-to-end encrypt messages with a shared passphrase. "

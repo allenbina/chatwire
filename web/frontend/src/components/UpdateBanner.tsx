@@ -64,7 +64,7 @@ export function UpdateBanner() {
         role="status"
         aria-live="polite"
         className="flex items-center justify-between px-4 py-2 text-sm
-                   bg-[--color-accent] text-[--color-bg-primary]"
+                   bg-primary text-primary-foreground"
       >
         <span>App updated in background. Reload to activate the new version.</span>
         <button
@@ -101,7 +101,7 @@ export function UpdateBanner() {
       role="status"
       aria-live="polite"
       className="flex items-center justify-between px-4 py-2 text-sm
-                 bg-[--color-warning] text-[--color-bg-primary]"
+                 bg-[--warning] text-background"
     >
       <span>
         chatwire v{latestVersion} is available (you have v{currentVersion}).{' '}
@@ -118,7 +118,7 @@ export function UpdateBanner() {
         type="button"
         onClick={dismiss}
         aria-label="Dismiss update notification"
-        className="ml-4 flex-shrink-0 text-[--color-bg-primary] opacity-80 hover:opacity-100"
+        className="ml-4 flex-shrink-0 text-background opacity-80 hover:opacity-100"
       >
         ✕
       </button>

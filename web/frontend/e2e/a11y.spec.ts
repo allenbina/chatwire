@@ -1,7 +1,7 @@
 /**
  * a11y.spec.ts — axe accessibility scan on key pages.
  *
- * Target: 0 critical violations on /app/ and /app/settings.
+ * Target: 0 critical violations on /* and /settings.
  * Uses @axe-core/playwright which wraps axe-core in Playwright.
  */
 import { test, expect } from '@playwright/test'
@@ -45,8 +45,8 @@ test.describe('Accessibility (@axe-core)', () => {
     )
   })
 
-  test('main chat page (/app/) has 0 critical a11y violations', async ({ page }) => {
-    await page.goto('/app/')
+  test('main chat page (/) has 0 critical a11y violations', async ({ page }) => {
+    await page.goto('/')
 
     // Wait for conversations to load
     await page.waitForSelector('[role="list"], [role="listitem"], nav, main', { timeout: 5_000 })
@@ -70,8 +70,8 @@ test.describe('Accessibility (@axe-core)', () => {
     expect(critical).toHaveLength(0)
   })
 
-  test('settings page (/app/settings) has 0 critical a11y violations', async ({ page }) => {
-    await page.goto('/app/settings')
+  test('settings page (/settings) has 0 critical a11y violations', async ({ page }) => {
+    await page.goto('/settings')
 
     // Wait for settings content to render (accordion button is a reliable signal)
     await page.getByRole('button', { name: /Appearance/i }).waitFor({ timeout: 5_000 })

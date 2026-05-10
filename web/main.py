@@ -69,6 +69,9 @@ from web.version_check import (  # noqa: E402
 )
 _VERSION_CACHE_FILE = STATE_DIR / "plugin_version_cache.json"
 
+# Plugin audit log
+from web.plugin_audit import log_event as _audit_log  # noqa: E402
+
 
 def _fetch_registry_blocking() -> list[dict]:
     """Thin wrapper: calls web.registry.fetch_registry with the app cache path."""
@@ -159,9 +162,41 @@ app.state.csrf_secret = _auth.new_session_secret()
 
 @app.middleware("http")
 async def _auth_gate(request: Request, call_next):
-    """Cookie-session auth gate. No-op when no password is configured."""
+    """Cookie-session + Bearer-token auth gate.
+
+    Bearer path: ``Authorization: Bearer cwk_<hex>`` — validated against
+    the scoped API key store.  The required scope is derived from the
+    request method + path; unguarded routes are allowed through.
+
+    Cookie path: unchanged — session cookie auth for the web UI.
+
+    When no password is configured the gate is a no-op for both paths
+    (the Bearer path still enforces scope when keys exist, but the cookie
+    path lets all requests through without a cookie).
+    """
+    path = request.url.path
+
+    # --- Bearer token path ---
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        bearer = auth_header[len("Bearer "):]
+        from web.api_keys import authenticate_bearer, scope_for_request  # noqa: PLC0415
+        entry = authenticate_bearer(bearer)
+        if entry is None:
+            from fastapi.responses import JSONResponse  # noqa: PLC0415
+            return JSONResponse({"detail": "Invalid API key."}, status_code=401)
+        required = scope_for_request(request.method, path)
+        if required and required not in entry.scopes:
+            from fastapi.responses import JSONResponse  # noqa: PLC0415
+            return JSONResponse(
+                {"detail": f"API key lacks required scope: {required}"},
+                status_code=403,
+            )
+        return await call_next(request)
+
+    # --- Cookie path ---
     block = getattr(app.state, "auth_block", None)
-    if block is None or _auth.is_public_path(request.url.path):
+    if block is None or _auth.is_public_path(path):
         return await call_next(request)
     cookie = request.cookies.get(_auth.COOKIE_NAME)
     age = _auth.cookie_age(cookie, block["session_secret"])
@@ -181,12 +216,12 @@ async def _auth_gate(request: Request, call_next):
                 _set_session_cookie(response, block["session_secret"])
         return response
     from urllib.parse import quote
-    target = "/app/login"
-    nxt = request.url.path
+    target = "/login"
+    nxt = path
     if request.url.query:
         nxt = f"{nxt}?{request.url.query}"
     if nxt and nxt != "/":
-        target = f"/app/login?next={quote(nxt, safe='')}"
+        target = f"/login?next={quote(nxt, safe='')}"
     return RedirectResponse(target, status_code=302)
 
 
@@ -196,6 +231,24 @@ async def _no_store_html(request: Request, call_next):
     ctype = response.headers.get("content-type", "")
     if ctype.startswith("text/html"):
         response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.middleware("http")
+async def _csp_headers(request: Request, call_next):
+    """Attach Content-Security-Policy to every response.
+
+    - default-src 'self'      — only same-origin resources by default.
+    - frame-src 'self'        — plugin iframes must come from 'self' (srcdoc counts).
+    - script-src 'self' 'unsafe-inline'  — unsafe-inline is required for the
+      React/Vite bundle which inlines a small bootstrap snippet.
+    """
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "frame-src 'self'; "
+        "script-src 'self' 'unsafe-inline'"
+    )
     return response
 
 
@@ -251,7 +304,7 @@ def _fmt_lockout(seconds: int) -> str:
 
 @app.get("/logout")
 async def logout():
-    resp = RedirectResponse("/app/login", status_code=303)
+    resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(_auth.COOKIE_NAME, samesite="lax")
     return resp
 
@@ -307,6 +360,7 @@ CONVOS_SQL = """
 SELECT
     h.id AS handle,
     MAX(m.date) AS last_dt,
+    MAX(m.ROWID) AS last_rowid,
     SUM(CASE WHEN m.is_read = 0 AND m.is_from_me = 0 THEN 1 ELSE 0 END) AS n,
     (SELECT COALESCE(SUBSTR(m2.text,1,80), '')
        FROM message m2
@@ -662,12 +716,14 @@ def _save_favorites(handles: list[str]) -> None:
 
 
 def list_conversations() -> list[dict]:
+    from read_state import get_all_last_seen  # noqa: PLC0415
     conn = _snapshot()
     try:
         rows = conn.execute(CONVOS_SQL).fetchall()
     finally:
         conn.close()
 
+    last_seen_map = get_all_last_seen()
     scope = relay_handles()
     seen: dict[str, dict] = {}
     for r in rows:
@@ -676,14 +732,17 @@ def list_conversations() -> list[dict]:
             continue
         name = CONTACTS.get(h.lower())
         key = name or h
+        last_rowid = int(r["last_rowid"] or 0)
         if key in seen:
             # First row per key wins because CONVOS_SQL orders by last_dt DESC.
             seen[key]["n"] += int(r["n"])
             seen[key]["all_handles"].append(h)
+            seen[key]["last_rowid"] = max(seen[key]["last_rowid"], last_rowid)
             continue
         raw_preview = r["preview"] or ""
         has_media = "￼" in raw_preview or "\ufffd" in raw_preview
         clean_preview = raw_preview.replace("￼", "").replace("\ufffd", "").strip()
+        last_seen = last_seen_map.get(h, 0)
         seen[key] = {
             "kind": "handle",
             "handle": h,
@@ -691,8 +750,11 @@ def list_conversations() -> list[dict]:
             "preview": clean_preview,
             "has_media": has_media,
             "last_dt": int(r["last_dt"] or 0),
+            "last_rowid": last_rowid,
+            "last_seen_rowid": last_seen,
             "n": int(r["n"]),
             "all_handles": [h],
+            "unseen": last_rowid > last_seen,
         }
 
     merged = list(seen.values()) + _list_group_convos()
@@ -729,6 +791,7 @@ def _list_group_convos() -> list[dict]:
             COALESCE(c.display_name, '') AS name,
             c.chat_identifier AS chat_identifier,
             MAX(m.date) AS last_dt,
+            MAX(m.ROWID) AS last_rowid,
             SUM(CASE WHEN m.is_read = 0 AND m.is_from_me = 0 THEN 1 ELSE 0 END) AS n,
             (SELECT COALESCE(SUBSTR(m2.text,1,80), '')
                FROM message m2
@@ -746,6 +809,8 @@ def _list_group_convos() -> list[dict]:
         rows = conn.execute(sql, list(guids)).fetchall()
     finally:
         conn.close()
+    from read_state import get_all_last_seen  # noqa: PLC0415
+    last_seen_map = get_all_last_seen()
     out: list[dict] = []
     for r in rows:
         fallback = (r["chat_identifier"] or "").removeprefix("chat")[-6:]
@@ -753,14 +818,20 @@ def _list_group_convos() -> list[dict]:
         raw_preview = r["preview"] or ""
         has_media = "￼" in raw_preview or "\ufffd" in raw_preview
         clean_preview = raw_preview.replace("￼", "").replace("\ufffd", "").strip()
+        last_rowid = int(r["last_rowid"] or 0)
+        guid = r["guid"]
+        last_seen = last_seen_map.get(guid, 0)
         out.append({
             "kind": "group",
-            "guid": r["guid"],
+            "guid": guid,
             "name": name,
             "preview": clean_preview,
             "has_media": has_media,
             "last_dt": int(r["last_dt"] or 0),
+            "last_rowid": last_rowid,
+            "last_seen_rowid": last_seen,
             "n": int(r["n"]),
+            "unseen": last_rowid > last_seen,
         })
     return out
 
@@ -1208,11 +1279,6 @@ def _delivery_status(r) -> dict:
 
 
 # ------- routes -------
-
-@app.get("/")
-async def index():
-    return RedirectResponse(url="/app/", status_code=302)
-
 
 @app.get("/legacy")
 async def legacy_ui():
@@ -1928,6 +1994,8 @@ def _installed_plugins() -> list[dict]:
             "schema": schema,
             "config": plugin_cfg,
             "enabled": plugin_cfg.get("enabled", False),
+            # Sandbox tier — controls data access in the bridge fan-out.
+            "tier": getattr(cls, "TIER", "core"),
             # Third-party EP plugins carry dist metadata; built-ins don't.
             "dist_name": dist_name,
             "installed_version": installed_version,
@@ -2410,6 +2478,57 @@ async def api_plugins_update(request: Request):
     return {"ok": True, "signed": False, "warning": "unsigned"}
 
 
+@app.get("/api/plugins/installed")
+async def api_plugins_installed():
+    """Return all installed plugins with tier + enabled state.
+
+    Response: list of plugin dicts with name, display_name, description,
+    icon, tier, enabled, dist_name, installed_version.
+    """
+    plugins = await asyncio.to_thread(_installed_plugins)
+    # Return a clean subset (no schema or raw config — too noisy for UI).
+    return [
+        {
+            "name": p["name"],
+            "display_name": p["display_name"],
+            "description": p["description"],
+            "icon": p["icon"],
+            "tier": p.get("tier", "core"),
+            "enabled": p["enabled"],
+            "dist_name": p.get("dist_name"),
+            "installed_version": p.get("installed_version"),
+        }
+        for p in plugins
+    ]
+
+
+@app.post("/api/plugins/configure")
+async def api_plugins_configure(request: Request):
+    """Enable or disable a plugin, write an audit log entry.
+
+    Request body: ``{"name": "stats", "enabled": true}``
+    """
+    body = await request.json()
+    name: str = body.get("name", "").strip()
+    enabled: bool = bool(body.get("enabled", False))
+
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    cfg = _bridge_config.load_config()
+    int_cfg: dict = cfg.setdefault("integrations", {})
+    plugin_entry: dict = int_cfg.setdefault(name, {})
+    was_enabled = plugin_entry.get("enabled", False)
+    plugin_entry["enabled"] = enabled
+    _bridge_config.save_config(cfg)
+
+    # Audit log for official/core plugin state changes (always write all tiers).
+    event = "plugin_enable" if enabled else "plugin_disable"
+    _audit_log(event, plugin=name, was_enabled=was_enabled)
+
+    return {"ok": True, "name": name, "enabled": enabled}
+
+
 @app.get("/api/chatwire/version-check")
 async def api_chatwire_version_check():
     """Return chatwire core version info from PyPI (cached 24h).
@@ -2798,17 +2917,60 @@ _react_dist = Path(__file__).parent / "frontend" / "dist"
 if _react_dist.is_dir():
     from starlette.staticfiles import StaticFiles as _SPA_Static
 
-    # Serve built assets (JS, CSS, images) at /app/assets/
+    # Serve built assets (JS, CSS, images) at /assets/
     app.mount(
-        "/app/assets",
+        "/assets",
         _SPA_Static(directory=_react_dist / "assets"),
         name="react-assets",
     )
 
-    @app.get("/app/{path:path}")
-    @app.get("/app")
+    # Serve PWA icons at /icons/ (used by the web-app manifest and
+    # apple-touch-icon meta tag).
+    if (_react_dist / "icons").is_dir():
+        app.mount(
+            "/icons",
+            _SPA_Static(directory=_react_dist / "icons"),
+            name="pwa-icons",
+        )
+
+    # Serve PWA root-level files (manifest, service worker, workbox).
+    # These must be at the site root for the browser to accept them.
+    _pwa_root_files = [
+        "manifest.webmanifest",
+        "sw.js",
+        "registerSW.js",
+    ]
+
+    @app.get("/workbox-{_suffix}.js")
+    async def workbox_js(_suffix: str) -> FileResponse:
+        """Serve the Workbox runtime chunk generated by vite-plugin-pwa."""
+        import glob as _glob
+        matches = _glob.glob(str(_react_dist / "workbox-*.js"))
+        if matches:
+            return FileResponse(matches[0], media_type="application/javascript")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404)
+
+    for _pwa_file in _pwa_root_files:
+        _pwa_path = _react_dist / _pwa_file
+
+        def _make_pwa_route(path: Path, filename: str):
+            mime = (
+                "application/manifest+json"
+                if filename.endswith(".webmanifest")
+                else "application/javascript"
+            )
+
+            @app.get(f"/{filename}")
+            async def _pwa_static_file() -> FileResponse:
+                return FileResponse(path, media_type=mime)
+            _pwa_static_file.__name__ = f"pwa_{filename.replace('.', '_')}"
+
+        _make_pwa_route(_pwa_path, _pwa_file)
+
+    @app.get("/{path:path}")
     async def react_spa(request: Request, path: str = "") -> FileResponse:
-        """Serve React SPA — all /app/* routes return index.html,
+        """Serve React SPA — all unmatched routes return index.html,
         letting React Router handle client-side routing."""
         return FileResponse(_react_dist / "index.html")
 

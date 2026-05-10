@@ -346,6 +346,7 @@ class McpIntegration:
     """
 
     NAME = "mcp"
+    TIER = "official"  # Reviewed built-in; LLM agent access to messages.
     DISPLAY_NAME = "MCP Server"
     DESCRIPTION = "Expose chatwire as MCP tools for LLM agents (run: chatwire mcp)"
     ICON = "🤖"

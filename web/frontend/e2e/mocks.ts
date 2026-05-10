@@ -141,8 +141,8 @@ export async function installMocks(page: Page) {
 
 /** Install mocks that simulate an unauthenticated session. */
 export async function installUnauthMocks(page: Page) {
-  // /app/* routes are served by the Vite dev server (SPA shell), but API
-  // calls get 401 so api.ts sets window.location.href = '/app/login?next=...'
+  // /* routes are served by the Vite dev server (SPA shell), but API
+  // calls get 401 so api.ts sets window.location.href = '/login?next=...'
   // which navigates within the SPA to the React LoginPage.
   await page.route('/api/auth/check', (r) =>
     r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Not authenticated' }) })

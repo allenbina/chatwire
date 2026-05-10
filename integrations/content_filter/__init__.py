@@ -101,6 +101,7 @@ class ContentFilterIntegration:
     """Built-in integration that replaces filtered words with emoji."""
 
     NAME = "content_filter"
+    TIER = "core"  # Built-in anti-abuse; needs raw text; bypasses sandboxing.
     DISPLAY_NAME = "Content Filter"
     DESCRIPTION = (
         "Replace words/phrases in inbound messages with emoji. "

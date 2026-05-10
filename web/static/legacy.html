@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en" data-theme="dracula">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Chatwire — Legacy UI Preview</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+/* ── Dracula theme tokens ── */
+[data-theme="dracula"] {
+  --app-color-bg: #282a36;
+  --app-color-surface: #282a36;
+  --app-color-surface-alt: #21222c;
+  --app-color-surface-hover: #343746;
+  --app-color-border: #44475a;
+  --app-color-border-subtle: #353746;
+  --app-color-text: #f8f8f2;
+  --app-color-text-subtle: #d8d8d2;
+  --app-color-text-muted: #a8a8a2;
+  --app-color-text-faint: #6272a4;
+  --app-color-primary: #bd93f9;
+  --app-color-primary-hover: #a679f0;
+  --app-color-on-primary: #282a36;
+  --app-color-success: #50fa7b;
+  --app-color-success-bg: #1d3a25;
+  --app-color-warning: #f1fa8c;
+  --app-color-warning-bg: #3a3a20;
+  --app-color-danger: #ff5555;
+  --app-color-danger-bg: #3a1f1f;
+  --app-color-danger-border: #6c2c2c;
+  --app-color-bubble-them-bg: #44475a;
+  --app-color-bubble-sms-bg: #50fa7b;
+  --app-color-avatar-fallback-bg: #6272a4;
+  --app-color-avatar-fallback-group-bg: #bd93f9;
+}
+
+/* ── Base layout ── */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  background-color: var(--app-color-bg);
+  color: var(--app-color-text);
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* ── Banner ── */
+.legacy-banner {
+  grid-column: 1 / -1;
+  background: var(--app-color-primary);
+  color: var(--app-color-on-primary);
+  text-align: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.legacy-banner a {
+  color: var(--app-color-on-primary);
+  text-decoration: underline;
+  margin-left: 0.75rem;
+}
+
+/* ── Sidebar ── */
+#sidebar {
+  background-color: var(--app-color-surface);
+  border-right: 1px solid var(--app-color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--app-color-border);
+  flex-shrink: 0;
+}
+.sidebar-header h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+.gear-icon {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  color: var(--app-color-text-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+.gear-icon:hover { background: var(--app-color-surface-hover); }
+
+/* ── Conversation list ── */
+.convolist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.convolist li { border-bottom: 1px solid var(--app-color-border-subtle); }
+.convolist a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+.convolist a:hover { background: var(--app-color-surface-hover); }
+.convolist a.active { background: var(--app-color-surface-hover); }
+
+.avatar {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background: var(--app-color-avatar-fallback-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--app-color-text-muted);
+}
+.avatar.group { background: var(--app-color-avatar-fallback-group-bg); }
+
+.convo-text { flex: 1; min-width: 0; }
+.convo-top { display: flex; justify-content: space-between; align-items: baseline; }
+.convo-name { font-size: 1rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.convo-time { font-size: 0.75rem; color: var(--app-color-text-faint); flex-shrink: 0; margin-left: 0.5rem; }
+.convo-bottom { display: flex; align-items: center; gap: 0.25rem; margin-top: 0.125rem; justify-content: space-between; }
+.convo-preview { font-size: 0.875rem; color: var(--app-color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--app-color-on-primary);
+  background: var(--app-color-primary);
+  border-radius: 9999px;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+  line-height: 1;
+}
+.fav-star {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 1rem;
+  height: 1rem;
+  color: #facc15;
+  fill: currentColor;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.3));
+}
+
+/* ── Main pane ── */
+#main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--app-color-bg);
+}
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--app-color-border);
+  background: var(--app-color-surface);
+  flex-shrink: 0;
+}
+.chat-header h2 { font-size: 1rem; font-weight: 600; margin: 0; }
+.chat-header small { font-size: 0.875rem; color: var(--app-color-text-muted); display: block; }
+.header-icon {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  color: var(--app-color-text-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.header-icon:hover { background: var(--app-color-surface-hover); color: var(--app-color-text-subtle); }
+
+/* ── Messages ── */
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+.msg {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.75rem;
+}
+.msg.me { align-items: flex-end; }
+.msg.them { align-items: flex-start; }
+.bubble {
+  max-width: 20rem;
+  padding: 0.5rem 1rem;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.msg.me .bubble {
+  background: var(--app-color-primary);
+  color: var(--app-color-on-primary);
+  border-bottom-right-radius: 0.125rem;
+}
+.msg.them .bubble {
+  background: var(--app-color-bubble-them-bg);
+  color: var(--app-color-text);
+  border-bottom-left-radius: 0.125rem;
+}
+.msg .ts {
+  font-size: 0.75rem;
+  color: var(--app-color-text-faint);
+  margin-top: 0.25rem;
+}
+.sender {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--app-color-text);
+  margin-bottom: 0.125rem;
+}
+
+/* ── Composer ── */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--app-color-border);
+  background: var(--app-color-surface);
+  flex-shrink: 0;
+}
+.composer input[type="text"] {
+  flex: 1;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  color: var(--app-color-text);
+  background: var(--app-color-surface-alt);
+  border: 1px solid var(--app-color-border);
+  border-radius: 9999px;
+  outline: none;
+}
+.composer input[type="text"]:focus {
+  border-color: var(--app-color-primary);
+}
+.composer input[type="text"]::placeholder {
+  color: var(--app-color-text-faint);
+}
+.composer-btn {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  color: var(--app-color-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.composer-btn:hover { background: var(--app-color-surface-hover); }
+.send-btn {
+  padding: 0.5rem;
+  border-radius: 9999px;
+  background: var(--app-color-primary);
+  color: var(--app-color-on-primary);
+  border: none;
+  cursor: pointer;
+}
+.send-btn:hover { background: var(--app-color-primary-hover); }
+
+/* ── Settings ── */
+.settings { display: flex; flex-direction: column; overflow-y: auto; height: 100%; }
+.settings-body { padding: 1rem; flex: 1; overflow-y: auto; }
+.accordion { border: 1px solid var(--app-color-border); border-radius: 0.5rem; overflow: hidden; }
+.acc-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 0.75rem 1.25rem;
+  font-size: 0.875rem; font-weight: 500;
+  color: var(--app-color-text);
+  background: var(--app-color-surface-alt);
+  border: none; border-bottom: 1px solid var(--app-color-border);
+  cursor: pointer; gap: 0.75rem; text-align: left;
+}
+.acc-toggle:hover { background: var(--app-color-surface-hover); }
+.acc-toggle .acc-label { display: flex; align-items: center; gap: 0.5rem; }
+.acc-toggle .acc-arrow { width: 0.75rem; height: 0.75rem; flex-shrink: 0; transition: transform 0.2s; }
+.acc-toggle[aria-expanded="true"] .acc-arrow { transform: rotate(180deg); }
+.acc-body { display: none; padding: 1rem 1.25rem; background: var(--app-color-surface); border-bottom: 1px solid var(--app-color-border); }
+.acc-body.open { display: block; }
+
+.handle-pill {
+  display: inline-block; padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem; font-family: monospace;
+  background: var(--app-color-surface-alt); border-radius: 0.375rem;
+  margin: 0.125rem 0;
+}
+.hint { font-size: 0.75rem; color: var(--app-color-text-muted); margin-top: 0.5rem; }
+
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr)); gap: 0.5rem; margin-top: 0.75rem; }
+.theme-swatch {
+  height: 2.5rem; border-radius: 0.5rem; border: 2px solid transparent;
+  cursor: pointer; position: relative; overflow: hidden;
+}
+.theme-swatch.active { border-color: var(--app-color-primary); }
+.theme-swatch-label {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  font-size: 0.625rem; text-align: center; padding: 0.125rem;
+  background: rgba(0,0,0,0.5); color: #fff;
+}
+
+.wl-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.375rem 0; font-size: 0.8125rem;
+}
+.wl-row + .wl-row { border-top: 1px solid var(--app-color-border-subtle); }
+.wl-remove {
+  font-size: 0.75rem; color: var(--app-color-danger); background: none;
+  border: none; cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 0.25rem;
+}
+.wl-remove:hover { background: var(--app-color-danger-bg); }
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; }
+.toggle-row + .toggle-row { border-top: 1px solid var(--app-color-border-subtle); }
+.toggle-label { font-size: 0.8125rem; }
+.toggle-switch {
+  width: 2.5rem; height: 1.375rem; border-radius: 9999px;
+  background: var(--app-color-border); position: relative;
+  cursor: pointer; border: none; padding: 0;
+}
+.toggle-switch.on { background: var(--app-color-primary); }
+.toggle-switch::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 1rem; height: 1rem; border-radius: 9999px;
+  background: #fff; transition: transform 0.15s;
+}
+.toggle-switch.on::after { transform: translateX(1.125rem); }
+
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.stat-card {
+  background: var(--app-color-surface-alt); border-radius: 0.5rem;
+  padding: 0.75rem 1rem; text-align: center;
+}
+.stat-value { font-size: 1.5rem; font-weight: 700; color: var(--app-color-primary); }
+.stat-label { font-size: 0.6875rem; color: var(--app-color-text-muted); margin-top: 0.25rem; }
+
+.about-row { font-size: 0.8125rem; padding: 0.375rem 0; }
+.about-row + .about-row { border-top: 1px solid var(--app-color-border-subtle); }
+.about-label { color: var(--app-color-text-muted); }
+.about-value { color: var(--app-color-text); float: right; }
+
+.pw-field {
+  width: 100%; padding: 0.5rem 0.75rem; font-size: 0.8125rem;
+  color: var(--app-color-text); background: var(--app-color-surface-alt);
+  border: 1px solid var(--app-color-border); border-radius: 0.5rem;
+  outline: none; margin-bottom: 0.5rem;
+}
+.pw-field:focus { border-color: var(--app-color-primary); }
+.pw-btn {
+  padding: 0.5rem 1rem; font-size: 0.8125rem; font-weight: 500;
+  color: var(--app-color-on-primary); background: var(--app-color-primary);
+  border: none; border-radius: 0.5rem; cursor: pointer;
+}
+.pw-btn:hover { background: var(--app-color-primary-hover); }
+
+/* ── Responsive ── */
+@media (min-width: 768px) and (max-width: 1023px) {
+  body { grid-template-columns: 280px 1fr; }
+}
+@media (max-width: 767px) {
+  body { grid-template-columns: 1fr; }
+  #sidebar { display: none; }
+}
+  </style>
+</head>
+<body>
+
+<!-- Banner -->
+<div class="legacy-banner">
+  This is a read-only snapshot of the original Jinja2/htmx UI with sample data.
+  <a href="/app">Go to current app &rarr;</a>
+</div>
+
+<!-- Sidebar -->
+<nav id="sidebar" aria-label="Conversations">
+  <div class="sidebar-header">
+    <h2>Messages</h2>
+    <button class="gear-icon" aria-label="settings" title="settings" onclick="showView('settings')">
+      <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clip-rule="evenodd"/></svg>
+    </button>
+  </div>
+  <ul class="convolist" role="list">
+    <li><a class="active" href="#">
+      <div style="position:relative">
+        <div class="avatar">S</div>
+        <svg class="fav-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      </div>
+      <div class="convo-text">
+        <div class="convo-top"><span class="convo-name">Sarah Chen</span><span class="convo-time">2:34 PM</span></div>
+        <div class="convo-bottom"><span class="convo-preview">Sounds good, see you at 7!</span></div>
+      </div>
+    </a></li>
+    <li><a href="#">
+      <div class="avatar group">&#128101;</div>
+      <div class="convo-text">
+        <div class="convo-top"><span class="convo-name">Family Group</span><span class="convo-time">1:15 PM</span></div>
+        <div class="convo-bottom"><span class="convo-preview">Mom: Don't forget Sunday dinner</span><span class="unread-badge">3</span></div>
+      </div>
+    </a></li>
+    <li><a href="#">
+      <div class="avatar">M</div>
+      <div class="convo-text">
+        <div class="convo-top"><span class="convo-name">Mike Rodriguez</span><span class="convo-time">12:02 PM</span></div>
+        <div class="convo-bottom"><span class="convo-preview">The deploy went through, all green</span></div>
+      </div>
+    </a></li>
+    <li><a href="#">
+      <div class="avatar">J</div>
+      <div class="convo-text">
+        <div class="convo-top"><span class="convo-name">Jake Park</span><span class="convo-time">Yesterday</span></div>
+        <div class="convo-bottom"><span class="convo-preview">lol that's wild</span></div>
+      </div>
+    </a></li>
+    <li><a href="#">
+      <div class="avatar group">&#128101;</div>
+      <div class="convo-text">
+        <div class="convo-top"><span class="convo-name">D&amp;D Group</span><span class="convo-time">Yesterday</span></div>
+        <div class="convo-bottom"><span class="convo-preview">Alex: Session still on for Friday?</span><span class="unread-badge">1</span></div>
+      </div>
+    </a></li>
+    <li><a href="#">
+      <div class="avatar">L</div>
+      <div class="convo-text">
+        <div class="convo-top"><span class="convo-name">Lisa Wang</span><span class="convo-time">Mon</span></div>
+        <div class="convo-bottom"><span class="convo-preview">Thanks for the coffee recommendation!</span></div>
+      </div>
+    </a></li>
+    <li><a href="#">
+      <div class="avatar">D</div>
+      <div class="convo-text">
+        <div class="convo-top"><span class="convo-name">David Kim</span><span class="convo-time">Mon</span></div>
+        <div class="convo-bottom"><span class="convo-preview">The PR looks good, merging now</span></div>
+      </div>
+    </a></li>
+    <li><a href="#">
+      <div class="avatar">E</div>
+      <div class="convo-text">
+        <div class="convo-top"><span class="convo-name">Emma Torres</span><span class="convo-time">Sun</span></div>
+        <div class="convo-bottom"><span class="convo-preview">Happy birthday! 🎂</span></div>
+      </div>
+    </a></li>
+  </ul>
+</nav>
+
+<!-- Main area: chat + settings (toggled by JS) -->
+<div id="main">
+
+  <!-- Chat view -->
+  <div id="view-chat" class="settings" style="height:100%">
+    <header class="chat-header">
+      <div style="flex:1;min-width:0">
+        <h2>Sarah Chen</h2>
+        <small>+1 (555) 012-3456 &middot; iMessage</small>
+      </div>
+      <button class="header-icon" aria-label="export" title="export">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+      <button class="header-icon" aria-label="pop out" title="pop out">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </button>
+      <button class="header-icon" aria-label="contact info" title="contact info">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><line x1="12" y1="12" x2="12" y2="16"/></svg>
+      </button>
+    </header>
+    <div id="messages" role="log" aria-live="polite" aria-label="Conversation messages">
+      <div class="msg them"><div class="bubble">Hey! Are you free for dinner tonight?</div><div class="ts">Today 1:45 PM</div></div>
+      <div class="msg me"><div class="bubble">Yeah! Where are you thinking?</div><div class="ts">Today 1:47 PM</div></div>
+      <div class="msg them"><div class="bubble">How about that new Thai place on Main St? I heard their pad see ew is amazing</div><div class="ts">Today 1:48 PM</div></div>
+      <div class="msg me"><div class="bubble">Oh I've been wanting to try that place! What time?</div><div class="ts">Today 1:50 PM</div></div>
+      <div class="msg them"><div class="bubble">7pm work? I can make a reservation</div><div class="ts">Today 1:51 PM</div></div>
+      <div class="msg me"><div class="bubble">Perfect, 7 works great</div><div class="ts">Today 1:52 PM</div></div>
+      <div class="msg them"><div class="bubble">Awesome, booked it! Table for 2 at 7 &#x1F44D;</div><div class="ts">Today 2:30 PM</div></div>
+      <div class="msg me"><div class="bubble">Sounds good, see you at 7!</div><div class="ts">Today 2:34 PM</div></div>
+    </div>
+    <div class="composer">
+      <button class="composer-btn" title="attach a file" aria-label="attach a file">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+      </button>
+      <button class="composer-btn" title="emoji" aria-label="insert emoji">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+      </button>
+      <input type="text" placeholder="message Sarah Chen..." disabled aria-label="Type a message">
+      <button class="send-btn" disabled aria-label="Send message">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Settings view (hidden by default) -->
+  <div id="view-settings" class="settings" style="display:none;height:100%">
+    <header class="chat-header">
+      <div style="flex:1;min-width:0"><h2>Settings</h2></div>
+    </header>
+    <div class="settings-body">
+      <div class="accordion">
+
+        <!-- Self handles -->
+        <button class="acc-toggle" aria-expanded="false" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Self handles
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="handle-pill">+1 (555) 987-6543</div><br>
+          <div class="handle-pill">allen@example.com</div>
+          <p class="hint">Edit <code style="font-size:0.75rem;background:var(--app-color-surface-alt);padding:0.125rem 0.25rem;border-radius:0.25rem">SELF_HANDLES</code> in <code style="font-size:0.75rem;background:var(--app-color-surface-alt);padding:0.125rem 0.25rem;border-radius:0.25rem">~/.chatwire/config.json</code> and reload.</p>
+        </div>
+
+        <!-- Whitelist -->
+        <button class="acc-toggle" aria-expanded="false" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5h6m-3 7v4m-2-2h4"/></svg>
+            Whitelist
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="wl-row"><span>Sarah Chen &mdash; +1 (555) 012-3456</span><button class="wl-remove">remove</button></div>
+          <div class="wl-row"><span>Mike Rodriguez &mdash; +1 (555) 234-5678</span><button class="wl-remove">remove</button></div>
+          <div class="wl-row"><span>Jake Park &mdash; +1 (555) 345-6789</span><button class="wl-remove">remove</button></div>
+          <div class="wl-row"><span>Lisa Wang &mdash; +1 (555) 456-7890</span><button class="wl-remove">remove</button></div>
+          <div class="wl-row"><span>[Family Group]</span><button class="wl-remove">remove</button></div>
+          <div class="wl-row"><span>[D&amp;D Group]</span><button class="wl-remove">remove</button></div>
+          <p class="hint">Only whitelisted contacts can reach you through the bridge.</p>
+        </div>
+
+        <!-- Favorites -->
+        <button class="acc-toggle" aria-expanded="false" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="#facc15" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            Favorites
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="wl-row"><span>Sarah Chen</span><button class="wl-remove">remove</button></div>
+          <p class="hint">Pinned contacts appear at the top of the sidebar with a gold star.</p>
+        </div>
+
+        <!-- Password -->
+        <button class="acc-toggle" aria-expanded="false" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1a5 5 0 0 0-5 5v3H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V11a2 2 0 0 0-2-2h-2V6a5 5 0 0 0-5-5zm0 2a3 3 0 0 1 3 3v3H9V6a3 3 0 0 1 3-3zm0 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+            Password
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body">
+          <label style="font-size:0.75rem;color:var(--app-color-text-muted);display:block;margin-bottom:0.25rem">Current password</label>
+          <input type="password" class="pw-field" disabled placeholder="current password">
+          <label style="font-size:0.75rem;color:var(--app-color-text-muted);display:block;margin-bottom:0.25rem">New password</label>
+          <input type="password" class="pw-field" disabled placeholder="new password">
+          <label style="font-size:0.75rem;color:var(--app-color-text-muted);display:block;margin-bottom:0.25rem">Confirm new password</label>
+          <input type="password" class="pw-field" disabled placeholder="confirm new password">
+          <button class="pw-btn" disabled>Change password</button>
+        </div>
+
+        <!-- Appearance -->
+        <button class="acc-toggle" aria-expanded="true" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            Appearance
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body open">
+          <div style="font-size:0.8125rem;margin-bottom:0.5rem;color:var(--app-color-text-muted)">Theme</div>
+          <div class="theme-grid">
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#1e1e2e,#313244)"><span class="theme-swatch-label">catppuccin</span></div>
+            <div class="theme-swatch active" style="background:linear-gradient(135deg,#282a36,#44475a)"><span class="theme-swatch-label">dracula</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#24273a,#363a4f)"><span class="theme-swatch-label">macchiato</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#0d1117,#161b22)"><span class="theme-swatch-label">github-dark</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#002b36,#073642)"><span class="theme-swatch-label">solarized</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#1a1b26,#24283b)"><span class="theme-swatch-label">tokyo-night</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#2e3440,#3b4252)"><span class="theme-swatch-label">nord</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#272822,#3e3d32)"><span class="theme-swatch-label">monokai</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#faf4ed,#f2e9e1)"><span class="theme-swatch-label">rose-pine-dawn</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#eff1f5,#ccd0da)"><span class="theme-swatch-label">latte</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#f6f8fa,#d0d7de)"><span class="theme-swatch-label">github-light</span></div>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#fdf6e3,#eee8d5)"><span class="theme-swatch-label">sol-light</span></div>
+          </div>
+          <div style="margin-top:1rem">
+            <div class="toggle-row">
+              <span class="toggle-label">Full-size thumbnails</span>
+              <button class="toggle-switch" onclick="this.classList.toggle('on')"></button>
+            </div>
+            <div class="toggle-row">
+              <span class="toggle-label">Show delivery status</span>
+              <button class="toggle-switch on" onclick="this.classList.toggle('on')"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Anti-spam -->
+        <button class="acc-toggle" aria-expanded="false" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Anti-spam
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body">
+          <p class="hint" style="margin-top:0">Chatwire monitors outbound messages for broadcast spam. If the same message is sent to too many recipients, sending is progressively throttled.</p>
+          <div class="toggle-row" style="margin-top:0.5rem">
+            <span class="toggle-label">Anti-spam enabled</span>
+            <button class="toggle-switch on" onclick="this.classList.toggle('on')"></button>
+          </div>
+        </div>
+
+        <!-- Integrations -->
+        <button class="acc-toggle" aria-expanded="false" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+            Integrations
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="toggle-row">
+            <span class="toggle-label">Telegram bridge</span>
+            <button class="toggle-switch on" onclick="this.classList.toggle('on')"></button>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">ntfy notifications</span>
+            <button class="toggle-switch on" onclick="this.classList.toggle('on')"></button>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">Home Assistant</span>
+            <button class="toggle-switch" onclick="this.classList.toggle('on')"></button>
+          </div>
+          <p class="hint">Manage plugins via the plugin SDK. See docs for details.</p>
+        </div>
+
+        <!-- Stats -->
+        <button class="acc-toggle" aria-expanded="false" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+            Stats
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="stat-grid">
+            <div class="stat-card"><div class="stat-value">12,847</div><div class="stat-label">Total messages</div></div>
+            <div class="stat-card"><div class="stat-value">23</div><div class="stat-label">Conversations</div></div>
+            <div class="stat-card"><div class="stat-value">1,204</div><div class="stat-label">Photos shared</div></div>
+            <div class="stat-card"><div class="stat-value">47d</div><div class="stat-label">Uptime</div></div>
+          </div>
+        </div>
+
+        <!-- About -->
+        <button class="acc-toggle" aria-expanded="false" onclick="toggleAcc(this)">
+          <span class="acc-label">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            About
+          </span>
+          <svg class="acc-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 10 6"><path d="M1 1 5 5 9 1"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="about-row"><span class="about-label">Version</span><span class="about-value">1.10.0</span></div>
+          <div class="about-row"><span class="about-label">Python</span><span class="about-value">3.14.0</span></div>
+          <div class="about-row"><span class="about-label">macOS</span><span class="about-value">Ventura 13.7</span></div>
+          <div class="about-row"><span class="about-label">Uptime</span><span class="about-value">47d 3h 22m</span></div>
+          <div class="about-row"><span class="about-label">License</span><span class="about-value">MIT</span></div>
+        </div>
+
+      </div><!-- /accordion -->
+    </div><!-- /settings-body -->
+  </div><!-- /view-settings -->
+
+</div><!-- /main -->
+
+<script>
+function showView(name) {
+  document.getElementById('view-chat').style.display = name === 'chat' ? '' : 'none';
+  document.getElementById('view-settings').style.display = name === 'settings' ? '' : 'none';
+  // deselect sidebar conversations when showing settings
+  document.querySelectorAll('.convolist a').forEach(a => a.classList.toggle('active', false));
+}
+
+function toggleAcc(btn) {
+  const body = btn.nextElementSibling;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  btn.setAttribute('aria-expanded', !isOpen);
+}
+
+// Clicking any conversation switches to chat view
+document.querySelectorAll('.convolist a').forEach(a => {
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelectorAll('.convolist a').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    showView('chat');
+  });
+});
+</script>
+
+</body>
+</html>

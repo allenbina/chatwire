@@ -90,17 +90,17 @@ describe('LoginPage — success', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ ok: true, next: '/app/' }),
+      json: async () => ({ ok: true, next: '/' }),
     }))
 
     renderLogin()
     await user.type(screen.getByLabelText(/password/i), 'secret')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    await waitFor(() => expect(locationHref).toBe('/app/'))
+    await waitFor(() => expect(locationHref).toBe('/'))
   })
 
-  it('falls back to /app/ when data.next is absent', async () => {
+  it('falls back to / when data.next is absent', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -111,38 +111,38 @@ describe('LoginPage — success', () => {
     await user.type(screen.getByLabelText(/password/i), 'secret')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    await waitFor(() => expect(locationHref).toBe('/app/'))
+    await waitFor(() => expect(locationHref).toBe('/'))
   })
 
   it('forwards ?next= to the redirect target', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ ok: true, next: '/app/settings' }),
+      json: async () => ({ ok: true, next: '/settings' }),
     }))
 
-    renderLogin('?next=/app/settings')
+    renderLogin('?next=/settings')
     await user.type(screen.getByLabelText(/password/i), 'secret')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    await waitFor(() => expect(locationHref).toBe('/app/settings'))
+    await waitFor(() => expect(locationHref).toBe('/settings'))
   })
 
   it('sends ?next= param in the POST body', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ ok: true, next: '/app/chat/alice' }),
+      json: async () => ({ ok: true, next: '/chat/alice' }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    renderLogin('?next=/app/chat/alice')
+    renderLogin('?next=/chat/alice')
     await user.type(screen.getByLabelText(/password/i), 'hunter2')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.next).toBe('/app/chat/alice')
+    expect(body.next).toBe('/chat/alice')
     expect(body.password).toBe('hunter2')
   })
 })
@@ -244,7 +244,7 @@ describe('LoginPage — errors', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ ok: true, next: '/app/' }),
+        json: async () => ({ ok: true, next: '/' }),
       })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -262,7 +262,7 @@ describe('LoginPage — errors', () => {
     await user.type(input, 'correct')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    await waitFor(() => expect(locationHref).toBe('/app/'))
+    await waitFor(() => expect(locationHref).toBe('/'))
     expect(vi.mocked(toast.error)).toHaveBeenCalledTimes(1)
   })
 })
