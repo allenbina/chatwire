@@ -16,15 +16,21 @@ The pair programmer throughout: Anthropic's Claude.
 
 ```mermaid
 gantt
-    title chatwire — three repos, three phases
+    title chatwire — three repos, three phases (and the upgrade that unlocked them)
     dateFormat  YYYY-MM-DD
     axisFormat  %b %d
+    section Subscription
+    Claude Pro ($20/mo)                    :done, p1, 2026-03-28, 2026-04-03
+    Claude Max ($100/mo)                   :active, p2, 2026-04-03, 2026-05-09
     section POC
     imessage-bridge-private (86 commits)   :a1, 2026-04-14, 2026-05-04
     section Migration / OSS-prep
     chatwire-dev (288 commits)             :a2, 2026-05-04, 2026-05-09
     section Public release
     chatwire (public)                      :a3, 2026-05-09, 2d
+    section Inflection
+    Pro → Max upgrade                      :milestone, m1, 2026-04-03, 0d
+    First public commit                    :milestone, m2, 2026-05-09, 0d
 ```
 
 | Repo | Visibility | Range | Commits | Purpose |
@@ -34,6 +40,20 @@ gantt
 | `chatwire` | public | May 9 → today | 3 | the published face — release-quality snapshots only |
 
 A combined ~377 commits on the dev side, three weeks calendar-time, one person.
+
+## Phase 0 — Pre-build: the upgrade that made the project possible. March 28 → April 3.
+
+Before there was a repo, there was a frustration.
+
+I'd been kicking around the idea of building this for weeks on **Claude Pro ($20/month)** — billed March 28, 2026. The dev rhythm was the one everyone on the $20 plan knows: write a few prompts, hit the cap, wait for tokens to refresh, come back, lose the thread. Babysitting.
+
+![Me, begging for tokens, mid-build](./assets/branding/need-ai-tokens.png)
+
+On **April 3, 2026** I got billed $83.79 — the prorated upgrade to **Claude Max ($100/month)**. Reason: I was tired of waiting for tokens to refresh, and I was about to start a project that needed actual throughput, not snippets.
+
+This is the single biggest lesson from the build: **the marginal cost of more Claude tokens is dramatically lower than the marginal cost of waiting for them.** The first proper commit on `imessage-bridge-private` landed eleven days after the upgrade, and that's not a coincidence. Until throughput existed, I wasn't going to commit to building a project worth committing to.
+
+> "Went from babysitting a terminal to running a finely-oiled machine."
 
 ## Phase 1 — POC. April 14 → May 4. (`imessage-bridge-private`, 86 commits)
 
@@ -54,22 +74,15 @@ What landed in this phase:
 - A whitelist + prefix system so chats could be selectively bridged
 - The first Telegram integration
 
-I was on **Claude Pro ($20/month)** for this phase. The dev rhythm was: write a turn, wait for tokens to refresh, write another turn. Babysitting.
+This was the first phase entirely on Max. Velocity was steady: 86 commits over three weeks of mostly-evenings work, plus weekends.
 
 The phase ended with a "depersonalization sweep" — `oss-prep: depersonalize docs — new README, reference install moved + scrubbed` (May 4) — once it was clear the thing actually worked and could be cleaned up for public release.
 
-## Phase 2 — The OSS pivot and the subscription upgrade. May 4.
+## Phase 2 — The OSS pivot. May 4.
 
-Two things happened on May 4 in close sequence:
+The OSS-prep work in the POC repo wrapped, and a new repo — `chatwire-dev` — was spun up as the new private dev surface. The old repo got archived in spirit, kept around for history. **May 3, 2026** was the next billing cycle — another $100 to Max — confirming the upgrade's already-paid-for status.
 
-1. The OSS-prep work in the POC repo wrapped, and a new repo — `chatwire-dev` — was spun up as the new private dev surface. The old repo got archived in spirit, kept around for history.
-2. **I upgraded from Claude Pro ($20) to Claude Max ($100).** Reason: I was tired of waiting for tokens to refresh. The throughput delta was the inflection point of the whole project.
-
-![Me, begging for tokens, mid-build](./assets/branding/need-ai-tokens.png)
-
-This is the single biggest lesson from the build: **the marginal cost of more Claude tokens is dramatically lower than the marginal cost of waiting for them.** Once I stopped throttling, the project's velocity changed shape.
-
-> "Went from babysitting a terminal to running a finely-oiled machine."
+This is the day chatwire stopped being "my private iMessage relay" and started being a project I could imagine other people using.
 
 ## Phase 3 — Autonomy build-out. May 5 → May 9. (`chatwire-dev`, 288 commits)
 
@@ -143,14 +156,21 @@ The third commit is the one I owe you a small confession on: a single docstring 
 
 ## What it cost
 
+| Date | Item | Amount |
+|---|---|---:|
+| Mar 28, 2026 | Claude **Pro** — pre-project tinkering | $20 |
+| Apr 3, 2026 | Upgrade to Claude **Max** (prorated) | $83.79 |
+| May 3, 2026 | Claude **Max** — full month, full project | $100 |
+| | **Total Anthropic spend through public release** | **$203.79** |
+
+Plus:
+
 | | |
 |---|---|
-| April 14 → May 4 | Claude **Pro** — $20/month |
-| May 4 → release | Claude **Max** — $100/month |
 | Hardware | A Lenovo Yoga + a 4 GB RAM, 720p, 11" Acer netbook (until ~late 2025) |
 | Headcount | One developer (me) |
 | Funding / contractors | None |
-| Total tooling, ~3 months calendar | **Under $250 all-in** |
+| Other tooling | $0 (GitHub free, PyPI free, Cloudflare Tunnel free, ntfy.sh free) |
 
 ## Lessons
 
