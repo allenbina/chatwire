@@ -9,7 +9,7 @@
  *   - clicking the Send button calls sendMessage and clears textarea
  *   - Shift+Enter inserts a newline and does NOT send
  *   - textarea and Send button are disabled while a send is in-flight
- *   - API error shows inline error message and restores original text
+ *   - API error fires toast.error and restores original text
  *   - optimistic message is added to the zustand store on send
  *   - optimistic message is cleared from the store after send completes
  */
@@ -17,6 +17,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { ComposeBox } from './ComposeBox'
 import { sendMessage } from '../api'
 import { useChatStore } from '../store'
@@ -37,6 +38,10 @@ vi.mock('../api', async (importOriginal) => {
 // SlotRenderer renders nothing in tests (no plugins registered).
 vi.mock('../plugins/SlotRenderer', () => ({
   SlotRenderer: () => null,
+}))
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
 }))
 
 const mockedSendMessage = vi.mocked(sendMessage)
@@ -182,7 +187,7 @@ describe('ComposeBox', () => {
     await waitFor(() => expect(textarea).not.toBeDisabled())
   })
 
-  it('shows inline error message when sendMessage rejects', async () => {
+  it('calls toast.error when sendMessage rejects', async () => {
     const user = userEvent.setup()
     mockedSendMessage.mockRejectedValue(new Error('Rate limited'))
     renderComposeBox()
@@ -190,7 +195,7 @@ describe('ComposeBox', () => {
     await user.type(screen.getByRole('textbox', { name: /type a message/i }), 'hello{Enter}')
 
     await waitFor(() => {
-      expect(screen.getByText('Rate limited')).toBeInTheDocument()
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Rate limited')
     })
   })
 

@@ -15,6 +15,7 @@
 import type { Message, Attachment, LinkPreview } from '../api'
 import { MediaGallery, PendingAttachment } from './MediaGallery'
 import { SlotRenderer } from '../plugins/SlotRenderer'
+import { Badge } from '@/components/ui/badge'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -156,29 +157,23 @@ function DeliveryBadge({ status, hint }: { status: string; hint?: string }) {
   if (!status || status === 'delivered') return null
   if (status === 'failed') {
     return (
-      <span
-        className="bg-[--color-bg-tertiary] text-[--color-error] text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-        title={hint}
-      >
+      <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5" title={hint}>
         failed
-      </span>
+      </Badge>
     )
   }
   if (status === 'sent') {
     return (
-      <span className="bg-[--color-bg-tertiary] text-[--color-text-muted] text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+      <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
         sent
-      </span>
+      </Badge>
     )
   }
   // ghost / other
   return (
-    <span
-      className="bg-[--color-bg-tertiary] text-[--color-warning] text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-      title={hint}
-    >
+    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 text-[--color-warning]" title={hint}>
       {status}
-    </span>
+    </Badge>
   )
 }
 

@@ -9,65 +9,30 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { Layout } from '../components/Layout'
 import { useTheme } from '../hooks/useTheme'
 import { SlotRenderer } from '../plugins/SlotRenderer'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Shared primitives
 // ---------------------------------------------------------------------------
 
-function AccordionSection({
-  title,
-  icon,
-  children,
-}: {
-  title: string
-  icon?: React.ReactNode
-  children: React.ReactNode
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="border-b border-[--color-border] last:border-0">
-      <button
-        type="button"
-        className="flex items-center justify-between w-full px-5 py-4 font-medium text-sm
-                   text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover]
-                   transition-colors gap-3"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="flex items-center gap-2">
-          {icon}
-          {title}
-        </span>
-        <svg
-          className="w-3 h-3 shrink-0 transition-transform duration-200"
-          style={{ transform: open ? 'rotate(180deg)' : '' }}
-          fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 10 6"
-        >
-          <path d="M1 1 5 5 9 1" />
-        </svg>
-      </button>
-      {open && (
-        <div className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function SaveButton({ pending }: { pending?: boolean }) {
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="px-4 py-2 text-sm font-medium text-[--color-bg-primary] bg-[--color-accent]
-                 rounded-lg hover:bg-[--color-accent-hover] disabled:opacity-50 transition-colors"
-    >
+    <Button type="submit" disabled={pending} size="sm">
       {pending ? 'Saving…' : 'Save'}
-    </button>
+    </Button>
   )
 }
 
@@ -122,12 +87,12 @@ function ThemeSection() {
             type="button"
             onClick={() => handleSelect(t.name)}
             disabled={applying}
-            className={[
+            className={cn(
               'flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors',
               isActive
                 ? 'border-[--color-accent] bg-[--color-accent] text-[--color-bg-primary] font-semibold'
                 : 'border-[--color-border] text-[--color-text-primary] hover:border-[--color-accent]',
-            ].join(' ')}
+            )}
           >
             <span
               className="w-3 h-3 rounded-full flex-shrink-0"
@@ -189,51 +154,42 @@ function WhitelistSection() {
   return (
     <div className="space-y-3">
       <form onSubmit={handleAdd} className="flex gap-2">
-        <input
+        <Input
           list="wl-contact-names"
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="handle, contact, or [Group] name"
           required
-          className="flex-1 py-2 px-3 text-sm text-[--color-text-primary] bg-[--color-bg-tertiary]
-                     border border-[--color-border] rounded-lg focus:outline-none focus:border-[--color-accent]"
+          className="flex-1"
         />
         <datalist id="wl-contact-names">
           {contactNames.map((n) => <option key={n} value={n} />)}
         </datalist>
-        <button
-          type="submit"
-          className="px-4 py-2 text-sm font-medium text-[--color-bg-primary] bg-[--color-accent]
-                     rounded-lg hover:bg-[--color-accent-hover] transition-colors"
-        >
-          Add
-        </button>
+        <Button type="submit" size="sm">Add</Button>
       </form>
       <p className="text-xs text-[--color-text-muted]">
         Phone (<code className="bg-[--color-bg-tertiary] px-1 rounded">+15551234567</code>), email, a
         Contacts name, or a named group chat.
       </p>
       <div className="flex items-center gap-2">
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={handleSync}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
-                     text-[--color-text-primary] bg-[--color-bg-primary] border border-[--color-border]
-                     rounded-lg hover:bg-[--color-sidebar-hover] transition-colors"
         >
           ↻ Sync contacts
-        </button>
+        </Button>
         {syncMsg && <span className="text-xs text-[--color-success]">{syncMsg}</span>}
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => setShowList((v) => !v)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
-                     text-[--color-text-primary] bg-[--color-bg-primary] border border-[--color-border]
-                     rounded-lg hover:bg-[--color-sidebar-hover] transition-colors"
         >
           {showList ? 'Hide contacts' : `Show contacts${rows.length ? ` (${rows.length})` : ''}`}
-        </button>
+        </Button>
       </div>
       {showList && rows.length > 0 && (
         <ul className="space-y-1 max-h-48 overflow-y-auto">
@@ -241,13 +197,15 @@ function WhitelistSection() {
             <li key={r.value} className="flex items-center justify-between text-xs py-1
                                          border-b border-[--color-border] last:border-0">
               <span className="text-[--color-text-primary] font-mono">{r.label || r.value}</span>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => handleRemove(r.value)}
-                className="text-[--color-error] hover:underline ml-2"
+                className="text-[--color-error] hover:text-[--color-error] ml-2 h-auto py-0"
               >
                 Remove
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -334,33 +292,28 @@ function ApiKeySection() {
             <p className="text-xs text-[--color-text-muted] mb-1">
               New key — copy now, it will not be shown again
             </p>
-            <input
+            <Input
               readOnly
               value={revealed}
               onClick={(e) => (e.target as HTMLInputElement).select()}
-              className="w-full py-2 px-3 text-sm font-mono text-[--color-text-primary]
-                         bg-[--color-bg-tertiary] border border-[--color-border] rounded-lg cursor-text"
+              className="font-mono cursor-text"
             />
           </div>
         )}
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={generate}
-            className="px-4 py-2 text-sm font-medium text-[--color-bg-primary] bg-[--color-accent]
-                       rounded-lg hover:bg-[--color-accent-hover] transition-colors"
-          >
+          <Button type="button" onClick={generate} size="sm">
             Generate
-          </button>
+          </Button>
           {data?.api_key_hint && data.api_key_hint !== 'Not set' && (
-            <button
+            <Button
               type="button"
               onClick={revoke}
-              className="px-4 py-2 text-sm font-medium text-[--color-error] border border-[--color-error]
-                         rounded-lg hover:bg-[--color-bg-tertiary] transition-colors"
+              variant="outline"
+              size="sm"
+              className="text-[--color-error] border-[--color-error] hover:bg-[--color-bg-tertiary]"
             >
               Revoke
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -438,15 +391,14 @@ function NotificationsSection() {
           <label htmlFor="hiatus-mins" className="text-xs text-[--color-text-muted] whitespace-nowrap">
             Silence window (minutes):
           </label>
-          <input
+          <Input
             type="number"
             id="hiatus-mins"
             name="hiatus_duration_minutes"
             defaultValue={data.hiatus_duration_minutes}
             min={1}
             max={1440}
-            className="w-20 py-1.5 px-2 text-sm text-[--color-text-primary] bg-[--color-bg-primary]
-                       border border-[--color-border] rounded-lg focus:outline-none focus:border-[--color-accent]"
+            className="w-20"
           />
         </div>
         <div className="flex items-center gap-2 mt-2">
@@ -477,15 +429,14 @@ function NotificationsSection() {
           <label htmlFor="reminder-days" className="text-xs text-[--color-text-muted] whitespace-nowrap">
             Remind after (days):
           </label>
-          <input
+          <Input
             type="number"
             id="reminder-days"
             name="reminder_days"
             defaultValue={data.reminder_days}
             min={1}
             max={365}
-            className="w-20 py-1.5 px-2 text-sm text-[--color-text-primary] bg-[--color-bg-primary]
-                       border border-[--color-border] rounded-lg focus:outline-none focus:border-[--color-accent]"
+            className="w-20"
           />
         </div>
         <div className="flex items-center gap-2 mt-2">
@@ -524,14 +475,12 @@ function AntiSpamSection() {
           Contact names or words stripped from messages before broadcast hashing.
           One entry per line. Prevents false positives for personalised greetings.
         </p>
-        <textarea
+        <Textarea
           name="spam_whitelist"
           rows={5}
           defaultValue={data.spam_whitelist_text}
           placeholder={"Alice\nBob\n+15551234567"}
-          className="w-full py-2 px-3 text-sm text-[--color-text-primary] bg-[--color-bg-tertiary]
-                     border border-[--color-border] rounded-lg focus:outline-none focus:border-[--color-accent]
-                     font-mono resize-y"
+          className="font-mono resize-y"
         />
         <div className="flex items-center gap-2 mt-2">
           <SaveButton pending={spamMut.isPending} />
@@ -546,13 +495,11 @@ function AntiSpamSection() {
         <p className="text-xs text-[--color-text-muted] mb-2">
           Your ntfy.sh topic. Leave blank to suppress notifications.
         </p>
-        <input
+        <Input
           type="text"
           name="ntfy_topic"
           defaultValue={data.ntfy_topic}
           placeholder="my-topic-id"
-          className="w-full py-2 px-3 text-sm text-[--color-text-primary] bg-[--color-bg-tertiary]
-                     border border-[--color-border] rounded-lg focus:outline-none focus:border-[--color-accent]"
         />
         <div className="flex items-center gap-2 mt-2">
           <SaveButton pending={ntfyMut.isPending} />
@@ -605,15 +552,14 @@ function AdvancedSection() {
         <label htmlFor="web-port" className="block text-xs font-semibold text-[--color-text-muted] uppercase tracking-wider mb-1">
           Port
         </label>
-        <input
+        <Input
           type="number"
           id="web-port"
           defaultValue={data.web_port}
           min={1024}
           max={65535}
           onBlur={(e) => savePort(e.target.value)}
-          className="w-32 py-2 px-3 text-sm text-[--color-text-primary] bg-[--color-bg-primary]
-                     border border-[--color-border] rounded-lg focus:outline-none focus:border-[--color-accent]"
+          className="w-32"
         />
         {portSaved && (
           <p className="mt-1 text-xs text-[--color-warning]">
@@ -681,20 +627,14 @@ export function PasswordSection() {
   const [currentPw, setCurrentPw] = useState('')
   const [newPw, setNewPw] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
-  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [pending, setPending] = useState(false)
 
   const authEnabled = data?.auth_enabled ?? false
 
-  function flash(text: string, ok: boolean) {
-    setMsg({ text, ok })
-    setTimeout(() => setMsg(null), 3000)
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (newPw !== confirmPw) {
-      flash('Passwords do not match.', false)
+      toast.error('Passwords do not match.')
       return
     }
     setPending(true)
@@ -707,9 +647,9 @@ export function PasswordSection() {
       })
       const d = await r.json()
       if (!r.ok) {
-        flash(d.detail ?? 'Error.', false)
+        toast.error(d.detail ?? 'Error.')
       } else {
-        flash(authEnabled ? 'Password changed.' : 'Password set.', true)
+        toast.success(authEnabled ? 'Password changed.' : 'Password set.')
         setCurrentPw('')
         setNewPw('')
         setConfirmPw('')
@@ -732,9 +672,9 @@ export function PasswordSection() {
       })
       const d = await r.json()
       if (!r.ok) {
-        flash(d.detail ?? 'Error.', false)
+        toast.error(d.detail ?? 'Error.')
       } else {
-        flash('Password removed. Auth is now disabled.', true)
+        toast.success('Password removed. Auth is now disabled.')
         setCurrentPw('')
         qc.invalidateQueries({ queryKey: ['settings-password-status'] })
       }
@@ -742,10 +682,6 @@ export function PasswordSection() {
       setPending(false)
     }
   }
-
-  const fieldClass =
-    'w-full py-2 px-3 text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] ' +
-    'border border-[--color-border] rounded-lg focus:outline-none focus:border-[--color-accent]'
 
   return (
     <div className="space-y-4">
@@ -760,13 +696,12 @@ export function PasswordSection() {
             <label htmlFor="pw-current" className="block text-xs font-semibold text-[--color-text-muted] uppercase tracking-wider mb-1">
               Current password
             </label>
-            <input
+            <Input
               id="pw-current"
               type="password"
               value={currentPw}
               onChange={(e) => setCurrentPw(e.target.value)}
               autoComplete="current-password"
-              className={fieldClass}
             />
           </div>
         )}
@@ -774,7 +709,7 @@ export function PasswordSection() {
           <label htmlFor="pw-new" className="block text-xs font-semibold text-[--color-text-muted] uppercase tracking-wider mb-1">
             New password
           </label>
-          <input
+          <Input
             id="pw-new"
             type="password"
             value={newPw}
@@ -782,14 +717,13 @@ export function PasswordSection() {
             autoComplete="new-password"
             minLength={6}
             required
-            className={fieldClass}
           />
         </div>
         <div>
           <label htmlFor="pw-confirm" className="block text-xs font-semibold text-[--color-text-muted] uppercase tracking-wider mb-1">
             Confirm new password
           </label>
-          <input
+          <Input
             id="pw-confirm"
             type="password"
             value={confirmPw}
@@ -797,33 +731,23 @@ export function PasswordSection() {
             autoComplete="new-password"
             minLength={6}
             required
-            className={fieldClass}
           />
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <button
-            type="submit"
-            disabled={pending}
-            className="px-4 py-2 text-sm font-medium text-[--color-bg-primary] bg-[--color-accent]
-                       rounded-lg hover:bg-[--color-accent-hover] disabled:opacity-50 transition-colors"
-          >
+          <Button type="submit" disabled={pending} size="sm">
             {pending ? 'Saving…' : authEnabled ? 'Change password' : 'Set password'}
-          </button>
+          </Button>
           {authEnabled && (
-            <button
+            <Button
               type="button"
               disabled={pending}
               onClick={handleClear}
-              className="px-4 py-2 text-sm font-medium text-[--color-error] border border-[--color-error]
-                         rounded-lg hover:bg-[--color-bg-tertiary] disabled:opacity-50 transition-colors"
+              variant="outline"
+              size="sm"
+              className="text-[--color-error] border-[--color-error] hover:bg-[--color-bg-tertiary]"
             >
               Remove password
-            </button>
-          )}
-          {msg && (
-            <span className={`text-xs ${msg.ok ? 'text-[--color-success]' : 'text-[--color-error]'}`}>
-              {msg.text}
-            </span>
+            </Button>
           )}
         </div>
       </form>
@@ -894,55 +818,130 @@ export function SettingsPage() {
         {/* Header */}
         <header className="flex items-center gap-2 px-4 py-3 border-b border-[--color-border]
                            bg-[--color-bg-tertiary] flex-shrink-0">
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => navigate(-1)}
-            className="p-2 rounded-lg text-[--color-text-muted] hover:bg-[--color-sidebar-hover]
-                       md:hidden transition-colors"
             aria-label="back to conversations"
+            className="p-2 md:hidden"
           >
             ‹
-          </button>
+          </Button>
           <h2 className="text-sm font-semibold text-[--color-text-primary]">Settings</h2>
         </header>
 
         <div className="p-4">
           <div className="border border-[--color-border] rounded-lg overflow-hidden max-w-2xl mx-auto">
-            <AccordionSection title="Self handles" icon={<UserIcon />}>
-              <SelfHandlesSection />
-            </AccordionSection>
+            <Accordion type="multiple">
+              <AccordionItem value="self-handles">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <UserIcon />
+                    Self handles
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <SelfHandlesSection />
+                </AccordionContent>
+              </AccordionItem>
 
-            <AccordionSection title="Whitelist" icon={<ListIcon />}>
-              <WhitelistSection />
-            </AccordionSection>
+              <AccordionItem value="whitelist">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <ListIcon />
+                    Whitelist
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <WhitelistSection />
+                </AccordionContent>
+              </AccordionItem>
 
-            <AccordionSection title="Appearance" icon={<SunIcon />}>
-              <ThemeSection />
-            </AccordionSection>
+              <AccordionItem value="appearance">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <SunIcon />
+                    Appearance
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <ThemeSection />
+                </AccordionContent>
+              </AccordionItem>
 
-            <AccordionSection title="Anti-spam" icon={<ShieldIcon />}>
-              <AntiSpamSection />
-            </AccordionSection>
+              <AccordionItem value="anti-spam">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <ShieldIcon />
+                    Anti-spam
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <AntiSpamSection />
+                </AccordionContent>
+              </AccordionItem>
 
-            <AccordionSection title="Notifications" icon={<BellIcon />}>
-              <NotificationsSection />
-            </AccordionSection>
+              <AccordionItem value="notifications">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <BellIcon />
+                    Notifications
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <NotificationsSection />
+                </AccordionContent>
+              </AccordionItem>
 
-            <AccordionSection title="Advanced" icon={<SettingsIcon />}>
-              <AdvancedSection />
-            </AccordionSection>
+              <AccordionItem value="advanced">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <SettingsIcon />
+                    Advanced
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <AdvancedSection />
+                </AccordionContent>
+              </AccordionItem>
 
-            <AccordionSection title="API" icon={<CodeIcon />}>
-              <ApiKeySection />
-            </AccordionSection>
+              <AccordionItem value="api">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <CodeIcon />
+                    API
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <ApiKeySection />
+                </AccordionContent>
+              </AccordionItem>
 
-            <AccordionSection title="Password" icon={<LockIcon />}>
-              <PasswordSection />
-            </AccordionSection>
+              <AccordionItem value="password">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <LockIcon />
+                    Password
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <PasswordSection />
+                </AccordionContent>
+              </AccordionItem>
 
-            <AccordionSection title="About" icon={<InfoIcon />}>
-              <AboutSection />
-            </AccordionSection>
+              <AccordionItem value="about">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-[--color-text-primary] bg-[--color-bg-tertiary] hover:bg-[--color-sidebar-hover] hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <InfoIcon />
+                    About
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-[--color-bg-primary] text-sm text-[--color-text-primary]">
+                  <AboutSection />
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
 
             {/* Plugin slot: extra sections injected by installed plugins */}
             <SlotRenderer slot="settings.page" />

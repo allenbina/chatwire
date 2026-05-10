@@ -5,15 +5,19 @@
  * - Enter sends (Shift+Enter inserts newline).
  * - Optimistic message added to zustand on submit; real message arrives
  *   via SSE / react-query refetch and the optimistic entry is cleared.
- * - Rate-limit / spam errors shown inline for 4 s.
+ * - Rate-limit / spam errors shown via Sonner toast.
  * - Paperclip button opens a file picker; selected file is uploaded and
  *   sent via POST /api/ui/upload with a pending indicator.
  */
 import { useState, useRef, KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Paperclip, Send } from 'lucide-react'
 import { sendMessage, sendFile } from '../api'
 import { useChatStore, nextOptimisticId } from '../store'
 import { SlotRenderer } from '../plugins/SlotRenderer'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 interface ComposeBoxProps {
   handle: string
@@ -23,7 +27,6 @@ interface ComposeBoxProps {
 export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
@@ -38,7 +41,6 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
     const now = new Date()
     const ts = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
-    // Add optimistic message immediately
     addOptimistic(handle, {
       rowid: optId,
       date: Math.floor(now.getTime() / 1000),
@@ -52,20 +54,16 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
 
     setText('')
     setSending(true)
-    setError(null)
 
-    // Auto-resize textarea back to one row
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
 
     try {
       await sendMessage(handle, trimmed, isGroup)
-      // Invalidate messages so react-query refetches and includes the real msg.
       await qc.invalidateQueries({ queryKey: ['messages', handle] })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Send failed')
-      // Remove the optimistic entry on failure so the user can retry.
+      toast.error(err instanceof Error ? err.message : 'Send failed')
       clearOptimistic(handle, optId)
       setText(trimmed)
     } finally {
@@ -77,12 +75,10 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
   async function doUpload(file: File) {
     if (sending) return
     setSending(true)
-    setError(null)
 
     const optId = nextOptimisticId()
     const now = new Date()
     const ts = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    // Optimistic placeholder for the file
     addOptimistic(handle, {
       rowid: optId,
       date: Math.floor(now.getTime() / 1000),
@@ -106,12 +102,11 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
       await sendFile(handle, isGroup, file)
       await qc.invalidateQueries({ queryKey: ['messages', handle] })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
       clearOptimistic(handle, optId)
     } finally {
       setSending(false)
       clearOptimistic(handle, optId)
-      // Reset file input so the same file can be re-selected
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -126,7 +121,6 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
   function handleInput() {
     const el = textareaRef.current
     if (!el) return
-    // Auto-grow up to ~6 lines
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 144) + 'px'
   }
@@ -136,21 +130,12 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
     if (file) doUpload(file)
   }
 
-  // Clear inline error after 4 s
-  if (error) {
-    setTimeout(() => setError(null), 4_000)
-  }
-
   return (
     <div className="border-t border-[--color-border] bg-[--color-bg-primary] px-4 py-3">
-      {/* Plugin slot: extensions rendered above the input row */}
       <SlotRenderer slot="compose.extension" handle={handle} />
-      {error && (
-        <p className="mb-2 text-xs text-[--color-error]">{error}</p>
-      )}
       <div
         className="flex items-end gap-2 rounded-xl border border-[--color-border]
-                   bg-[--color-input-bg] px-3 py-2 focus-within:border-[--color-accent] transition-colors"
+                   bg-[--color-input-bg] px-2 py-1.5 focus-within:border-[--color-accent] transition-colors"
       >
         {/* Hidden file input */}
         <input
@@ -161,21 +146,23 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
           accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip"
         />
 
-        {/* Paperclip button */}
-        <button
+        {/* Attach button */}
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={() => fileInputRef.current?.click()}
           disabled={sending}
           aria-label="Attach file"
           title="Attach file"
-          className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center
-                     text-[--color-text-muted] hover:text-[--color-accent]
-                     disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-base"
+          className="flex-shrink-0 h-7 w-7 text-[--color-text-muted] hover:text-[--color-accent]
+                     hover:bg-transparent"
         >
-          &#128206;
-        </button>
+          <Paperclip className="h-4 w-4" />
+        </Button>
 
-        <textarea
+        {/* Message textarea */}
+        <Textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -185,21 +172,22 @@ export function ComposeBox({ handle, isGroup = false }: ComposeBoxProps) {
           placeholder="Message…"
           disabled={sending}
           aria-label="Type a message"
-          className="flex-1 resize-none bg-transparent text-sm text-[--color-text-primary]
-                     placeholder:text-[--color-text-muted] outline-none leading-snug"
+          className="flex-1 min-h-0 resize-none border-0 bg-transparent shadow-none
+                     text-sm text-[--color-text-primary] placeholder:text-[--color-text-muted]
+                     focus-visible:ring-0 focus-visible:ring-offset-0 p-1 leading-snug"
           style={{ maxHeight: '144px' }}
         />
-        <button
+
+        {/* Send button */}
+        <Button
           onClick={doSend}
           disabled={!text.trim() || sending}
           aria-label="Send message"
-          className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center
-                     bg-[--color-accent] text-[--color-bg-primary] font-bold text-sm
-                     hover:bg-[--color-accent-hover] disabled:opacity-40 disabled:cursor-not-allowed
-                     transition-colors"
+          size="icon"
+          className="flex-shrink-0 h-8 w-8 rounded-lg"
         >
-          &#x27A4;
-        </button>
+          <Send className="h-4 w-4" />
+        </Button>
       </div>
       <p className="mt-1 text-[10px] text-[--color-text-muted]">
         Enter to send &nbsp;&#183;&nbsp; Shift+Enter for newline

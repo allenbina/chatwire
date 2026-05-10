@@ -13,13 +13,15 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 export function LoginPage() {
   const [searchParams] = useSearchParams()
   const nextParam = searchParams.get('next') || '/app/'
 
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -29,7 +31,6 @@ export function LoginPage() {
     e.preventDefault()
     if (busy) return
     setBusy(true)
-    setError('')
 
     try {
       const resp = await fetch('/api/ui/auth/login', {
@@ -40,9 +41,6 @@ export function LoginPage() {
 
       if (resp.ok) {
         const data = await resp.json()
-        // Hard navigate so the browser picks up the new session cookie for
-        // subsequent HTML requests (the SPA's fetch calls already carry it
-        // via the browser's cookie jar after this response).
         window.location.href = data.next || '/app/'
         return
       }
@@ -54,9 +52,9 @@ export function LoginPage() {
       } catch {
         // non-JSON error body — use default message
       }
-      setError(msg)
+      toast.error(msg)
     } catch {
-      setError('Network error — please try again.')
+      toast.error('Network error — please try again.')
     } finally {
       setBusy(false)
     }
@@ -64,49 +62,27 @@ export function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center"
-      style={{ backgroundColor: 'var(--color-bg-primary)' }}
+      className="min-h-screen flex items-center justify-center bg-background"
     >
       <div
-        className="rounded-xl shadow-lg w-full max-w-sm mx-4 p-8"
-        style={{
-          backgroundColor: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-border)',
-        }}
+        className="rounded-xl shadow-lg w-full max-w-sm mx-4 p-8
+                   bg-card border border-border"
       >
-        <h1
-          className="text-2xl font-bold mb-1"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
+        <h1 className="text-2xl font-bold mb-1 text-foreground">
           iMessage bridge
         </h1>
-        <p className="text-sm mb-6" style={{ color: 'var(--color-text-muted)' }}>
+        <p className="text-sm mb-6 text-muted-foreground">
           Sign in to continue.
         </p>
-
-        {error && (
-          <div
-            role="alert"
-            className="text-sm rounded-lg p-3 mb-4"
-            style={{
-              backgroundColor: 'var(--color-error-bg, #fee2e2)',
-              border: '1px solid var(--color-error-border, #fca5a5)',
-              color: 'var(--color-error, #dc2626)',
-            }}
-          >
-            {error}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} autoComplete="on">
           <label
             htmlFor="password"
-            className="block text-sm font-medium mb-2"
-            style={{ color: 'var(--color-text-primary)' }}
+            className="block text-sm font-medium mb-2 text-foreground"
           >
             Password
           </label>
-          <input
+          <Input
             ref={inputRef}
             id="password"
             type="password"
@@ -114,26 +90,16 @@ export function LoginPage() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg px-3 py-2.5 text-sm mb-5 outline-none
-                       focus:ring-2 focus:ring-[--color-accent]"
-            style={{
-              backgroundColor: 'var(--color-bg-tertiary)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-text-primary)',
-            }}
+            className="mb-5 bg-background border-border text-foreground
+                       focus-visible:ring-ring"
           />
-          <button
+          <Button
             type="submit"
             disabled={busy}
-            className="w-full py-2.5 rounded-lg text-sm font-medium transition-colors
-                       disabled:opacity-50"
-            style={{
-              backgroundColor: 'var(--color-accent)',
-              color: 'var(--color-on-accent, #fff)',
-            }}
+            className="w-full"
           >
             {busy ? 'Signing in…' : 'Sign in'}
-          </button>
+          </Button>
         </form>
       </div>
     </div>

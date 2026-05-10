@@ -1214,6 +1214,12 @@ async def index():
     return RedirectResponse(url="/app/", status_code=302)
 
 
+@app.get("/legacy")
+async def legacy_ui():
+    """Read-only snapshot of the old Jinja2/htmx UI with sample data."""
+    return FileResponse(Path(__file__).parent / "static" / "legacy.html")
+
+
 
 
 async def _send_via_ctx_or_direct(

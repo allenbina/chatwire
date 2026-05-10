@@ -7,11 +7,18 @@
  *  3 images → 2+1 grid
  *  4+ images → 2×2 grid with "+N" overflow badge on the 4th cell
  *
- * Clicking an image opens a full-size Radix Dialog lightbox with prev/next
- * navigation when there are multiple images.
+ * Clicking an image opens a full-size shadcn Dialog lightbox with prev/next
+ * navigation (click buttons or ← → arrow keys). Escape closes via Radix.
  */
-import { useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
+import { useState, useEffect } from 'react'
+import {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogClose,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import type { Attachment } from '../api'
 
 // ---------------------------------------------------------------------------
@@ -30,18 +37,33 @@ function Lightbox({
   const [idx, setIdx] = useState(startIndex)
   const img = images[idx]
   const fullSrc = `/attachment?path=${encodeURIComponent(img.path)}`
-  const senderAlt = `Image ${idx + 1} of ${images.length}`
+  const counterLabel = `Image ${idx + 1} of ${images.length}`
+
+  // Keyboard navigation: ← / → step through images; Escape handled by Radix.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'ArrowLeft') setIdx((i) => Math.max(0, i - 1))
+      if (e.key === 'ArrowRight') setIdx((i) => Math.min(images.length - 1, i + 1))
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [images.length])
 
   return (
-    <Dialog.Root open onOpenChange={(open) => { if (!open) onClose() }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" />
-        <Dialog.Content
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogPortal>
+        <DialogOverlay className="backdrop-blur-sm" />
+        <DialogPrimitive.Content
           className="fixed inset-0 z-50 flex items-center justify-center p-4 focus:outline-none"
-          aria-label={`Image lightbox, ${images.length} photos`}
+          aria-describedby={undefined}
         >
-          {/* Close button */}
-          <Dialog.Close asChild>
+          {/* Visually-hidden title: accessible name for the dialog */}
+          <DialogTitle className="sr-only">
+            Image lightbox, {images.length} {images.length === 1 ? 'photo' : 'photos'}
+          </DialogTitle>
+
+          {/* Close */}
+          <DialogClose asChild>
             <button
               className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/60 text-white
                          flex items-center justify-center text-xl hover:bg-black/80 transition-colors z-10"
@@ -49,7 +71,7 @@ function Lightbox({
             >
               ✕
             </button>
-          </Dialog.Close>
+          </DialogClose>
 
           {/* Prev */}
           {images.length > 1 && idx > 0 && (
@@ -63,10 +85,10 @@ function Lightbox({
             </button>
           )}
 
-          {/* Image */}
+          {/* Full-size image */}
           <img
             src={fullSrc}
-            alt={senderAlt}
+            alt={counterLabel}
             className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
           />
 
@@ -84,14 +106,17 @@ function Lightbox({
 
           {/* Counter */}
           {images.length > 1 && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
-                            bg-black/60 text-white text-xs">
+            <div
+              aria-live="polite"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
+                         bg-black/60 text-white text-xs"
+            >
               {idx + 1} / {images.length}
             </div>
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    </Dialog>
   )
 }
 

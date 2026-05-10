@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-05-10
+
+### Changed
+- MediaGallery lightbox migrated from raw `@radix-ui/react-dialog` to the
+  shadcn `Dialog` wrapper (`Dialog`, `DialogPortal`, `DialogOverlay`,
+  `DialogClose`, `DialogTitle` from `@/components/ui/dialog`).
+  Visually-hidden `DialogTitle` added for screen-reader accessibility.
+
+### Added
+- Lightbox keyboard navigation: `ArrowLeft` / `ArrowRight` keys step through
+  images; `Escape` closes (handled by Radix).
+- 14 Vitest unit tests for `MediaGallery` covering gallery grid rendering
+  (1 / 2 / 4 / 5+ images, overflow badge) and full lightbox interaction
+  (open, close, prev/next buttons, arrow-key navigation, boundary clamping).
+  Total Vitest count: 84 (was 70).
+
 ## [1.10.0] - 2026-05-09
 
 ### Added

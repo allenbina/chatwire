@@ -18,6 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ChatPage } from './pages/ChatPage'
 import { LoginPage } from './pages/LoginPage'
+import { Toaster } from '@/components/ui/sonner'
 
 // Lazy chunks — split out of the main bundle
 const SettingsPage = lazy(() =>
@@ -73,6 +74,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      <Toaster />
     </QueryClientProvider>
   )
 }

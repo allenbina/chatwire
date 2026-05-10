@@ -5,9 +5,9 @@
  *   - renders form elements
  *   - password field and button are present
  *   - busy state during submission ("Signing in…")
- *   - error banner on 403 (wrong password)
- *   - error banner from JSON detail field
- *   - "Network error" on fetch rejection
+ *   - toast.error on 403 (wrong password)
+ *   - toast.error with JSON detail field
+ *   - "Network error" toast on fetch rejection
  *   - window.location.href redirect on success
  *   - ?next= param is forwarded to the login endpoint and used for redirect
  */
@@ -15,7 +15,12 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
+import { toast } from 'sonner'
 import { LoginPage } from './LoginPage'
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}))
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,10 +74,10 @@ describe('LoginPage — rendering', () => {
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
   })
 
-  it('does not render an error banner by default', () => {
+  it('does not call toast.error by default', () => {
     vi.stubGlobal('fetch', vi.fn())
     renderLogin()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled()
   })
 })
 
@@ -165,7 +170,7 @@ describe('LoginPage — busy state', () => {
 // ---------------------------------------------------------------------------
 
 describe('LoginPage — errors', () => {
-  it('shows "Sign in failed." on 403 with no detail field', async () => {
+  it('calls toast.error with "Sign in failed." on 403 with no detail field', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 403,
@@ -176,10 +181,12 @@ describe('LoginPage — errors', () => {
     await user.type(screen.getByLabelText(/password/i), 'wrong')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Sign in failed.')
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Sign in failed.')
+    })
   })
 
-  it('shows the detail message from a 403 JSON body', async () => {
+  it('calls toast.error with the detail message from a 403 JSON body', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 403,
@@ -190,10 +197,12 @@ describe('LoginPage — errors', () => {
     await user.type(screen.getByLabelText(/password/i), 'wrong')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid password.')
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Invalid password.')
+    })
   })
 
-  it('shows the detail message from a 429 rate-limit response', async () => {
+  it('calls toast.error with the detail message from a 429 rate-limit response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
@@ -204,20 +213,28 @@ describe('LoginPage — errors', () => {
     await user.type(screen.getByLabelText(/password/i), 'bots')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts')
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        expect.stringContaining('Too many attempts'),
+      )
+    })
   })
 
-  it('shows "Network error" when fetch rejects', async () => {
+  it('calls toast.error with "Network error" when fetch rejects', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
     renderLogin()
     await user.type(screen.getByLabelText(/password/i), 'secret')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Network error')
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        expect.stringContaining('Network error'),
+      )
+    })
   })
 
-  it('clears the error banner on a new successful submission', async () => {
+  it('does not call toast.error on a successful re-submission after an error', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: false,
@@ -235,12 +252,17 @@ describe('LoginPage — errors', () => {
     const input = screen.getByLabelText(/password/i)
     await user.type(input, 'wrong')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
-    expect(await screen.findByRole('alert')).toBeInTheDocument()
 
-    // Re-submit with correct password
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledTimes(1)
+    })
+
+    // Re-submit with correct password — no additional error toast
     await user.clear(input)
     await user.type(input, 'correct')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
-    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+
+    await waitFor(() => expect(locationHref).toBe('/app/'))
+    expect(vi.mocked(toast.error)).toHaveBeenCalledTimes(1)
   })
 })

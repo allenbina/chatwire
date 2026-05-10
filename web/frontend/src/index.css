@@ -24,47 +24,125 @@
   white-space: normal;
 }
 
-/* Dracula design tokens as CSS custom properties */
+/* ── App design tokens (default: Dracula) ───────────────────────────────────
+ *
+ * The useTheme hook (hooks/useTheme.ts) overwrites these at runtime.
+ * shadcn/ui variables (--background, --primary, …) immediately below
+ * point here so every theme applies to shadcn components automatically.
+ */
 :root {
-  --color-bg-primary: #282a36;
-  --color-bg-secondary: #44475a;
-  --color-bg-tertiary: #21222c;
-  --color-text-primary: #f8f8f2;
+  /* App theme tokens */
+  --color-bg-primary:     #282a36;
+  --color-bg-secondary:   #44475a;
+  --color-bg-tertiary:    #21222c;
+  --color-text-primary:   #f8f8f2;
   --color-text-secondary: #6272a4;
-  --color-text-muted: #6272a4;
-  --color-accent: #bd93f9;
-  --color-accent-hover: #caa9fa;
-  --color-success: #50fa7b;
-  --color-warning: #f1fa8c;
-  --color-error: #ff5555;
-  --color-info: #8be9fd;
-  --color-border: #44475a;
-  --color-input-bg: #44475a;
-  --color-msg-me: #44475a;
-  --color-msg-them: #282a36;
-  --color-sidebar-bg: #21222c;
+  --color-text-muted:     #6272a4;
+  --color-accent:         #bd93f9;
+  --color-accent-hover:   #caa9fa;
+  --color-success:        #50fa7b;
+  --color-warning:        #f1fa8c;
+  --color-error:          #ff5555;
+  --color-info:           #8be9fd;
+  --color-border:         #44475a;
+  --color-input-bg:       #44475a;
+  --color-msg-me:         #44475a;
+  --color-msg-them:       #282a36;
+  --color-sidebar-bg:     #21222c;
   --color-sidebar-active: #44475a;
-  --color-sidebar-hover: #383a4a;
+  --color-sidebar-hover:  #383a4a;
+
+  /* ── shadcn/ui CSS variables bridged to app tokens ──────────────────────
+   *
+   * shadcn components reference these names.  By mapping them to our
+   * --color-* tokens they automatically pick up every theme switch.
+   */
+  --background:          var(--color-bg-primary);
+  --foreground:          var(--color-text-primary);
+  --card:                var(--color-bg-secondary);
+  --card-foreground:     var(--color-text-primary);
+  --popover:             var(--color-bg-secondary);
+  --popover-foreground:  var(--color-text-primary);
+  --primary:             var(--color-accent);
+  --primary-foreground:  var(--color-bg-primary);
+  --secondary:           var(--color-bg-secondary);
+  --secondary-foreground: var(--color-text-primary);
+  --muted:               var(--color-bg-tertiary);
+  --muted-foreground:    var(--color-text-muted);
+  /* --accent is shadcn's "subtle highlight" bg (dropdown hover, etc.) */
+  --accent:              var(--color-bg-secondary);
+  --accent-foreground:   var(--color-text-primary);
+  --destructive:         var(--color-error);
+  --destructive-foreground: var(--color-text-primary);
+  --border:              var(--color-border);
+  --input:               var(--color-input-bg);
+  --ring:                var(--color-accent);
+  --radius:              0.5rem;
+  /* Sidebar */
+  --sidebar:             var(--color-sidebar-bg);
+  --sidebar-foreground:  var(--color-text-primary);
+  --sidebar-primary:     var(--color-accent);
+  --sidebar-primary-foreground: var(--color-bg-primary);
+  --sidebar-accent:      var(--color-sidebar-active);
+  --sidebar-accent-foreground: var(--color-text-primary);
+  --sidebar-border:      var(--color-border);
+  --sidebar-ring:        var(--color-accent);
 }
 
+/* ── Tailwind v4 @theme — register Tailwind utility classes ─────────────────
+ *
+ * Variables here generate utility classes (bg-background, text-foreground,
+ * bg-primary, etc.).  Values are CSS-variable references so themes remain
+ * dynamic at runtime.
+ *
+ * NOTE: --color-accent below maps to shadcn's --accent (subtle hover bg)
+ * so that shadcn dropdown/menu hover states look correct.  The app's strong
+ * accent color is still accessible via the inline syntax `text-[--color-accent]`
+ * (resolves the :root value directly, bypassing the Tailwind utility).
+ */
 @theme {
-  --color-bg-primary: var(--color-bg-primary);
-  --color-bg-secondary: var(--color-bg-secondary);
-  --color-bg-tertiary: var(--color-bg-tertiary);
-  --color-text-primary: var(--color-text-primary);
+  /* App token utilities (bg-bg-primary, text-text-primary, …) */
+  --color-bg-primary:     var(--color-bg-primary);
+  --color-bg-secondary:   var(--color-bg-secondary);
+  --color-bg-tertiary:    var(--color-bg-tertiary);
+  --color-text-primary:   var(--color-text-primary);
   --color-text-secondary: var(--color-text-secondary);
-  --color-text-muted: var(--color-text-muted);
-  --color-accent: var(--color-accent);
-  --color-accent-hover: var(--color-accent-hover);
-  --color-success: var(--color-success);
-  --color-warning: var(--color-warning);
-  --color-error: var(--color-error);
-  --color-info: var(--color-info);
-  --color-border: var(--color-border);
-  --color-input-bg: var(--color-input-bg);
-  --color-msg-me: var(--color-msg-me);
-  --color-msg-them: var(--color-msg-them);
-  --color-sidebar-bg: var(--color-sidebar-bg);
+  --color-text-muted:     var(--color-text-muted);
+  --color-accent-strong:  var(--color-accent);
+  --color-accent-hover:   var(--color-accent-hover);
+  --color-success:        var(--color-success);
+  --color-warning:        var(--color-warning);
+  --color-error:          var(--color-error);
+  --color-info:           var(--color-info);
+  --color-border:         var(--color-border);
+  --color-input-bg:       var(--color-input-bg);
+  --color-msg-me:         var(--color-msg-me);
+  --color-msg-them:       var(--color-msg-them);
+  --color-sidebar-bg:     var(--color-sidebar-bg);
   --color-sidebar-active: var(--color-sidebar-active);
-  --color-sidebar-hover: var(--color-sidebar-hover);
+  --color-sidebar-hover:  var(--color-sidebar-hover);
+
+  /* shadcn utilities (bg-background, text-foreground, bg-primary, …) */
+  --color-background:          var(--background);
+  --color-foreground:          var(--foreground);
+  --color-card:                var(--card);
+  --color-card-foreground:     var(--card-foreground);
+  --color-popover:             var(--popover);
+  --color-popover-foreground:  var(--popover-foreground);
+  --color-primary:             var(--primary);
+  --color-primary-foreground:  var(--primary-foreground);
+  --color-secondary:           var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:               var(--muted);
+  --color-muted-foreground:    var(--muted-foreground);
+  --color-accent:              var(--accent);
+  --color-accent-foreground:   var(--accent-foreground);
+  --color-destructive:         var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input:               var(--input);
+  --color-ring:                var(--ring);
+  --radius-sm:  calc(var(--radius) - 4px);
+  --radius-md:  calc(var(--radius) - 2px);
+  --radius-lg:  var(--radius);
+  --radius-xl:  calc(var(--radius) + 4px);
 }

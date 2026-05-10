@@ -20,7 +20,12 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { PasswordSection } from './SettingsPage'
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}))
 
 // ---------------------------------------------------------------------------
 // Helper: wrap in QueryClientProvider with retry disabled
@@ -84,7 +89,7 @@ describe('PasswordSection — auth disabled (no password set)', () => {
     expect(screen.getByLabelText(/confirm new password/i)).toBeInTheDocument()
   })
 
-  it('shows "Passwords do not match." when new ≠ confirm, no POST made', async () => {
+  it('calls toast.error "Passwords do not match." when new ≠ confirm, no POST made', async () => {
     const fetchMock = mockFetch()
     renderPasswordSection(fetchMock)
 
@@ -94,12 +99,14 @@ describe('PasswordSection — auth disabled (no password set)', () => {
     await user.type(screen.getByLabelText(/confirm new password/i), 'different')
     await user.click(screen.getByRole('button', { name: /set password/i }))
 
-    expect(await screen.findByText('Passwords do not match.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Passwords do not match.')
+    })
     // Only the initial GET — no POST
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('shows "Password set." flash on successful submit', async () => {
+  it('calls toast.success "Password set." on successful submit', async () => {
     renderPasswordSection(mockFetch(jsonResponse({ ok: true })))
 
     await screen.findByRole('button', { name: /set password/i })
@@ -108,10 +115,12 @@ describe('PasswordSection — auth disabled (no password set)', () => {
     await user.type(screen.getByLabelText(/confirm new password/i), 'newpass1')
     await user.click(screen.getByRole('button', { name: /set password/i }))
 
-    expect(await screen.findByText('Password set.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Password set.')
+    })
   })
 
-  it('shows API error detail on non-ok response', async () => {
+  it('calls toast.error with API error detail on non-ok response', async () => {
     renderPasswordSection(
       mockFetch(jsonResponse({ detail: 'Current password is wrong.' }, 400)),
     )
@@ -122,7 +131,9 @@ describe('PasswordSection — auth disabled (no password set)', () => {
     await user.type(screen.getByLabelText(/confirm new password/i), 'newpass1')
     await user.click(screen.getByRole('button', { name: /set password/i }))
 
-    expect(await screen.findByText('Current password is wrong.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Current password is wrong.')
+    })
   })
 })
 
@@ -153,7 +164,7 @@ describe('PasswordSection — auth enabled (password already set)', () => {
     expect(screen.getByLabelText(/confirm new password/i)).toBeInTheDocument()
   })
 
-  it('shows "Password changed." flash on successful change', async () => {
+  it('calls toast.success "Password changed." on successful change', async () => {
     renderPasswordSection(mockFetch(jsonResponse({ ok: true })))
 
     await screen.findByRole('button', { name: /change password/i })
@@ -163,10 +174,12 @@ describe('PasswordSection — auth enabled (password already set)', () => {
     await user.type(screen.getByLabelText(/confirm new password/i), 'newpass1')
     await user.click(screen.getByRole('button', { name: /change password/i }))
 
-    expect(await screen.findByText('Password changed.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Password changed.')
+    })
   })
 
-  it('shows "Password removed." flash when clearing the password', async () => {
+  it('calls toast.success with "Password removed." when clearing the password', async () => {
     renderPasswordSection(mockFetch(jsonResponse({ ok: true })))
 
     await screen.findByRole('button', { name: /remove password/i })
@@ -174,10 +187,14 @@ describe('PasswordSection — auth enabled (password already set)', () => {
     await user.type(screen.getByLabelText(/current password/i), 'oldpass')
     await user.click(screen.getByRole('button', { name: /remove password/i }))
 
-    expect(await screen.findByText(/password removed/i)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+        expect.stringMatching(/password removed/i),
+      )
+    })
   })
 
-  it('shows API error detail on failed change', async () => {
+  it('calls toast.error with API error detail on failed change', async () => {
     renderPasswordSection(
       mockFetch(jsonResponse({ detail: 'Wrong current password.' }, 403)),
     )
@@ -188,10 +205,12 @@ describe('PasswordSection — auth enabled (password already set)', () => {
     await user.type(screen.getByLabelText(/confirm new password/i), 'newpass1')
     await user.click(screen.getByRole('button', { name: /change password/i }))
 
-    expect(await screen.findByText('Wrong current password.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Wrong current password.')
+    })
   })
 
-  it('shows "Passwords do not match." on mismatch without POSTing', async () => {
+  it('calls toast.error "Passwords do not match." on mismatch without POSTing', async () => {
     const fetchMock = mockFetch()
     renderPasswordSection(fetchMock)
 
@@ -201,7 +220,9 @@ describe('PasswordSection — auth enabled (password already set)', () => {
     await user.type(screen.getByLabelText(/confirm new password/i), 'xyz')
     await user.click(screen.getByRole('button', { name: /change password/i }))
 
-    expect(await screen.findByText('Passwords do not match.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Passwords do not match.')
+    })
     expect(fetchMock).toHaveBeenCalledTimes(1) // only the initial GET
   })
 })

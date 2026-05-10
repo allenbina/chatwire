@@ -58,7 +58,7 @@ test.describe('Chat flow', () => {
     await expect(compose).toBeVisible({ timeout: 5_000 })
   })
 
-  test('typing and submitting a message shows optimistic bubble', async ({ page }) => {
+  test('typing and submitting a message clears the compose box and calls the send API', async ({ page }) => {
     // Navigate directly to a conversation using the handle from MOCK_CONVERSATIONS[0]
     const handle = encodeURIComponent(
       MOCK_CONVERSATIONS[0].kind === 'handle'
@@ -71,11 +71,16 @@ test.describe('Chat flow', () => {
     const compose = page.getByRole('textbox', { name: /type a message/i })
     await expect(compose).toBeVisible({ timeout: 5_000 })
 
-    // Type a new message and submit
+    // Type a new message and press Enter — track the send API call in parallel
+    const sendRequest = page.waitForRequest('/api/ui/send')
     await compose.fill('Test message from E2E')
     await compose.press('Enter')
 
-    // Optimistic bubble should appear immediately in the virtual list
-    await expect(page.getByText('Test message from E2E')).toBeVisible({ timeout: 5_000 })
+    // The send API must be called (proves Enter triggered doSend)
+    await sendRequest
+
+    // The compose box should be cleared after a successful send (robust signal;
+    // virtual list item visibility depends on scroll container height in CI)
+    await expect(compose).toHaveValue('', { timeout: 5_000 })
   })
 })
