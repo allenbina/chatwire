@@ -124,6 +124,8 @@ Started May 5 with the `overnight-claude` project — a small wrapper for runnin
 
 The shape of the work changed here: instead of writing prompts interactively on a 4 GB Acer, I'd write briefs in the morning, the loop would chew through them on plinux during the day, and ntfy would tell me when something needed attention. The laptop went from being the dev box to being the steering wheel.
 
+A side benefit I hadn't planned for: it forced me to brush up on **tmux** and **vim**. Both of which I've used for years but always sloppily. Claude built me cheat sheets for the muscle memory I needed — pane-management shortcuts in tmux, normal-mode jumping and quick-edit motions in vim — and I leaned on them daily during the handoff. By the end of the week the cheat sheets were redundant. That's the actual sneaky win of moving an AI-collaborative workflow onto a real Linux server: the chair-keyboard skills you'd been deferring suddenly become non-negotiable, and the AI is right there to fill the gaps.
+
 ### 3d. Approve / reject workflow (May 9)
 
 The autonomy story would have been incomplete without a way for the loop to ask for human input when it wasn't sure. So:
