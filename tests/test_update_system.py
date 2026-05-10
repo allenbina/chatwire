@@ -1,20 +1,15 @@
-"""Tests for the plugin update system — version_check module, update routes,
-core version check, and template structural assertions.
+"""Tests for the plugin update system — version_check module and update routes.
 
 Strategy:
   - Test fetch_pypi_version() and check_updates() from web/version_check.py
     in isolation by patching urllib.request.urlopen.
   - Test update route logic (subprocess --force + verify_plugin contract)
     without a full FastAPI test client.
-  - Structural tests verify _plugin_sections.html has the required banner
-    markup and JS helpers.
-  - Structural tests verify _settings.html footer has the version hint span.
 """
 from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,8 +21,6 @@ from web.version_check import (
     load_version_cache,
     save_version_cache,
 )
-
-TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 
 
 # ---------------------------------------------------------------------------
@@ -283,86 +276,3 @@ class TestChatwireVersionCheck:
     def test_pypi_url_constant_uses_format_placeholder(self):
         assert "{package}" in vc_mod.PYPI_JSON_URL
         assert "pypi.org" in vc_mod.PYPI_JSON_URL
-
-
-# ---------------------------------------------------------------------------
-# Template structural tests — _plugin_sections.html
-# ---------------------------------------------------------------------------
-
-def _sections_html() -> str:
-    return (TEMPLATES / "_plugin_sections.html").read_text()
-
-
-class TestPluginSectionsTemplate:
-    def test_update_banner_div_present(self):
-        html = _sections_html()
-        assert "plugin-update-banner" in html
-
-    def test_update_available_jinja_check(self):
-        html = _sections_html()
-        assert "update_available" in html
-
-    def test_update_now_button_present(self):
-        html = _sections_html()
-        assert "Update now" in html
-
-    def test_dismiss_button_present(self):
-        html = _sections_html()
-        assert "Dismiss" in html
-
-    def test_cw_dismiss_update_js_function(self):
-        html = _sections_html()
-        assert "cwDismissUpdate" in html
-
-    def test_cw_update_plugin_js_function(self):
-        html = _sections_html()
-        assert "cwUpdatePlugin" in html
-
-    def test_localstorage_key_used_in_dismiss(self):
-        html = _sections_html()
-        assert "cw_upd_dismiss_" in html
-
-    def test_api_plugins_update_endpoint_referenced(self):
-        html = _sections_html()
-        assert "/api/plugins/update" in html
-
-    def test_banner_data_attributes_present(self):
-        html = _sections_html()
-        assert "data-plugin=" in html or "data-plugin" in html
-        assert "data-latest=" in html or "data-latest" in html
-        assert "data-dist=" in html or "data-dist" in html
-
-    def test_amber_styling_for_update_banner(self):
-        html = _sections_html()
-        assert "amber" in html
-
-    def test_update_badge_in_header(self):
-        html = _sections_html()
-        assert "plugin-upd-badge-" in html
-
-
-# ---------------------------------------------------------------------------
-# Template structural tests — _settings.html footer
-# ---------------------------------------------------------------------------
-
-def _settings_html() -> str:
-    return (TEMPLATES / "_settings.html").read_text()
-
-
-class TestSettingsFooterTemplate:
-    def test_app_version_shown_in_footer(self):
-        html = _settings_html()
-        assert "app_version" in html
-
-    def test_chatwire_latest_version_hint_present(self):
-        """Footer must reference chatwire_latest for the update hint."""
-        html = _settings_html()
-        assert "chatwire_latest" in html
-
-    def test_available_update_hint_text(self):
-        html = _settings_html()
-        assert "available" in html.lower()
-
-    def test_amber_color_on_update_hint(self):
-        html = _settings_html()
-        assert "amber" in html

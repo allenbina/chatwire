@@ -47,15 +47,22 @@ COOKIE_NAME = "chatwire_session"
 LOGIN_MAX_ATTEMPTS = 10
 LOGIN_WINDOW_S = 15 * 60
 
-# Anything matching these patterns bypasses the auth check. /login itself
-# must be public (otherwise you can't ever log in); /healthz/version are
-# probes the bridge process and update-check use; /static and the favicons
-# are fetched before any login UI renders.
+# Anything matching these patterns bypasses the auth check. The React login
+# page at /app/login and its JSON endpoint must be public so unauthenticated
+# users can reach the login form. The SPA asset bundle is also public so the
+# browser can load the JS/CSS needed to render the login page. /healthz and
+# /version are probes; /static and favicons are fetched before any UI renders.
 _PUBLIC_PATHS = frozenset({
-    "/login", "/logout", "/healthz", "/version",
+    "/logout", "/healthz", "/version",
     "/favicon.ico", "/favicon.svg",
+    "/app/login",              # React login page (SPA route) — must load without a cookie
+    "/app/manifest.webmanifest",  # PWA manifest
+    "/api/ui/auth/login",     # React login JSON endpoint — must be reachable without a cookie
 })
-_PUBLIC_PREFIXES = ("/static/",)
+_PUBLIC_PREFIXES = (
+    "/static/",
+    "/app/assets/",  # React SPA JS/CSS chunks — must load for the login page
+)
 
 
 def is_public_path(path: str) -> bool:

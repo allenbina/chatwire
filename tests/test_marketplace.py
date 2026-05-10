@@ -1,19 +1,15 @@
-"""Tests for the plugin marketplace — registry cache, install route logic,
-and browse-page template structure.
+"""Tests for the plugin marketplace — registry cache and install route logic.
 
 Strategy:
   - Test fetch_registry() from web/registry.py in isolation by patching
     urllib.request and the cache file path.
   - Test the install route helper logic via its subprocess + verify_plugin
     contract (no FastAPI test client needed — httpx not in the test env).
-  - Structural tests verify the new _plugins_browse.html template has the
-    three required sections and the unsigned-warning modal.
 """
 from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 import subprocess
 
@@ -27,7 +23,6 @@ import pytest
 import web.registry as registry_mod
 from web.registry import fetch_registry, PLUGIN_REGISTRY_URL
 
-TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 
 
 # ---------------------------------------------------------------------------
@@ -249,75 +244,3 @@ class TestInstallLogicMocked:
         ]
         for name in bad:
             assert not re.fullmatch(pattern, name), f"Should be rejected: {name!r}"
-
-
-# ---------------------------------------------------------------------------
-# Template structural tests — _plugins_browse.html
-# ---------------------------------------------------------------------------
-
-def _browse_html() -> str:
-    return (TEMPLATES / "_plugins_browse.html").read_text()
-
-
-class TestPluginsBrowseTemplate:
-    """Structural checks on the _plugins_browse.html template."""
-
-    def test_three_section_headings_present(self):
-        html = _browse_html()
-        assert "Official" in html
-        assert "Community" in html
-        assert "Custom Install" in html or "Custom install" in html
-
-    def test_back_button_goes_to_settings(self):
-        html = _browse_html()
-        assert 'hx-get="/settings"' in html
-
-    def test_unsigned_warning_modal_present(self):
-        html = _browse_html()
-        assert "unsigned" in html.lower()
-        assert "unsigned-modal" in html
-
-    def test_install_route_referenced(self):
-        html = _browse_html()
-        assert "/api/plugins/install" in html
-
-    def test_official_section_shows_signed_badge(self):
-        html = _browse_html()
-        assert "Signed" in html or "signed" in html
-
-    def test_community_section_shows_unsigned_warning(self):
-        html = _browse_html()
-        assert "Community" in html
-        assert "own risk" in html.lower() or "unsigned" in html.lower() or "not cryptographically" in html.lower()
-
-    def test_custom_install_has_text_input(self):
-        html = _browse_html()
-        assert 'type="text"' in html
-        assert "custom-pkg-input" in html
-
-    def test_custom_install_has_button(self):
-        html = _browse_html()
-        assert "installCustom" in html
-
-    def test_jinja_loops_over_official_and_community(self):
-        html = _browse_html()
-        assert "{% for p in official %}" in html
-        assert "{% for p in community %}" in html
-
-    def test_modal_confirm_and_cancel_buttons(self):
-        html = _browse_html()
-        assert "closeUnsignedModal" in html
-        assert "unsigned-modal-confirm" in html
-
-    def test_install_plugin_js_function(self):
-        html = _browse_html()
-        assert "installPlugin" in html
-
-    def test_restart_reminder_after_install(self):
-        html = _browse_html()
-        assert "Restart" in html or "restart" in html
-
-    def test_homepage_links_use_noopener(self):
-        html = _browse_html()
-        # External links must have rel="noopener" for security.
-        assert 'rel="noopener"' in html

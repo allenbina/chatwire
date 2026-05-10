@@ -1,28 +1,44 @@
 name: Publish to PyPI
 
-# Triggered by pushing a v* tag (e.g. v1.7.0). Three-job pipeline:
-#   1. build        — npm ci + npm run build + python -m build
-#   2. publish      — OIDC trusted publisher → PyPI + GitHub Release w/ assets
-#   3. homebrew-bump — bumps Formula/chatwire.rb in allenbina/homebrew-tap
+# Triggered by pushing a tag like v1.7.0. Five-job pipeline:
+#   1. build-frontend  — npm ci + npm run build in web/frontend/
+#   2. build-python    — python -m build + twine check (embeds the frontend dist)
+#   3. publish-pypi    — OIDC trusted publisher, no API token required
+#   4. github-release  — softprops/action-gh-release, attaches .whl + .tar.gz,
+#                        body extracted from CHANGELOG.md
+#   5. homebrew-bump   — updates Formula/chatwire.rb in allenbina/homebrew-tap
 #
-# One-time PyPI setup (https://pypi.org/manage/project/chatwire/settings/publishing/):
-#   Project: chatwire   Owner: allenbina
-#   Repository: chatwire   Workflow: publish.yml   Environment: pypi
+# Authentication: API token (PYPI_API_TOKEN secret).
+#   To create one: https://pypi.org/manage/account/token/
+#   Scope: "Entire account" or limit to project "chatwire".
+#   Then add it to the repo: Settings → Secrets → Actions → PYPI_API_TOKEN
+#
+# Alternative (OIDC Trusted Publisher — no secret needed):
+#   https://pypi.org/manage/project/chatwire/settings/publishing/
+#   Owner: allenbina   Repository: chatwire-dev
+#   Workflow: publish.yml   Environment: pypi
+#   Then swap the publish step back to OIDC (see comment in job 3).
 #
 # Required secrets:
+#   PYPI_API_TOKEN     — PyPI API token scoped to the chatwire project
 #   HOMEBREW_TAP_TOKEN — classic PAT with `repo` scope on allenbina/homebrew-tap
+#                        (the default GITHUB_TOKEN can't write to other repos)
 
+# DISABLED: This is the private dev repo (chatwire-dev).
+# Publishing happens from the public chatwire repo only.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:  # manual-only, never auto-triggers
 
 jobs:
-  build:
-    name: Build distribution
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: Build the React frontend and upload dist/ as an artifact so the
+  # Python build job can embed it into the wheel.
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-frontend:
+    name: Build React frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -31,11 +47,39 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/frontend/package-lock.json
 
-      - name: Build React frontend
+      - name: Install dependencies
         working-directory: web/frontend
-        run: |
-          npm ci
-          npm run build
+        run: npm ci
+
+      - name: Build production bundle
+        working-directory: web/frontend
+        run: npm run build
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: web/frontend/dist/
+          # Keep for 7 days — only needed by the build-python job in this run.
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: Build the Python wheel + sdist.
+  # pyproject.toml [tool.setuptools.package-data] already includes
+  # web/frontend/dist/** so the artifact from Job 1 lands inside the wheel.
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-python:
+    name: Build Python wheel + sdist
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: web/frontend/dist/
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -58,20 +102,26 @@ jobs:
           path: dist/
           retention-days: 7
 
-  publish:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 3: Publish to PyPI via API token secret.
+  # Requires PYPI_API_TOKEN in the repo's GitHub Actions secrets.
+  #
+  # To switch back to OIDC Trusted Publisher (no secret needed):
+  #   1. Add the publisher on PyPI (see top-of-file comment for exact settings).
+  #   2. Remove `password:` from the publish step below.
+  #   3. Restore `id-token: write` permission and `environment: pypi`.
+  # ─────────────────────────────────────────────────────────────────────────────
+  publish-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: build-python
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/chatwire
     permissions:
-      id-token: write   # OIDC token for PyPI trusted publisher
-      contents: write   # create GitHub releases
+      id-token: write  # kept for optional OIDC attestation metadata
 
     steps:
-      - uses: actions/checkout@v5
-
       - name: Download dist artifacts
         uses: actions/download-artifact@v8
         with:
@@ -80,18 +130,48 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 4: Create a GitHub Release with the wheel + sdist attached.
+  # Release body is extracted from CHANGELOG.md for the matching version
+  # (falls back to [Unreleased] if no versioned section exists yet).
+  # Runs after PyPI publish succeeds so a failed upload doesn't create a
+  # misleading Release.
+  # ─────────────────────────────────────────────────────────────────────────────
+  github-release:
+    name: Create GitHub Release
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create releases and upload assets
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
 
       - name: Extract changelog section
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          BODY=$(awk "/^## \\[${VERSION}\\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+          # Try version-specific section first (e.g. ## [1.7.0])
+          BODY=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+          # Fall back to [Unreleased] if no versioned section found
           if [ -z "$(echo "$BODY" | tr -d '[:space:]')" ]; then
-            BODY=$(awk '/^## \\[Unreleased\\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md)
+            BODY=$(awk '/^## \[Unreleased\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md)
           fi
+          # If still empty, provide a minimal placeholder
           if [ -z "$(echo "$BODY" | tr -d '[:space:]')" ]; then
-            BODY="See CHANGELOG.md for details."
+            BODY="See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details."
           fi
           printf '%s\n' "$BODY" > /tmp/release-notes.md
+          echo "--- release notes ---"
+          cat /tmp/release-notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -101,10 +181,19 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 5: Bump the chatwire formula in allenbina/homebrew-tap.
+  # dawidd6/action-homebrew-bump-formula fetches the new version's sdist from
+  # PyPI, calculates sha256, updates Formula/chatwire.rb, and pushes directly
+  # (push: true) since Allen owns the tap.
+  #
+  # Requires secret: HOMEBREW_TAP_TOKEN (classic PAT, `repo` scope on the tap).
+  # ─────────────────────────────────────────────────────────────────────────────
   homebrew-bump:
     name: Bump Homebrew tap
-    needs: publish
+    needs: github-release
     runs-on: ubuntu-latest
+
     steps:
       - name: Bump chatwire formula in allenbina/homebrew-tap
         uses: dawidd6/action-homebrew-bump-formula@v3
@@ -112,19 +201,6 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           tap: allenbina/homebrew-tap
           formula: chatwire
+          # push: true — commit directly to the tap instead of opening a PR.
+          # Remove this line if you prefer a PR for each release.
           push: true
-
-  notify-failure:
-    name: Notify on failure
-    needs: [build, publish, homebrew-bump]
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send ntfy alert
-        run: |
-          curl -s \
-            -H "Title: CI FAILED: ${{ github.workflow }} (${{ github.ref_name }})" \
-            -H "Priority: high" \
-            -H "Tags: x,robot_face" \
-            -d "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            ntfy.sh/p9SKpYzY70LlyK1N

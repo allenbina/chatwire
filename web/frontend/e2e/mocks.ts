@@ -11,8 +11,29 @@ import type { Page } from '@playwright/test'
 // ---------------------------------------------------------------------------
 
 export const MOCK_CONVERSATIONS = [
-  { handle: '+15551234567', display_name: 'Alice', last_message: 'Hey!', unread: 0, is_group: false },
-  { handle: 'group-abc123', display_name: 'Team Chat', last_message: 'Morning', unread: 2, is_group: true },
+  {
+    kind: 'handle' as const,
+    handle: '+15551234567',
+    name: 'Alice',
+    preview: 'Hey!',
+    has_media: false,
+    last_dt: 1746393600,
+    n: 0,
+    all_handles: ['+15551234567'],
+    is_favorite: false,
+    last: '+15551234567',
+  },
+  {
+    kind: 'group' as const,
+    guid: 'group-abc123',
+    name: 'Team Chat',
+    preview: 'Morning',
+    has_media: false,
+    last_dt: 1746393700,
+    n: 2,
+    is_favorite: false,
+    last: 'group-abc123',
+  },
 ]
 
 export const MOCK_MESSAGES = [
@@ -20,19 +41,21 @@ export const MOCK_MESSAGES = [
     rowid: 1,
     text: 'Hello there',
     from_me: false,
-    date: '2026-05-01T10:00:00',
+    date: 1746393600000,
+    ts: '2026-05-01T10:00:00',
     sender_name: 'Alice',
     attachments: [],
-    reactions: [],
+    link_preview: null,
   },
   {
     rowid: 2,
     text: 'Hi! How are you?',
     from_me: true,
-    date: '2026-05-01T10:01:00',
+    date: 1746393660000,
+    ts: '2026-05-01T10:01:00',
     sender_name: null,
     attachments: [],
-    reactions: [],
+    link_preview: null,
   },
 ]
 
@@ -118,21 +141,14 @@ export async function installMocks(page: Page) {
 
 /** Install mocks that simulate an unauthenticated session. */
 export async function installUnauthMocks(page: Page) {
-  // /app/* routes return 200 (Vite dev server always serves the SPA shell),
-  // but API calls get 401 so the React app redirects to /login.
+  // /app/* routes are served by the Vite dev server (SPA shell), but API
+  // calls get 401 so api.ts sets window.location.href = '/app/login?next=...'
+  // which navigates within the SPA to the React LoginPage.
   await page.route('/api/auth/check', (r) =>
     r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Not authenticated' }) })
   )
   await page.route('/api/ui/conversations', (r) =>
     r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Not authenticated' }) })
-  )
-  // The login page itself
-  await page.route('/login', (r) =>
-    r.fulfill({
-      status: 200,
-      contentType: 'text/html',
-      body: '<html><body><form><input name="password"/><button type="submit">Login</button></form></body></html>',
-    })
   )
   // SSE and health don't matter when unauthed
   await page.route('/healthz', (r) =>

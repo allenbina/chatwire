@@ -24,9 +24,14 @@ interface MessageListProps {
   isGroup?: boolean
 }
 
+// Stable empty array — avoids returning a new [] on every render when there
+// are no optimistic messages, which would cause an infinite render loop via
+// useSyncExternalStore's getSnapshot cache check.
+const EMPTY_OPTIMISTIC: never[] = []
+
 export function MessageList({ handle, isGroup = false }: MessageListProps) {
   const queryClient = useQueryClient()
-  const optimistic = useChatStore((s) => s.optimistic[handle] ?? [])
+  const optimistic = useChatStore((s) => s.optimistic[handle] ?? EMPTY_OPTIMISTIC)
   const scrollRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)

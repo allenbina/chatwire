@@ -35,7 +35,9 @@ function ConversationRow({ convo }: { convo: Conversation }) {
   function handleClick() {
     setActiveHandle(routeKey)
     setSidebarOpen(false) // close drawer on mobile
-    navigate(`/app/chat/${encodeURIComponent(routeKey)}`)
+    // Navigate without the /app basename prefix — BrowserRouter with
+    // basename="/app" prepends it automatically.
+    navigate(`/chat/${encodeURIComponent(routeKey)}`)
   }
 
   return (

@@ -16,12 +16,3 @@ dist/
 # React frontend build artifacts
 web/frontend/node_modules/
 web/frontend/dist/
-
-# Internal dev state (lives in chatwire-dev repo)
-docs/HANDOFF*.md
-docs/greenfield-*.md
-docs/master-migration-plan.md
-docs/repo-split-plan.md
-scripts/chatwire-loop.sh
-scripts/chain-waves.sh
-scripts/wait_pypi.py

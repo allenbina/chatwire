@@ -180,21 +180,13 @@ async def _auth_gate(request: Request, call_next):
             if cur_block is not None and cur_block["session_secret"] == block["session_secret"]:
                 _set_session_cookie(response, block["session_secret"])
         return response
-    # htmx fragments can't follow a 302 to a login page — they'd swap the
-    # form HTML into the messages list. Surface a 401 with HX-Redirect so
-    # the client kicks the whole window over to /login. Plain HTML
-    # navigations (full-page) get a normal redirect.
-    if request.headers.get("HX-Request") == "true":
-        resp = Response(status_code=401)
-        resp.headers["HX-Redirect"] = "/login"
-        return resp
-    target = "/login"
+    from urllib.parse import quote
+    target = "/app/login"
     nxt = request.url.path
     if request.url.query:
         nxt = f"{nxt}?{request.url.query}"
     if nxt and nxt != "/":
-        from urllib.parse import quote
-        target = f"/login?next={quote(nxt, safe='')}"
+        target = f"/app/login?next={quote(nxt, safe='')}"
     return RedirectResponse(target, status_code=302)
 
 
@@ -219,14 +211,6 @@ async def version():
 
 # ------- optional cookie-session auth -------
 
-# Sanity guard for `?next=`: only accept paths that point back into our own
-# UI. Anything else falls back to "/" so a crafted login link can't bounce
-# the user to a third-party host.
-def _safe_next(nxt: str) -> str:
-    if not nxt or not nxt.startswith("/") or nxt.startswith("//"):
-        return "/"
-    return nxt
-
 
 def _csrf_token() -> str:
     """Fresh signed CSRF token for the current request cycle."""
@@ -247,22 +231,6 @@ def _set_session_cookie(response: Response, secret: str) -> None:
     )
 
 
-@app.get("/login", response_class=HTMLResponse)
-async def login_form(request: Request, next: str = "/", error: str = ""):
-    # If auth isn't configured at all, /login has nothing to do — bounce
-    # to the main UI instead of showing a form that can't be submitted.
-    if getattr(app.state, "auth_block", None) is None:
-        return RedirectResponse("/", status_code=302)
-    return templates.TemplateResponse(request, "_login.html", {
-        "next": _safe_next(next),
-        "error": error,
-        "csrf_token": _csrf_token(),
-        "release_version": RELEASE_VERSION,
-        "version": APP_VERSION,
-        "web_theme": selected_theme(_bridge_config.load_config()),
-    })
-
-
 def _client_key(request: Request) -> str:
     """Bucket key for rate limiting. `request.client.host` is the immediate
     peer — for direct LAN access that's the user; behind a reverse proxy
@@ -274,43 +242,6 @@ def _client_key(request: Request) -> str:
     return (request.client.host if request.client else "") or "unknown"
 
 
-@app.post("/login")
-async def login_submit(
-    request: Request,
-    password: str = Form(""),
-    next: str = Form("/"),
-    csrf_token: str = Form(""),
-):
-    block = getattr(app.state, "auth_block", None)
-    if block is None:
-        # Race: password was cleared between form render and submit. Send
-        # the user on with no cookie set — auth's disabled now.
-        return RedirectResponse(_safe_next(next), status_code=303)
-    if not _auth.verify_csrf_token(csrf_token, app.state.csrf_secret):
-        from urllib.parse import urlencode
-        qs = urlencode({"next": _safe_next(next), "error": "Form expired — please try again."})
-        return RedirectResponse(f"/login?{qs}", status_code=303)
-    limiter: _auth.LoginRateLimiter = app.state.login_rate_limiter
-    key = _client_key(request)
-    locked = limiter.locked_for(key)
-    if locked:
-        from urllib.parse import urlencode
-        msg = f"Too many attempts. Try again in {_fmt_lockout(locked)}."
-        qs = urlencode({"next": _safe_next(next), "error": msg})
-        return RedirectResponse(f"/login?{qs}", status_code=303)
-    if not _auth.verify_password(password, block["password_hash"]):
-        limiter.record_fail(key)
-        # Re-render the form with an error. 303 → GET keeps the URL
-        # `?error=` simple and avoids resubmits.
-        from urllib.parse import urlencode
-        qs = urlencode({"next": _safe_next(next), "error": "Wrong password."})
-        return RedirectResponse(f"/login?{qs}", status_code=303)
-    limiter.record_success(key)
-    resp = RedirectResponse(_safe_next(next), status_code=303)
-    _set_session_cookie(resp, block["session_secret"])
-    return resp
-
-
 def _fmt_lockout(seconds: int) -> str:
     if seconds < 60:
         return f"{seconds}s"
@@ -320,7 +251,7 @@ def _fmt_lockout(seconds: int) -> str:
 
 @app.get("/logout")
 async def logout():
-    resp = RedirectResponse("/login", status_code=303)
+    resp = RedirectResponse("/app/login", status_code=303)
     resp.delete_cookie(_auth.COOKIE_NAME, samesite="lax")
     return resp
 
@@ -345,72 +276,6 @@ def _save_auth_block(password: str | None) -> None:
         }
     _bridge_config.save_config(cfg)
     _refresh_auth_state()
-
-
-@app.post("/api/auth/password")
-async def api_auth_password(
-    request: Request,
-    new_password: str = Form(""),
-    current_password: str = Form(""),
-    clear: str = Form(""),
-    csrf_token: str = Form(""),
-):
-    """Settings-side password set/change/clear.
-
-    - clear=1 with a valid current_password (or no auth currently) drops
-      the auth block.
-    - new_password sets/changes the password. When auth is already set,
-      current_password must match.
-    """
-    if not _auth.verify_csrf_token(csrf_token, app.state.csrf_secret):
-        raise HTTPException(403, "Invalid or expired form token — please reload the page.")
-    block = getattr(app.state, "auth_block", None)
-    # If auth is currently set, require the current password for any
-    # change. This stops a stolen-cookie escalation (cookie alone is
-    # enough to read messages but not enough to lock the owner out).
-    if block is not None:
-        limiter: _auth.LoginRateLimiter = app.state.login_rate_limiter
-        # Rate-limit current_password verification on the same bucket as
-        # /login: a stolen-cookie attacker grinding for the password to
-        # lock the owner out should hit the same wall as one grinding
-        # /login itself.
-        key = _client_key(request)
-        locked = limiter.locked_for(key)
-        if locked:
-            raise HTTPException(
-                429,
-                f"Too many attempts. Try again in {_fmt_lockout(locked)}.",
-            )
-        if not _auth.verify_password(current_password, block["password_hash"]):
-            limiter.record_fail(key)
-            raise HTTPException(403, "Wrong current password.")
-        limiter.record_success(key)
-
-    if clear == "1":
-        _save_auth_block(None)
-        resp = HTMLResponse(_render_password_card(request))
-        resp.delete_cookie(_auth.COOKIE_NAME, samesite="lax")
-        return resp
-
-    new_password = new_password.strip()
-    if len(new_password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters.")
-    _save_auth_block(new_password)
-    resp = HTMLResponse(_render_password_card(request))
-    new_block = getattr(app.state, "auth_block", None)
-    if new_block is not None:
-        _set_session_cookie(resp, new_block["session_secret"])
-    return resp
-
-
-def _render_password_card(request: Request, csrf_token: str = "") -> str:
-    """Render just the password section of settings (htmx swap target)."""
-    has_pw = getattr(app.state, "auth_block", None) is not None
-    return templates.get_template("_password_card.html").render({
-        "request": request,
-        "has_password": has_pw,
-        "csrf_token": csrf_token or _csrf_token(),
-    })
 
 
 # ------- chat.db queries (read via backup snapshot, like the bridge) -------
@@ -1344,150 +1209,11 @@ def _delivery_status(r) -> dict:
 
 # ------- routes -------
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {
-        "version": APP_VERSION,
-        "release_version": RELEASE_VERSION,
-        "update_check_repo": UPDATE_CHECK_REPO,
-        "web_theme": selected_theme(_bridge_config.load_config()),
-        "custom_css": _selected_custom_css(),
-        "thumbnail_max_size": _selected_thumbnail_max_size(),
-    })
+@app.get("/")
+async def index():
+    return RedirectResponse(url="/app/", status_code=302)
 
 
-@app.get("/conversations", response_class=HTMLResponse)
-async def conversations(request: Request):
-    convos = await asyncio.to_thread(list_conversations)
-    return templates.TemplateResponse(request, "_conversations.html", {"convos": convos})
-
-
-def _paging_meta(
-    msgs: list[dict], has_more: bool, handle: str, chat: str,
-) -> dict:
-    """Render `next_url` for the load-older trigger when more pages exist.
-
-    `msgs` is oldest-first as rendered. The cursor for the next page is the
-    (date, rowid) of the *oldest* message currently in the page — `msgs[0]`."""
-    if not has_more or not msgs:
-        return {"has_more": False, "next_url": ""}
-    first = msgs[0]
-    if chat:
-        from urllib.parse import quote
-        url = (f"/history?chat={quote(chat, safe='')}"
-               f"&before_date={first['date']}&before_rowid={first['rowid']}")
-    else:
-        from urllib.parse import quote
-        url = (f"/history?handle={quote(handle, safe='')}"
-               f"&before_date={first['date']}&before_rowid={first['rowid']}")
-    return {"has_more": True, "next_url": url}
-
-
-@app.get("/conversation", response_class=HTMLResponse)
-async def conversation(request: Request, handle: str = "", chat: str = ""):
-    """Render a conversation. Exactly one of `handle` (1:1) or `chat`
-    (group GUID) must be provided. Template branches on `is_group`."""
-    if chat:
-        if chat not in wl_all_groups():
-            raise HTTPException(403, "group not in whitelist")
-        msgs, has_more = await asyncio.to_thread(history_for_group, chat)
-        info = await asyncio.to_thread(_group_info, chat)
-        ctx = {
-            "handle": "",
-            "chat": chat,
-            "name": info["name"],
-            "subtitle": f"{info['members']} members" if info["members"] else "group chat",
-            "is_group": True,
-            "msgs": msgs,
-        }
-        ctx.update(_paging_meta(msgs, has_more, "", chat))
-        return templates.TemplateResponse(request, "_conversation.html", ctx)
-    if not handle:
-        raise HTTPException(400, "missing handle or chat")
-    if handle.lower() not in relay_handles():
-        raise HTTPException(403, "handle not in relay scope")
-    msgs, has_more = await asyncio.to_thread(history_for, handle)
-    ctx = {
-        "handle": handle,
-        "chat": "",
-        "name": _name(handle),
-        "subtitle": handle,
-        "is_group": False,
-        "msgs": msgs,
-    }
-    ctx.update(_paging_meta(msgs, has_more, handle, ""))
-    return templates.TemplateResponse(request, "_conversation.html", ctx)
-
-
-@app.get("/popout", response_class=HTMLResponse)
-async def popout(request: Request, handle: str = "", chat: str = ""):
-    """Stripped-down conversation view in a new window (no sidebar/nav).
-    Exactly one of `handle` (1:1) or `chat` (group GUID) must be provided."""
-    _theme = selected_theme(_bridge_config.load_config())
-    _base_ctx: dict = {"web_theme": _theme, "version": APP_VERSION}
-    if chat:
-        if chat not in wl_all_groups():
-            raise HTTPException(403, "group not in whitelist")
-        msgs, has_more = await asyncio.to_thread(history_for_group, chat)
-        info = await asyncio.to_thread(_group_info, chat)
-        ctx = {
-            **_base_ctx,
-            "handle": "",
-            "chat": chat,
-            "name": info["name"],
-            "subtitle": f"{info['members']} members" if info["members"] else "group chat",
-            "is_group": True,
-            "msgs": msgs,
-        }
-        ctx.update(_paging_meta(msgs, has_more, "", chat))
-        return templates.TemplateResponse(request, "_popout.html", ctx)
-    if not handle:
-        raise HTTPException(400, "missing handle or chat")
-    if handle.lower() not in relay_handles():
-        raise HTTPException(403, "handle not in relay scope")
-    msgs, has_more = await asyncio.to_thread(history_for, handle)
-    ctx = {
-        **_base_ctx,
-        "handle": handle,
-        "chat": "",
-        "name": _name(handle),
-        "subtitle": handle,
-        "is_group": False,
-        "msgs": msgs,
-    }
-    ctx.update(_paging_meta(msgs, has_more, handle, ""))
-    return templates.TemplateResponse(request, "_popout.html", ctx)
-
-
-@app.get("/history", response_class=HTMLResponse)
-async def history(
-    request: Request,
-    handle: str = "",
-    chat: str = "",
-    before_date: int = 0,
-    before_rowid: int = 0,
-):
-    """Older-message page for an open conversation. Returns the bubble
-    fragment (oldest-first) plus a fresh load-older trigger if there are
-    more pages still. Same authz as `/conversation`."""
-    if before_date <= 0 or before_rowid <= 0:
-        raise HTTPException(400, "missing or invalid cursor")
-    cursor = (before_date, before_rowid)
-    if chat:
-        if chat not in wl_all_groups():
-            raise HTTPException(403, "group not in whitelist")
-        msgs, has_more = await asyncio.to_thread(history_for_group, chat, cursor)
-        ctx = {"is_group": True, "msgs": msgs}
-        ctx.update(_paging_meta(msgs, has_more, "", chat))
-        return templates.TemplateResponse(request, "_history_page.html", ctx)
-    if not handle:
-        raise HTTPException(400, "missing handle or chat")
-    if handle.lower() not in relay_handles():
-        raise HTTPException(403, "handle not in relay scope")
-    msgs, has_more = await asyncio.to_thread(history_for, handle, cursor)
-    ctx = {"is_group": False, "msgs": msgs}
-    ctx.update(_paging_meta(msgs, has_more, handle, ""))
-    return templates.TemplateResponse(request, "_history_page.html", ctx)
 
 
 async def _send_via_ctx_or_direct(
@@ -1596,25 +1322,6 @@ async def send(request: Request,
             "fell_back_to_sms": any(r.get("fell_back_to_sms") for r in results),
             "results": results}
 
-
-@app.get("/contact", response_class=HTMLResponse)
-async def contact(request: Request, handle: str = "", chat: str = ""):
-    """Render the contact / group-info page. Same routing rule as /conversation:
-    exactly one of `handle` (1:1) or `chat` (group GUID)."""
-    from urllib.parse import quote
-    if chat:
-        if chat not in wl_all_groups():
-            raise HTTPException(403, "group not in whitelist")
-        ctx = await asyncio.to_thread(contact_for_group, chat)
-        ctx["back_url"] = f"/conversation?chat={quote(chat, safe='')}"
-        return templates.TemplateResponse(request, "_contact.html", ctx)
-    if not handle:
-        raise HTTPException(400, "missing handle or chat")
-    if handle.lower() not in relay_handles():
-        raise HTTPException(403, "handle not in relay scope")
-    ctx = await asyncio.to_thread(contact_for, handle)
-    ctx["back_url"] = f"/conversation?handle={quote(handle, safe='')}"
-    return templates.TemplateResponse(request, "_contact.html", ctx)
 
 
 @app.get("/events")
@@ -1937,20 +1644,12 @@ async def _start_push_tailer():
     asyncio.create_task(_thumb_cache_evictor())
 
 
-@app.post("/refresh_contacts", response_class=HTMLResponse)
-async def refresh_contacts(request: Request):
+@app.post("/refresh_contacts")
+async def refresh_contacts():
     global CONTACTS, IMAGE_INDEX
     CONTACTS = await asyncio.to_thread(load_contacts)
     IMAGE_INDEX = await asyncio.to_thread(load_image_index)
-    # Return only the datalist via OOB swap — doesn't disturb accordion state.
-    names = _contact_names()
-    options = "\n".join(f'<option value="{n}"></option>' for n in names)
-    html = f'<datalist id="contact-names" hx-swap-oob="true">{options}</datalist>'
-    resp = HTMLResponse(html)
-    resp.headers["HX-Trigger"] = json.dumps({
-        "contacts-synced": {"loaded": len(CONTACTS), "with_image": len(IMAGE_INDEX)}
-    })
-    return resp
+    return {"ok": True, "loaded": len(CONTACTS), "with_image": len(IMAGE_INDEX)}
 
 
 # ------- whitelist management -------
@@ -2171,41 +1870,6 @@ def _capability_label(
     return "+".join(services) + " (unknown)"
 
 
-def _whitelist_rows() -> list[dict]:
-    """Mixed handle + group rows for the settings UI. Groups carry kind='group'
-    and a guid field; the template's remove form branches on that."""
-    handles = sorted(wl_all())
-    svc = _services_for_handles(handles)
-    outcomes = _outcomes_for_handles(handles)
-    rows: list[dict] = []
-    for h in handles:
-        hl = h.lower()
-        cap = _capability_label(svc.get(hl, []), outcomes.get(hl))
-        rows.append({
-            "kind": "handle",
-            "handle": h,
-            "name": CONTACTS.get(h, ""),
-            "capability": cap,
-            "cap_class": _cap_class_for(cap),
-        })
-
-    # Groups: resolve display names from chat.db for any GUIDs in the whitelist.
-    group_guids = sorted(wl_all_groups())
-    if group_guids:
-        name_by_guid: dict[str, tuple[str, int]] = {}
-        for g in _list_named_groups():
-            name_by_guid[g["guid"]] = (g["name"], g["members"])
-        for guid in group_guids:
-            name, members = name_by_guid.get(guid, ("(unnamed group)", 0))
-            rows.append({
-                "kind": "group",
-                "guid": guid,
-                "name": name,
-                "members": members,
-                "capability": f"{members} members" if members else "group chat",
-                "cap_class": "cap-unknown",
-            })
-    return rows
 
 
 def _contact_names() -> list[str]:
@@ -2214,10 +1878,14 @@ def _contact_names() -> list[str]:
     Contacts come as plain names ("Alice Chen"); named groups are prefixed
     with "[Group] " so the backend can disambiguate when the same value
     comes back on form submit (and so the user can see what kind of row
-    they're about to add)."""
+    they're added)."""
     contact = sorted({n for n in CONTACTS.values() if n}, key=str.lower)
     groups = [f"{GROUP_LABEL_PREFIX}{g['name']}" for g in _list_named_groups()]
     return contact + groups
+
+
+# Public alias used by web/api_ui.py
+contact_names_for_autocomplete = _contact_names
 
 
 def _installed_plugins() -> list[dict]:
@@ -2292,34 +1960,6 @@ def _installed_plugins() -> list[dict]:
 
     return sorted(seen.values(), key=lambda p: p["display_name"].lower())
 
-
-def _schema_fields(schema: dict) -> list[dict]:
-    """Extract renderable fields from a JSON Schema for template use.
-
-    Returns a list of field dicts sorted by x-ui-order (default: 999),
-    each with: key, type, title, description, enum, default, placeholder,
-    ui_type, minimum, maximum.
-    """
-    props = schema.get("properties", {})
-    fields = []
-    for key, prop in props.items():
-        if key == "enabled":
-            continue  # rendered separately as the main toggle
-        fields.append({
-            "key": key,
-            "type": prop.get("type", "string"),
-            "title": prop.get("title", key.replace("_", " ").title()),
-            "description": prop.get("description", ""),
-            "enum": prop.get("enum"),
-            "default": prop.get("default"),
-            "placeholder": prop.get("x-ui-placeholder", ""),
-            "ui_type": prop.get("x-ui-type", ""),
-            "minimum": prop.get("minimum"),
-            "maximum": prop.get("maximum"),
-            "order": prop.get("x-ui-order", 999),
-        })
-    fields.sort(key=lambda f: f["order"])
-    return fields
 
 
 def _spam_whitelist_text() -> str:
@@ -2408,125 +2048,6 @@ def _api_key_hint() -> str:
         return "Configured"  # hash present but prefix missing (older config)
     return "Not set"
 
-
-@app.get("/settings", response_class=HTMLResponse)
-async def settings(request: Request):
-    plugins = _installed_plugins()
-    for p in plugins:
-        p["fields"] = _schema_fields(p["schema"])
-    # Check PyPI for plugin + core updates (uses 24h cache — usually instant).
-    update_available = await asyncio.to_thread(_plugin_update_available, plugins)
-    chatwire_latest = await asyncio.to_thread(_chatwire_latest_version)
-    return templates.TemplateResponse(request, "_settings.html", {
-        "rows": _whitelist_rows(),
-        "self_handles": sorted(SELF_HANDLES),
-        "contact_names": _contact_names(),
-        "has_password": getattr(app.state, "auth_block", None) is not None,
-        "csrf_token": _csrf_token(),
-        "web_theme": selected_theme(_bridge_config.load_config()),
-        "themes": themes_for_picker(),
-        "time_format": _selected_time_format(),
-        "history_limit": _selected_history_limit(),
-        "spam_whitelist_text": _spam_whitelist_text(),
-        "ntfy_topic": _ntfy_topic(),
-        "notification_detail": _notification_detail(),
-        "notification_muted_contacts": _notification_muted_contacts(),
-        "notify_mode": _notify_mode(),
-        "notification_selected_contacts": _notification_selected_contacts(),
-        "hiatus_enabled": _hiatus_settings()["enabled"],
-        "hiatus_duration_minutes": _hiatus_settings()["duration_minutes"],
-        "reminder_enabled": _reminder_settings()["enabled"],
-        "reminder_days": _reminder_settings()["days"],
-        "reminder_contacts": _reminder_settings()["contacts"],
-        "contacts": CONTACTS,
-        "api_key_hint": _api_key_hint(),
-        "plugins": plugins,
-        "app_version": _version.__version__,
-        "chatwire_latest": chatwire_latest,
-        "update_available": update_available,
-        "favorites": _favorites(),
-        "web_port": _bridge_config.load_config().get("web", {}).get("port", 8723),
-        "web_bind": _bridge_config.load_config().get("web", {}).get("bind", "127.0.0.1"),
-        "web_proxy_headers": _bridge_config.load_config().get("web", {}).get("proxy_headers", False),
-        "custom_css": _selected_custom_css(),
-        "thumbnail_max_size": _selected_thumbnail_max_size(),
-    })
-
-
-@app.post("/api/settings/theme", response_class=HTMLResponse)
-async def api_settings_theme(request: Request, theme: str = Form("")):
-    """Persist a theme pick to web.theme. Validates against the on-disk
-    list so a typo or stale slug can't write a value that'd render with
-    a 404'd stylesheet on the next page load."""
-    if theme not in available_themes():
-        raise HTTPException(400, f"Unknown theme: {theme!r}")
-    cfg = _bridge_config.load_config()
-    cfg.setdefault("web", {})["theme"] = theme
-    _bridge_config.save_config(cfg)
-    return templates.TemplateResponse(request, "_appearance_card.html", {
-        "web_theme": theme,
-        "themes": themes_for_picker(),
-        "time_format": _selected_time_format(),
-        "history_limit": _selected_history_limit(),
-        "custom_css": _selected_custom_css(),
-        "thumbnail_max_size": _selected_thumbnail_max_size(),
-    })
-
-
-@app.post("/api/settings/time_format", response_class=HTMLResponse)
-async def api_settings_time_format(request: Request, time_format: str = Form("")):
-    """Toggle 12h / 24h time display."""
-    if time_format not in ("12h", "24h"):
-        raise HTTPException(400, f"Invalid time format: {time_format!r}")
-    cfg = _bridge_config.load_config()
-    cfg.setdefault("web", {})["time_format"] = time_format
-    _bridge_config.save_config(cfg)
-    return templates.TemplateResponse(request, "_appearance_card.html", {
-        "web_theme": selected_theme(cfg),
-        "themes": themes_for_picker(),
-        "time_format": time_format,
-        "history_limit": _selected_history_limit(),
-        "custom_css": _selected_custom_css(),
-        "thumbnail_max_size": _selected_thumbnail_max_size(),
-    })
-
-
-@app.post("/api/settings/history_limit", response_class=HTMLResponse)
-async def api_settings_history_limit(request: Request, history_limit: int = Form(0)):
-    """Persist the message load count to web.history_limit."""
-    if history_limit not in (25, 50, 100, 200):
-        raise HTTPException(400, f"Invalid history limit: {history_limit!r}")
-    cfg = _bridge_config.load_config()
-    cfg.setdefault("web", {})["history_limit"] = history_limit
-    _bridge_config.save_config(cfg)
-    return templates.TemplateResponse(request, "_appearance_card.html", {
-        "web_theme": selected_theme(cfg),
-        "themes": themes_for_picker(),
-        "time_format": _selected_time_format(),
-        "history_limit": history_limit,
-        "custom_css": _selected_custom_css(),
-        "thumbnail_max_size": _selected_thumbnail_max_size(),
-    })
-
-
-@app.post("/api/settings/thumbnail_max_size", response_class=HTMLResponse)
-async def api_settings_thumbnail_max_size(
-    request: Request, thumbnail_max_size: str = Form("")
-):
-    """Persist thumbnail max-width to web.thumbnail_max_size in config."""
-    if thumbnail_max_size not in _VALID_THUMBNAIL_SIZES:
-        raise HTTPException(400, f"Invalid thumbnail size: {thumbnail_max_size!r}")
-    cfg = _bridge_config.load_config()
-    cfg.setdefault("web", {})["thumbnail_max_size"] = thumbnail_max_size
-    _bridge_config.save_config(cfg)
-    return templates.TemplateResponse(request, "_appearance_card.html", {
-        "web_theme": selected_theme(cfg),
-        "themes": themes_for_picker(),
-        "time_format": _selected_time_format(),
-        "history_limit": _selected_history_limit(),
-        "custom_css": _selected_custom_css(),
-        "thumbnail_max_size": thumbnail_max_size,
-    })
 
 
 @app.post("/api/settings/custom_css")
@@ -2713,78 +2234,6 @@ async def api_settings_api_key_revoke():
     _bridge_config.save_config(cfg)
     return {"ok": True}
 
-
-@app.post("/api/plugins/{name}/toggle", response_class=HTMLResponse)
-async def api_plugin_toggle(request: Request, name: str):
-    """Toggle a plugin's enabled state in config.json."""
-    cfg = _bridge_config.load_config()
-    int_cfg = cfg.setdefault("integrations", {})
-    block = int_cfg.setdefault(name, {})
-    block["enabled"] = not block.get("enabled", False)
-    _bridge_config.save_config(cfg)
-    plugins = _installed_plugins()
-    for p in plugins:
-        p["fields"] = _schema_fields(p["schema"])
-    update_available = await asyncio.to_thread(_plugin_update_available, plugins)
-    return templates.TemplateResponse(request, "_plugin_sections.html", {
-        "plugins": plugins,
-        "update_available": update_available,
-    })
-
-
-@app.post("/api/plugins/{name}/settings", response_class=HTMLResponse)
-async def api_plugin_settings(request: Request, name: str):
-    """Update individual plugin settings fields."""
-    form = await request.form()
-    cfg = _bridge_config.load_config()
-    int_cfg = cfg.setdefault("integrations", {})
-    block = int_cfg.setdefault(name, {})
-
-    # Find the plugin's schema to determine field types
-    plugins = _installed_plugins()
-    plugin = next((p for p in plugins if p["name"] == name), None)
-    if not plugin:
-        raise HTTPException(404, f"Plugin not found: {name}")
-
-    schema_props = plugin["schema"].get("properties", {})
-    for key, value in form.items():
-        prop = schema_props.get(key, {})
-        prop_type = prop.get("type", "string")
-        if prop_type == "boolean":
-            block[key] = value in ("true", "on", "1")
-        elif prop_type in ("integer", "number"):
-            try:
-                block[key] = int(value) if prop_type == "integer" else float(value)
-            except (ValueError, TypeError):
-                pass
-        else:
-            block[key] = value
-
-    _bridge_config.save_config(cfg)
-
-    # Re-read to get fresh state
-    plugins = _installed_plugins()
-    for p in plugins:
-        p["fields"] = _schema_fields(p["schema"])
-    update_available = await asyncio.to_thread(_plugin_update_available, plugins)
-    return templates.TemplateResponse(request, "_plugin_sections.html", {
-        "plugins": plugins,
-        "update_available": update_available,
-    })
-
-
-@app.get("/plugins/browse", response_class=HTMLResponse)
-async def plugins_browse(request: Request):
-    """Browse available plugins page (Official / Community / Custom install)."""
-    installed_names = {p["name"] for p in _installed_plugins()}
-    registry = await asyncio.to_thread(_fetch_registry_blocking)
-    official = [p for p in registry if p.get("signed")]
-    community = [p for p in registry if not p.get("signed")]
-    return templates.TemplateResponse(request, "_plugins_browse.html", {
-        "installed": installed_names,
-        "official": official,
-        "community": community,
-    })
 
 
 @app.get("/api/plugins/registry")
@@ -2974,215 +2423,28 @@ async def api_chatwire_version_check():
     }
 
 
-@app.get("/plugins/stats/report", response_class=HTMLResponse)
-async def stats_report(request: Request):
-    """Full-page messaging analytics report.
-
-    Reads date_range from the stats plugin config, runs SQL queries against a
-    chat.db snapshot, and returns a self-contained HTML page (not an htmx
-    fragment — the template includes its own <html>/<head>/<body>).
-    """
-    cfg = _bridge_config.load_config()
-    date_range = cfg.get("integrations", {}).get("stats", {}).get("date_range", "30d")
-
-    # Compute Apple-epoch nanosecond cutoff.
-    if date_range == "all":
-        cutoff_ns: int | None = None
-    else:
-        days = {"30d": 30, "90d": 90, "365d": 365}.get(date_range, 30)
-        cutoff_ns = int((time.time() - days * 86400 - APPLE_EPOCH_OFFSET) * 1_000_000_000)
-
-    conn = _snapshot()
-    cutoff_clause = "AND m.date >= :cutoff" if cutoff_ns is not None else ""
-    params: dict = {"cutoff": cutoff_ns} if cutoff_ns is not None else {}
-
-    # a. Top 10 contacts by message count (both directions, 1:1 only)
-    top_contacts_rows = conn.execute(f"""
-        SELECT
-            COALESCE(h.id, 'unknown') AS handle,
-            COUNT(*) AS msg_count
-        FROM message m
-        LEFT JOIN handle h ON h.ROWID = m.handle_id
-        JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
-        JOIN chat c ON c.ROWID = cmj.chat_id
-        WHERE c.style = 45
-          {cutoff_clause}
-        GROUP BY handle
-        ORDER BY msg_count DESC
-        LIMIT 10
-    """, params).fetchall()
-
-    # Resolve handles to names
-    top_contacts = []
-    for row in top_contacts_rows:
-        handle = row["handle"]
-        name = CONTACTS.get(handle.lower(), handle)
-        top_contacts.append({"handle": handle, "name": name, "count": row["msg_count"]})
-
-    # b. Messages by hour of day (0–23)
-    hour_rows = conn.execute(f"""
-        SELECT
-            CAST(strftime('%H',
-                datetime(m.date / 1000000000 + {APPLE_EPOCH_OFFSET}, 'unixepoch', 'localtime')
-            ) AS INTEGER) AS hour,
-            COUNT(*) AS msg_count
-        FROM message m
-        WHERE 1=1 {cutoff_clause}
-        GROUP BY hour
-        ORDER BY hour
-    """, params).fetchall()
-    hour_counts = [0] * 24
-    for row in hour_rows:
-        if row["hour"] is not None:
-            hour_counts[row["hour"]] = row["msg_count"]
-
-    # c. Messages by day of week (0=Mon … 6=Sun via strftime %w: 0=Sun…6=Sat)
-    dow_rows = conn.execute(f"""
-        SELECT
-            CAST(strftime('%w',
-                datetime(m.date / 1000000000 + {APPLE_EPOCH_OFFSET}, 'unixepoch', 'localtime')
-            ) AS INTEGER) AS dow_sun,
-            COUNT(*) AS msg_count
-        FROM message m
-        WHERE 1=1 {cutoff_clause}
-        GROUP BY dow_sun
-        ORDER BY dow_sun
-    """, params).fetchall()
-    # Convert Sun=0…Sat=6 (SQLite %w) → Mon=0…Sun=6 for display
-    dow_counts = [0] * 7
-    for row in dow_rows:
-        if row["dow_sun"] is not None:
-            mon_idx = (row["dow_sun"] - 1) % 7
-            dow_counts[mon_idx] = row["msg_count"]
-
-    # d. Sent vs received totals
-    totals_row = conn.execute(f"""
-        SELECT
-            SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) AS sent,
-            SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) AS received
-        FROM message m
-        WHERE 1=1 {cutoff_clause}
-    """, params).fetchone()
-    sent_total = totals_row["sent"] or 0
-    received_total = totals_row["received"] or 0
-
-    # e. Top 5 group chats by message count
-    group_rows = conn.execute(f"""
-        SELECT
-            COALESCE(c.display_name, c.chat_identifier, c.guid) AS name,
-            COUNT(*) AS msg_count
-        FROM message m
-        JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
-        JOIN chat c ON c.ROWID = cmj.chat_id
-        WHERE c.style != 45
-          {cutoff_clause}
-        GROUP BY c.ROWID
-        ORDER BY msg_count DESC
-        LIMIT 5
-    """, params).fetchall()
-    top_groups = [{"name": row["name"], "count": row["msg_count"]} for row in group_rows]
-
-    conn.close()
-
-    context = {
-        "date_range": date_range,
-        "top_contacts": top_contacts,
-        "hour_counts": hour_counts,
-        "dow_counts": dow_counts,
-        "sent_total": sent_total,
-        "received_total": received_total,
-        "top_groups": top_groups,
-    }
-    html = templates.get_template("_stats_report.html").render(context)
-    return HTMLResponse(html)
 
 
-@app.get("/whitelist_fragment", response_class=HTMLResponse)
-async def whitelist_fragment(request: Request):
-    return templates.TemplateResponse(request, "_whitelist_rows.html", {
-        "rows": _whitelist_rows(),
-    })
-
-
-@app.post("/whitelist/add", response_class=HTMLResponse)
-async def whitelist_add_route(request: Request, input: str = Form("")):
+@app.post("/whitelist/add")
+async def whitelist_add_route(input: str = Form("")):
     handles, groups = _resolve_whitelist_input(input)
     for h in handles:
         wl_add(h)
     for g in groups:
         wl_add_group(g)
-    return templates.TemplateResponse(request, "_whitelist_rows.html", {
-        "rows": _whitelist_rows(),
-    })
+    return {"ok": True}
 
 
-@app.post("/whitelist/remove", response_class=HTMLResponse)
-async def whitelist_remove_route(
-    request: Request,
-    handle: str = Form(""),
-    guid: str = Form(""),
-):
-    if handle:
-        wl_remove(handle)
-    if guid:
-        wl_remove_group(guid)
-    return templates.TemplateResponse(request, "_whitelist_rows.html", {
-        "rows": _whitelist_rows(),
-    })
+@app.post("/whitelist/remove")
+async def whitelist_remove_route(input: str = Form("")):
+    """Remove a whitelist entry by handle, contact name, or group GUID."""
+    handles, groups = _resolve_whitelist_input(input)
+    for h in handles:
+        wl_remove(h)
+    for g in groups:
+        wl_remove_group(g)
+    return {"ok": True}
 
-
-# ------- favorites management -------
-
-def _render_favorites_response(request: Request, convos: list[dict]) -> str:
-    """Render _conversations.html + OOB _favorites_rows.html for htmx.
-
-    The primary response updates #sidebar (innerHTML swap).
-    The OOB fragment updates #fav-rows inside the settings panel (if open).
-    """
-    convos_html = templates.get_template("_conversations.html").render({
-        "convos": convos, "request": request,
-    })
-    fav_rows_html = templates.get_template("_favorites_rows.html").render({
-        "favorites": _favorites(), "request": request,
-    })
-    return convos_html + fav_rows_html
-
-
-@app.post("/api/favorites/add", response_class=HTMLResponse)
-async def api_favorites_add(request: Request, handle: str = Form("")):
-    """Add a contact to favorites. Accepts a contact name, handle, or group.
-    Stores the conversation key (contact name if known, raw handle otherwise)
-    so one person = one favorite entry regardless of how many handles they have."""
-    handle = handle.strip()
-    if not handle:
-        raise HTTPException(400, "missing handle")
-    # If the input is a known contact name, store the name directly.
-    # If it's a raw handle, resolve to the contact name if one exists.
-    resolved = _resolve_handles(handle)
-    if resolved:
-        # Use the contact name if the handle maps to one, otherwise the handle.
-        primary = resolved[0]
-        fav_key = CONTACTS.get(primary.lower()) or primary
-    else:
-        # Input might already be a contact name or a group — use as-is.
-        fav_key = handle
-    favs = _favorites()
-    fav_set = {h.lower() for h in favs}
-    if fav_key.lower() not in fav_set:
-        favs.append(fav_key)
-    _save_favorites(favs)
-    convos = await asyncio.to_thread(list_conversations)
-    return HTMLResponse(_render_favorites_response(request, convos))
-
-
-@app.post("/api/favorites/remove", response_class=HTMLResponse)
-async def api_favorites_remove(request: Request, handle: str = Form("")):
-    """Remove a handle from favorites."""
-    handle = handle.strip()
-    favs = [h for h in _favorites() if h.lower() != handle.lower()]
-    _save_favorites(favs)
-    convos = await asyncio.to_thread(list_conversations)
-    return HTMLResponse(_render_favorites_response(request, convos))
 
 
 # ---------------------------------------------------------------------------

@@ -22,7 +22,6 @@ Covers:
   k. GET /api/export/photos               → ZIP with application/zip type.
   l. GET /api/export/photos with no handle/chat → 400.
   m. since= parameter is forwarded correctly to the row-fetcher stub.
-  n. Export button present in _conversation.html template.
 """
 from __future__ import annotations
 
@@ -564,30 +563,3 @@ class TestExportSinceBadValue:
             "/api/export/messages?handle=%2B15551234567&format=json&since=2024-01-01"
         )
         assert r.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# (n) Export button present in _conversation.html template (source check)
-# ---------------------------------------------------------------------------
-
-_CONVERSATION_TMPL = (
-    Path(__file__).resolve().parent.parent / "web" / "templates" / "_conversation.html"
-).read_text()
-
-
-class TestExportButtonInTemplate:
-    def test_export_button_present(self):
-        assert "export" in _CONVERSATION_TMPL.lower()
-
-    def test_export_api_url_present(self):
-        assert "/api/export/messages" in _CONVERSATION_TMPL
-
-    def test_export_photos_url_present(self):
-        assert "/api/export/photos" in _CONVERSATION_TMPL
-
-    def test_format_options_present(self):
-        for fmt in ("json", "txt", "csv"):
-            assert fmt in _CONVERSATION_TMPL
-
-    def test_photos_zip_link_present(self):
-        assert "Photos" in _CONVERSATION_TMPL or "photos" in _CONVERSATION_TMPL

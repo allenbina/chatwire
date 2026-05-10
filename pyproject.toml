@@ -57,6 +57,11 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+]
+
 [project.urls]
 Homepage = "https://github.com/allenbina/chatwire"
 Issues = "https://github.com/allenbina/chatwire/issues"

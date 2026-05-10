@@ -1,0 +1,114 @@
+# .github/workflows/mobile-preview.yml
+#
+# Builds a chatwire Android preview APK via EAS Build and uploads the
+# artifact to the workflow run. Triggered on PRs and pushes to main
+# that touch the mobile or shared packages.
+#
+# Prerequisites (see docs/secrets-setup.md §4):
+#   1. Register the app on expo.dev and set a real EAS project ID (UUID)
+#      in packages/mobile/app.json under extra.eas.projectId.
+#   2. Add EXPO_TOKEN secret (eas token:create) to this repo.
+#
+# When EXPO_TOKEN is not set the job runs npm ci and prints build info,
+# then skips the EAS steps without failing the workflow.
+
+name: Mobile Preview Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    name: Android APK (preview)
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: packages/mobile/package-lock.json
+
+      - name: Install dependencies
+        working-directory: packages/mobile
+        run: npm ci
+
+      - name: Print build info
+        working-directory: packages/mobile
+        run: |
+          echo "chatwire mobile build"
+          echo "Expo project: $(cat app.json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["expo"]["name"])')"
+          echo "Version: $(cat app.json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["expo"]["version"])')"
+          if [ -n "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN configured: yes"
+          else
+            echo "EXPO_TOKEN configured: no — EAS build will be skipped"
+          fi
+
+      - name: Set up EAS
+        if: env.EXPO_TOKEN != ''
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Build (Android APK)
+        if: env.EXPO_TOKEN != ''
+        working-directory: packages/mobile
+        run: eas build --platform android --profile preview --non-interactive --output ./chatwire-preview.apk
+
+      - name: Upload APK artifact
+        if: env.EXPO_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatwire-preview-${{ github.sha }}
+          path: packages/mobile/chatwire-preview.apk
+          retention-days: 30
+
+      - name: EAS not configured
+        if: env.EXPO_TOKEN == ''
+        run: |
+          echo "::notice::EXPO_TOKEN secret not set — EAS build skipped."
+          echo "See docs/secrets-setup.md §4 for setup instructions."
+
+  # iOS simulator builds require macOS runner + Apple Developer cert.
+  # Uncomment and configure when those are available.
+  # build-ios:
+  #   name: iOS Simulator (preview)
+  #   runs-on: macos-latest
+  #   env:
+  #     EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '22'
+  #     - working-directory: packages/mobile
+  #       run: npm ci
+  #     - if: env.EXPO_TOKEN != ''
+  #       uses: expo/expo-github-action@v8
+  #       with:
+  #         eas-version: latest
+  #         token: ${{ secrets.EXPO_TOKEN }}
+  #     - if: env.EXPO_TOKEN != ''
+  #       working-directory: packages/mobile
+  #       run: eas build --platform ios --profile preview --non-interactive

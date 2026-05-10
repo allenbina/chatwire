@@ -1,34 +1,36 @@
 /**
- * auth.spec.ts — verify that unauthenticated requests redirect to /login.
+ * auth.spec.ts — verify that unauthenticated API responses redirect to /app/login.
  *
- * The backend API calls (/api/ui/conversations) return 401 via route intercept.
- * The React app's fetch wrapper detects 401 and does
- * window.location.href = '/login?next=...'.
+ * When /api/ui/conversations returns 401, api.ts sets
+ * window.location.href = '/app/login?next=...'
+ * which navigates within the SPA to the React LoginPage.
  */
 import { test, expect } from '@playwright/test'
 import { installUnauthMocks } from './mocks'
 
 test.describe('Auth redirect', () => {
-  test('redirects to /login when API returns 401', async ({ page }) => {
+  test('redirects to /app/login when API returns 401', async ({ page }) => {
     await installUnauthMocks(page)
 
     // Navigate to the SPA shell; the app will load and immediately call
-    // /api/ui/conversations which returns 401.
+    // /api/ui/conversations which returns 401. api.ts then sets
+    // window.location.href = '/app/login?next=...' navigating within the SPA.
     await page.goto('/app/')
 
-    // Wait for the redirect to /login (window.location.href assignment).
-    await page.waitForURL(/\/login/, { timeout: 5_000 })
+    // Wait for the in-SPA redirect to /app/login
+    await page.waitForURL(/\/app\/login/, { timeout: 8_000 })
 
-    expect(page.url()).toMatch(/\/login/)
+    expect(page.url()).toMatch(/\/app\/login/)
   })
 
-  test('login page renders a password input', async ({ page }) => {
+  test('login page renders a labelled password input', async ({ page }) => {
     await installUnauthMocks(page)
     await page.goto('/app/')
-    await page.waitForURL(/\/login/, { timeout: 5_000 })
+    await page.waitForURL(/\/app\/login/, { timeout: 8_000 })
 
-    // Our mocked /login returns an HTML form with a password field.
-    const input = page.locator('input[name="password"]')
+    // The React LoginPage renders <label htmlFor="password"> + <input id="password">
+    const input = page.getByLabel('Password')
     await expect(input).toBeVisible({ timeout: 3_000 })
+    await expect(input).toHaveAttribute('type', 'password')
   })
 })

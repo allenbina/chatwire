@@ -9,4 +9,4 @@ Format: PEP 440-flavored semver. Pre-1.0 dev builds carry a `-dev` suffix
 which the update-check JS treats as "skip the check" (no point pinging
 GitHub when you cloned from main).
 """
-__version__ = "1.7.0"
+__version__ = "1.10.0"

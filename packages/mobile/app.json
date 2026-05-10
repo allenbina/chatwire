@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "chatwire",
+    "slug": "chatwire",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#282a36"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.chatwire.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#282a36"
+      },
+      "package": "dev.chatwire.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "chatwire-mobile"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#bd93f9",
+          "sounds": []
+        }
+      ],
+      "expo-background-fetch"
+    ]
+  }
+}

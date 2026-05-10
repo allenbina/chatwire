@@ -79,8 +79,9 @@ test.describe('Settings page', () => {
       getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim()
     )
 
-    // Click on a different theme (catppuccin) if dracula is current
-    const catBtn = page.getByRole('button', { name: /catppuccin/i })
+    // Click on a different theme (catppuccin) if dracula is current.
+    // There are multiple Catppuccin variants — use the first one.
+    const catBtn = page.getByRole('button', { name: /catppuccin/i }).first()
     await catBtn.click()
 
     // Wait a moment for the CSS variables to update

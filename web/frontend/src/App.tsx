@@ -2,11 +2,12 @@
  * App root: QueryClientProvider + BrowserRouter.
  *
  * Routes:
- *   /app/           → ChatPage (no handle — shows empty state)
+ *   /app/login        → LoginPage    (public — no auth required)
+ *   /app/             → ChatPage (no handle — shows empty state)
  *   /app/chat/:handle → ChatPage (active conversation)
- *   /app/settings   → SettingsPage  (lazy-loaded)
- *   /app/popout     → PopoutPage    (lazy-loaded)
- *   *               → redirect to /app/
+ *   /app/settings     → SettingsPage  (lazy-loaded)
+ *   /app/popout       → PopoutPage    (lazy-loaded)
+ *   *                 → redirect to /app/
  *
  * SettingsPage and PopoutPage are lazy-loaded so they don't land in the
  * main bundle. The main bundle shrinks; each page gets its own chunk that
@@ -16,6 +17,7 @@ import { lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ChatPage } from './pages/ChatPage'
+import { LoginPage } from './pages/LoginPage'
 
 // Lazy chunks — split out of the main bundle
 const SettingsPage = lazy(() =>
@@ -49,6 +51,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename="/app">
         <Routes>
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ChatPage />} />
           <Route path="/chat/:handle" element={<ChatPage />} />
           <Route

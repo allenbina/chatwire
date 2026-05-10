@@ -5,6 +5,57 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-05-09
+
+### Added
+- Sign out link in the SettingsPage footer — `<a href="/logout">Sign out</a>` (Option H).
+
+### Removed
+- `POST /api/auth/password` endpoint and `_render_password_card()` helper removed from
+  `web/main.py` (htmx-era dead code, superseded by `POST /api/ui/settings/password` in v1.8.0).
+- `web/templates/_login.html` and `web/templates/_password_card.html` deleted
+  (replaced by React LoginPage and PasswordSection respectively).
+
+## [1.9.0] - 2026-05-09
+
+### Added
+- React login page at `/app/login` — replaces the Jinja2 `_login.html`
+  template. New JSON endpoint `POST /api/ui/auth/login` (public path, no
+  cookie required) verifies the password, sets the session cookie, and
+  returns `{"ok": true, "next": "<url>"}`. Same rate-limit bucket as the
+  old `/login` form. The auth-gate middleware now redirects unauthenticated
+  requests to `/app/login`; `/logout` redirects there too.
+
+### Changed
+- `web/auth.py`: `_PUBLIC_PREFIXES` now includes `/app/assets/` so the
+  React SPA JavaScript and CSS load correctly for unauthenticated users
+  (required for the login page to render). `/app/login` added to
+  `_PUBLIC_PATHS`.
+
+### Removed
+- Jinja2 `GET /login` and `POST /login` route handlers removed from
+  `web/main.py`. The `_login.html` template remains on disk but is no
+  longer served.
+
+## [1.8.0] - 2026-05-09
+
+### Added
+- React Settings — Password section: set, change, or remove the web UI
+  password directly from the Settings page without touching config files.
+  New JSON endpoints `GET /api/ui/settings/password` (auth status) and
+  `POST /api/ui/settings/password` (set / change / clear). Same rate-limit
+  and current-password verification as the existing login route. On
+  password change the response issues a fresh session cookie so the user
+  stays logged in.
+
+### Changed
+- Legacy Jinja2/htmx UI removed (Option D — Chunk 19). React SPA at
+  `/app/` is now the only UI; `GET /` always redirects to `/app/`.
+  `POST /whitelist/add`, `POST /whitelist/remove`, `POST /refresh_contacts`
+  now return JSON (`{"ok": true}`) instead of HTML fragments.
+  `POST /whitelist/remove` now accepts the `input` field that the React
+  SettingsPage sends (previously a silent no-op due to field name mismatch).
+
 ## [1.7.0] - 2026-05-09
 
 ### Added

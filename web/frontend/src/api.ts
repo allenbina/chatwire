@@ -84,8 +84,8 @@ export function convRouteKey(c: Conversation): string {
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { credentials: 'same-origin', ...init })
   if (res.status === 401) {
-    // Session expired — redirect to login page preserving current location.
-    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`
+    // Session expired — redirect to the React login page preserving current location.
+    window.location.href = `/app/login?next=${encodeURIComponent(window.location.pathname)}`
     throw new Error('Unauthenticated')
   }
   if (!res.ok) {
@@ -172,7 +172,7 @@ export async function sendFile(
     body: fd,
   })
   if (res.status === 401) {
-    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`
+    window.location.href = `/app/login?next=${encodeURIComponent(window.location.pathname)}`
     throw new Error('Unauthenticated')
   }
   if (!res.ok) {

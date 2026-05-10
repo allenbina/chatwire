@@ -1,0 +1,95 @@
+name: CI
+
+# Run on every push and pull request to main.
+# Jobs:
+#   1. vitest      — React unit tests (web/frontend/)
+#   2. pytest      — Python backend tests
+#   3. playwright  — Playwright E2E tests (Vite dev server + route intercepts)
+#
+# All three jobs run in parallel; the workflow fails fast if any fails.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: Vitest unit tests
+  # ─────────────────────────────────────────────────────────────────────────────
+  vitest:
+    name: Vitest unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test -- --run
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: pytest backend tests
+  # ─────────────────────────────────────────────────────────────────────────────
+  pytest:
+    name: pytest backend tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest --tb=short -q
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 3: Playwright E2E tests
+  # The SPA is served by the Vite dev server (npm run dev); all /api/* calls
+  # are intercepted via page.route — no live FastAPI server is needed.
+  # ─────────────────────────────────────────────────────────────────────────────
+  playwright:
+    name: Playwright E2E tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npm run e2e

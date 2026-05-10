@@ -122,6 +122,140 @@ the first install, and it's the same on every Mac.
 `scripts/check-permissions.sh` (or `chatwire doctor`) will tell you
 which prompts you still need to click.
 
+## React UI
+
+chatwire ships a full-featured React SPA at `/app/` alongside the legacy
+server-rendered UI. The React UI is the default — navigating to `/` redirects
+to `/app/` automatically.
+
+### Features
+
+- **Real-time chat** — SSE stream + react-query polling, optimistic sends,
+  group chat with sender names.
+- **Full settings** — all settings sections ported from the Jinja2 UI: themes,
+  notifications, whitelist, plugins, export, and more.
+- **PWA** — installable on desktop and mobile. Workbox service worker handles
+  offline access (cached conversations and messages), background sync (unsent
+  messages are queued and retried on reconnect), and auto-update notifications.
+- **Plugin slot system** — third-party plugins can register React components
+  into named slots (`sidebar.panel`, `message.toolbar`, `compose.extension`,
+  `settings.page`). The built-in StatsWidget uses the `sidebar.panel` slot.
+- **Performance** — message list is virtualised with `@tanstack/react-virtual`
+  (renders ≤ 30 DOM nodes regardless of conversation length). Settings and
+  Popout pages are lazy-loaded (separate chunks, not in the main bundle).
+
+### PWA install
+
+Visit `/app/` in Chrome or Edge and click the install icon in the address bar
+(or use the browser's "Add to Home Screen" on mobile). Once installed,
+chatwire appears as a standalone window with no browser chrome.
+
+### Legacy UI
+
+The original htmx/Jinja2 UI is still available at `/?legacy=1` for one more
+release cycle, then will be removed. If you relied on the legacy UI for any
+integrations or automations, migrate to `/app/` before the next major version.
+
+### Plugin slot system
+
+Build a frontend plugin by registering a React component via the `window.chatwire` API:
+
+```html
+<!-- load your plugin script after the chatwire app boots -->
+<script>
+window.addEventListener('chatwire:ready', () => {
+  window.chatwire.registerSlot('sidebar.panel', MyWidget, { key: 'my-widget' })
+})
+</script>
+```
+
+See [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md) for the full
+slot reference, `BaseIntegration` hook table, and an end-to-end example.
+
+## Mobile App
+
+chatwire has a native iOS + Android app built with React Native and Expo.
+It connects to your existing chatwire server over the local network or
+Tailscale — no cloud relay, no account required.
+
+### Download
+
+- **Android APK** — grab the latest `.apk` from
+  [GitHub Releases](https://github.com/allenbina/chatwire/releases)
+  and side-load it (enable "Install from unknown sources").
+- **iOS** — TestFlight link coming soon (requires Apple Developer account).
+  Build from source in the meantime (see below).
+
+### Connect the app to your server
+
+1. Open the app. On first launch you'll see the Server Setup screen.
+2. Enter your chatwire server URL: `http://192.168.1.x:8723`
+   (or your Tailscale hostname). Use `http://` — `https://` requires
+   a reverse-proxy with a valid cert.
+3. Enter your web UI password if you've set one in Settings.
+4. Tap **Connect**. The app runs `/healthz` and saves the URL on success.
+
+The server URL is stored in the app's `AsyncStorage`. To change it:
+Settings tab → Disconnect → re-enter on next launch.
+
+### Features
+
+- **Conversation list** — FlatList with pull-to-refresh, unread badge,
+  live updates via SSE.
+- **Message list** — inverted scroll (newest at bottom), load-older
+  pagination, sender names in group chats.
+- **Compose** — multiline text input, haptic feedback on send,
+  camera/gallery picker (stub — full upload in a future release).
+- **Image viewer** — full-screen pinch-to-zoom via `expo-image` +
+  react-native-gesture-handler.
+- **Video player** — inline thumbnail → tap to play via `expo-video`.
+- **Push notifications** — register your Expo push token with the server;
+  the server fires a push when a new message arrives (requires a server
+  upgrade to 1.7.0+ which is not yet released).
+- **Dark / light theme** — Dracula palette by default; theme follows
+  the server's active theme setting.
+
+### Build from source
+
+```bash
+git clone https://github.com/allenbina/chatwire.git
+cd chatwire/packages/mobile
+
+# Install dependencies (Node 22 required)
+npm install
+
+# Start Expo dev server
+npx expo start
+
+# iOS simulator (macOS only)
+npx expo start --ios
+
+# Android emulator / device
+npx expo start --android
+```
+
+For production builds, see [`docs/MOBILE_DISTRIBUTE.md`](docs/MOBILE_DISTRIBUTE.md).
+
+### Repo layout (mobile)
+
+```
+packages/
+  shared/          @chatwire/shared — types + ChaiwireClient (used by web + mobile)
+  mobile/          React Native + Expo app
+    App.tsx        Root: NavigationContainer + AppStateProvider
+    app.json       Expo config (name, icons, bundle IDs)
+    eas.json       EAS Build profiles (development / preview / production)
+    src/
+      navigation/  RootNavigator, MainTabNavigator (bottom tabs)
+      screens/     ConversationListScreen, MessageListScreen,
+                   ServerConfigScreen, SettingsScreen
+      components/  ComposeBox, MessageBubble, ImageViewer, VideoPlayer
+      hooks/       useServerEvents (SSE), usePushNotifications, useBackgroundFetch
+      state/       AppStateContext (ChaiwireClient instance, serverUrl)
+      theme/       colors.ts (Dracula tokens)
+    src/__tests__/ Jest smoke tests for each screen + hook
+```
+
 ## Web UI access
 
 By default the web UI has no auth — anyone who can reach the URL can read
@@ -166,11 +300,20 @@ echo_log.py           cross-process echo dedup
 whitelist.py          runtime-mutable contact allowlist
 _version.py           semver source of truth
 integrations/         built-in plugins (web, webhook, stats, favorites)
-web/                  FastAPI web UI + setup wizard + plugin settings
+packages/sdk/         chatwire-sdk Python package (BaseIntegration, plugin CLI)
+packages/shared/      @chatwire/shared TypeScript types + ChaiwireClient (web + mobile)
+packages/mobile/      React Native + Expo mobile app (iOS + Android)
+web/                  FastAPI server: REST API, SSE stream, SPA host
+web/frontend/         React SPA (TypeScript, Vite, TanStack Query, Zustand)
+  src/components/     UI components (MessageList, ComposeBox, Layout, …)
+  src/pages/          Route-level pages (ChatPage, SettingsPage, PopoutPage)
+  src/plugins/        Plugin slot system (registry, SlotRenderer, StatsWidget)
+  e2e/                Playwright E2E + axe accessibility tests
 migrations/           config-schema migration runner
 templates/launchd/    plist templates rendered by install-agents
 scripts/              install.sh, chatwire-loop.sh (dev automation)
-docs/                 OPEN_SOURCE_PLAN.md, REFERENCE_INSTALL.md, HANDOFF.md
+docs/                 OPEN_SOURCE_PLAN.md, REFERENCE_INSTALL.md, HANDOFF.md,
+                      PLUGIN_DEVELOPMENT.md, master-migration-plan.md
 ```
 
 ## Trademarks

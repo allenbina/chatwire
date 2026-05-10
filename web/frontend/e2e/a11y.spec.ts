@@ -73,8 +73,8 @@ test.describe('Accessibility (@axe-core)', () => {
   test('settings page (/app/settings) has 0 critical a11y violations', async ({ page }) => {
     await page.goto('/app/settings')
 
-    // Wait for settings content to render
-    await page.waitForSelector('button', { timeout: 5_000 })
+    // Wait for settings content to render (accordion button is a reliable signal)
+    await page.getByRole('button', { name: /Appearance/i }).waitFor({ timeout: 5_000 })
 
     const results = await new AxeBuilder({ page })
       .options({ runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })

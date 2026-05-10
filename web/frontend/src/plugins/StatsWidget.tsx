@@ -58,15 +58,6 @@ export function StatsWidget() {
         <span className="font-semibold text-[--color-text-secondary] uppercase tracking-wider text-[10px]">
           Stats
         </span>
-        <a
-          href="/plugins/stats/report"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[--color-info] hover:text-[--color-accent] transition-colors"
-          aria-label="Open full stats report"
-        >
-          ↗
-        </a>
       </div>
 
       {/* Sent / received bar */}
