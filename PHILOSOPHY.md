@@ -20,6 +20,12 @@ We've made specific architectural choices to discourage these patterns. They're 
 - **Spam bots.** The approve/reject ntfy workflow exists for a reason: when an automated process wants to send a message on your behalf, you should know about it and have the chance to say no. The default "agentic" plugins all route through approval, not auto-send.
 - **Third-party customer-comms platforms.** There are excellent tools for that already (Twilio, Sendbird, Customer.io). chatwire is not trying to compete with them, and using it for that misses the point.
 
+## On telemetry
+
+I don't have telemetry because I wrote this app for one user — myself — and then decided to open-source it. The only telemetry I want is people helping me make it better.
+
+That means: no analytics, no crash reporters, no "anonymous usage data," no phone-home. If you want to help, open an issue or a PR on GitHub. That's the telemetry the project needs.
+
 ## Why this matters
 
 iMessage is a personal medium. The reason BlueBubbles, AirMessage, and chatwire all exist is that millions of people have personal relationships with iMessage contacts who they want to stay in touch with from non-Apple devices. That's a meaningful problem worth solving for.
