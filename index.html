@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chatwire — Your messages, your server, your rules</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23bd93f9'/><text x='16' y='23' text-anchor='middle' font-family='system-ui' font-weight='700' font-size='22' fill='%23282a36'>c</text></svg>">
+  <style>
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #282a36; color: #f8f8f2;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 2rem;
+    }
+    .logo { font-size: 4rem; font-weight: 800; color: #bd93f9; margin-bottom: 0.5rem; }
+    .tagline { font-size: 1.25rem; color: #a8a8a2; margin-bottom: 2rem; text-align: center; }
+    .buttons { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; margin-bottom: 3rem; }
+    .btn {
+      padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none;
+      font-weight: 600; font-size: 0.9rem; transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #bd93f9; color: #282a36; }
+    .btn-secondary { background: #44475a; color: #f8f8f2; }
+    .features {
+      max-width: 600px; display: grid; gap: 1.5rem; margin-bottom: 3rem;
+    }
+    .feature { display: flex; gap: 0.75rem; align-items: flex-start; }
+    .feature-icon { font-size: 1.5rem; flex-shrink: 0; }
+    .feature h3 { font-size: 1rem; margin-bottom: 0.25rem; }
+    .feature p { font-size: 0.875rem; color: #a8a8a2; line-height: 1.5; }
+    .install {
+      background: #21222c; padding: 1rem 1.5rem; border-radius: 0.5rem;
+      font-family: monospace; font-size: 0.9rem; color: #50fa7b;
+      margin-bottom: 2rem; text-align: center;
+    }
+    .footer { font-size: 0.75rem; color: #6272a4; text-align: center; }
+    .footer a { color: #bd93f9; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+    @media (max-width: 600px) {
+      .logo { font-size: 2.5rem; }
+      .tagline { font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">chatwire</div>
+  <p class="tagline">Your messages, your server, your rules.</p>
+
+  <div class="buttons">
+    <a href="https://github.com/allenbina/chatwire" class="btn btn-primary">GitHub</a>
+    <a href="https://pypi.org/project/chatwire/" class="btn btn-secondary">PyPI</a>
+    <a href="https://github.com/allenbina/chatwire/wiki" class="btn btn-secondary">Docs</a>
+  </div>
+
+  <div class="features">
+    <div class="feature">
+      <span class="feature-icon">💬</span>
+      <div>
+        <h3>iMessage, everywhere</h3>
+        <p>Access your iMessage conversations from any device, any browser. A lightweight bridge that runs on your Mac.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">🔒</span>
+      <div>
+        <h3>Your data stays home</h3>
+        <p>Self-hosted. Zero telemetry. No cloud. Your messages never leave your Mac. We don't even know you exist.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">🎨</span>
+      <div>
+        <h3>21 themes, fully customizable</h3>
+        <p>Dracula, Nord, GitHub Light, and 18 more. Custom color picker. Downloadable theme packs. Make it yours.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">🔌</span>
+      <div>
+        <h3>Plugin system</h3>
+        <p>Sandboxed plugin architecture. Notifications, automations, themes — extend without compromising privacy.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="install">pipx install chatwire</div>
+
+  <div class="footer">
+    <p>
+      <a href="https://github.com/allenbina/chatwire">GitHub</a> ·
+      <a href="https://github.com/allenbina/chatwire/blob/main/CONTRIBUTING.md">Contributing</a> ·
+      <a href="https://github.com/allenbina/chatwire/discussions">Discussions</a>
+    </p>
+    <p style="margin-top: 0.5rem;">MIT License · Built by <a href="https://github.com/allenbina">Allen Bina</a></p>
+  </div>
+</body>
+</html>
