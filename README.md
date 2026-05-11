@@ -345,3 +345,19 @@ with your setup details and we'll get you running.
 
 If chatwire is useful to you, consider
 [sponsoring the project](https://github.com/sponsors/allenbina).
+
+---
+
+## Contributing
+
+We welcome contributors at all levels.  See [CONTRIBUTING.md](./CONTRIBUTING.md) to
+get started.
+
+Issues labeled [`good-first-issue`](../../issues?q=label%3Agood-first-issue) are a
+great starting point.
+
+[![GitHub issues](https://img.shields.io/github/issues/allenbina/chatwire)](../../issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/allenbina/chatwire)](../../pulls)
+
+> **Privacy:** Never include real phone numbers, contact names, or message content
+> in issues, PRs, or screenshots. Use fake data. See CONTRIBUTING.md for details.
