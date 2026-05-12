@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Chatwire C logo</title>
+  <desc id="desc">A rounded lowercase C mark with a speech-bubble cutout inside.</desc>
+  <defs>
+    <linearGradient id="smokyBlueGrey" x1="126" y1="92" x2="386" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7f96a6"/>
+      <stop offset="0.52" stop-color="#5f7483"/>
+      <stop offset="1" stop-color="#405565"/>
+    </linearGradient>
+    <mask id="bubbleCutout">
+      <rect width="512" height="512" fill="white"/>
+      <!-- inner speech-bubble knockout -->
+      <path fill="black" d="
+        M 214 318
+        C 176 318 146 293 146 260
+        C 146 228 176 203 216 203
+        H 281
+        C 316 203 344 229 344 260
+        C 344 291 318 315 282 318
+        H 239
+        L 191 351
+        C 184 356 176 349 180 341
+        L 194 315
+        C 200 317 207 318 214 318
+        Z"/>
+    </mask>
+  </defs>
+
+  <!-- main C: rounded, uniform stroke, open on the right -->
+  <path
+    d="M 344 129
+       A 164 164 0 1 0 344 383"
+    fill="none"
+    stroke="url(#smokyBlueGrey)"
+    stroke-width="106"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    mask="url(#bubbleCutout)"/>
+</svg>
