@@ -439,6 +439,7 @@ def _uninstall_paths() -> dict[str, Path]:
         "chatwire_dir": Path.home() / ".chatwire",
         "log_dir": Path.home() / "Library" / "Logs" / "chatwire",
         "thumb_cache": Path.home() / ".chatwire" / "thumb_cache",
+        "img_cache": Path.home() / ".chatwire" / "img_cache",
     }
 
 
@@ -572,6 +573,53 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    """Print a summary of the local chatwire installation.
+
+    Shows version, config location, web port, running launchd agents (macOS
+    only), and installed plugins. Exits 0 always — this is a read-only probe.
+    """
+    label_prefix = getattr(args, "label_prefix", DEFAULT_LABEL_PREFIX)
+
+    print(f"chatwire {_version.__version__}")
+    print()
+
+    # Config and port
+    if config.CONFIG_PATH.exists():
+        try:
+            cfg = config.load_config()
+        except Exception:
+            cfg = {}
+        port = cfg.get("web", {}).get("port", 8723)
+        print(f"Config:  {config.CONFIG_PATH}")
+        print(f"Port:    {port}")
+    else:
+        print(f"Config:  not found — run `chatwire setup`")
+
+    print()
+
+    # LaunchAgents (macOS only)
+    if sys.platform == "darwin":
+        print("Agents:")
+        for name in PLIST_NAMES:
+            path = _agent_path(label_prefix, name)
+            mark = "✓" if path.exists() else "✗"
+            print(f"  {mark} {name:12s}  {path.name}")
+        print()
+
+    # Installed plugins
+    plugins = _list_installed_plugins()
+    if plugins:
+        print(f"Plugins ({len(plugins)}):")
+        for pkg in plugins:
+            print(f"  • {pkg}")
+    else:
+        print("Plugins: none installed")
+
+    print()
+    return 0
+
+
 def cmd_mcp(args: argparse.Namespace) -> int:
     """Start the MCP stdio server for LLM agent access."""
     # Ensure the repo root is on sys.path so integrations/ is importable.
@@ -668,6 +716,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("migrate", help="legacy .env → config.json (one-shot)")
     sp.set_defaults(func=cmd_migrate)
+
+    sp = sub.add_parser("status", help="show installation summary (version, config, agents, plugins)")
+    sp.add_argument("--label-prefix", default=DEFAULT_LABEL_PREFIX)
+    sp.set_defaults(func=cmd_status)
 
     sp = sub.add_parser(
         "mcp",

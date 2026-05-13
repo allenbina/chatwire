@@ -1,18 +1,100 @@
-# Handoff — Phase 49: img_cache startup warmer
+# Handoff — Phase 51: chatwire status subcommand + img_cache uninstall
 
-> Phase 49 session shipped (2026-05-12, commit 838c04b).
-> 1039 pytest (1031 pass + 8 pre-existing failures) + 190 Vitest — all green.
-> Deployed to mbair (v1.14.0, git+ssh — no version bump).
+> Phase 51 session shipped (2026-05-12, commit 873f0e0).
+> 1052 pytest (1044 pass + 8 pre-existing failures) + 190 Vitest — all green.
+> Deployed to mbair — `chatwire status` verified live.
 
 ## §1 Current state
 
-- **mbair**: commit 838c04b deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit 873f0e0 deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants (rose-pine, rose-pine-moon, rose-pine-dawn).
 - **chatwire-plugins registry**: all 6 plugins live on GitHub.
-- **Tests**: 1039 pytest (1031 pass + 8 pre-existing failures) / 190 Vitest — all green.
+- **Tests**: 1052 pytest (1044 pass + 8 pre-existing failures) / 190 Vitest — all green.
 - **PyPI**: v1.14.0 (no version bump — backend-only change, deploy via git+ssh).
+- **Public repo (allenbina/chatwire)**: synced to Phase 49 as of commit e2b9aaf (2026-05-12).
+  Public repo is 2 phases behind (Phases 50-51 not yet synced).
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 51 (2026-05-12)
+
+### `chatwire status` subcommand
+
+**Problem**: No quick way to verify a chatwire install headlessly (version,
+config, running agents, plugins) without grepping logs or curling healthz manually.
+
+**Fix (`chatwire_cli.py`):**
+
+- New `cmd_status()` function — always exits 0 (read-only probe).
+- Prints: version string, config path + port (default 8723), launchd agent plist
+  check marks (macOS only — `✓`/`✗` per service), installed plugin list.
+- Registered as `chatwire status [--label-prefix]` in `build_parser()`.
+
+**Verified on mbair** (`chatwire status`):
+```
+chatwire 1.14.0
+
+Config:  /Users/allen/.chatwire/config.json
+Port:    8723
+
+Agents:
+  ✓ bridge        dev.chatwire.bridge.plist
+  ✓ web           dev.chatwire.web.plist
+  ✓ keepawake     dev.chatwire.keepawake.plist
+
+Plugins (1):
+  • chatwire-telegram
+```
+
+### img_cache in uninstall paths (Phase 48 gap)
+
+**Problem**: Phase 48 added `~/.chatwire/img_cache` but `_uninstall_paths()`
+only listed `thumb_cache`. `scripts/uninstall.sh` Step 6 also only mentioned
+thumbnail cache.
+
+**Fix**: Added `"img_cache"` key to `_uninstall_paths()` in `chatwire_cli.py`.
+Updated `uninstall.sh` Step 6 header and dry-run output to name both caches.
+
+**Tests (`tests/test_status.py` + `tests/test_uninstall.py`):** 21 new tests:
+- Parser recognises `status`; `args.func` is `cmd_status`.
+- Exits 0 with and without config file.
+- Version string + `chatwire` prefix in output.
+- "not found" / setup hint when config absent.
+- Config path and port shown when config present; default 8723 when `web` key missing.
+- Plugins listed with count; "none" message when empty.
+- `Agents:` section gated on `sys.platform == "darwin"`.
+- `✓` mark when plist exists; `✗` when missing.
+- `img_cache` key present in `_uninstall_paths()` and correct path.
+- `img_cache` mentioned in `scripts/uninstall.sh`.
+
+## §2 What shipped in Phase 50 (2026-05-12)
+
+### Public repo sync — allenbina/chatwire
+
+**Problem**: The public `allenbina/chatwire` repo was 32 phases behind chatwire-dev
+(last synced at Phase 17 / v1.12.0 on 2026-05-10).
+
+**Fix**: rsync from chatwire-dev → local clone of the public repo, excluding:
+- `web/frontend/dist/` (built by CI publish.yml workflow; not needed in source)
+- `web/frontend/node_modules/`, `__pycache__/`, `*.pyc`, `*.egg-info/`, `build/`
+- `chatwire-plugins/chatwire-theme-rosepine/dist/` (Python build artifacts)
+
+Preserved public-repo-specific files untouched:
+- `CODEOWNERS`, `CONTRIBUTING.md`
+- `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`
+- `.github/workflows/ai-loop.yml`
+
+Updated public repo `.gitignore` to add back `web/frontend/dist/` (which
+chatwire-dev no longer ignores — it commits dist/ for git+ssh deployment).
+
+**Result** (commit e2b9aaf in allenbina/chatwire):
+- 112 files changed: 17,783 insertions / 1,566 deletions
+- 8 new plugin packages (apprise, telegram, webhook, example, theme-rosepine,
+  theme-example, theme-template) + source
+- 11 new test files
+- 5 new web modules (log_stream, sms_reactions, theme_loader, whitelist, plugin_state)
+- Version bumped to v1.14.0 in public repo
+- No mbair redeploy (already on Phase 49 / v1.14.0)
 
 ## §2 What shipped in Phase 49 (2026-05-12)
 
@@ -139,18 +221,36 @@ None.
 - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
 - #24 Discord server
 - #21, #22 Documentation
-- #25 Uninstaller testing
+- #25 Uninstaller: script + Python cmd both done; testing complete as of Phase 51.
 - #1 Mac DMG, #2 Custom marketplaces
 
 **Infrastructure**:
 - Set up plinux-local test env (chat.db snapshot, separate port)
-- Public repo sync: chatwire-dev → chatwire (Phases 13-48 not synced)
+- Public repo sync: allenbina/chatwire is 2 phases behind (Phases 50-51 not synced).
 
 **Shared libraries for plugins** (post-RC):
 - Expose Motion (Framer Motion) on `window.__chatwire` so plugins can use
   animations without bundling their own copy. ~34KB addition to core.
 
 ## §5 Architecture notes
+
+### chatwire status subcommand (added Phase 51)
+
+- Function: `cmd_status()` in `chatwire_cli.py`.
+- Parser entry: `chatwire status [--label-prefix <prefix>]` (default `dev.chatwire`).
+- Always returns 0 (read-only probe).
+- Calls `config.load_config()` guarded in try/except; port default 8723.
+- Agents section: only rendered on `sys.platform == "darwin"`; iterates `PLIST_NAMES`
+  and calls `_agent_path(label_prefix, name).exists()` for `✓`/`✗` indicator.
+- Plugin list: delegates to `_list_installed_plugins()` (entry-points query).
+- 21 tests in `tests/test_status.py`.
+
+### img_cache uninstall (added Phase 51)
+
+- `_uninstall_paths()` now includes `"img_cache": Path.home() / ".chatwire" / "img_cache"`.
+- `scripts/uninstall.sh` Step 6 names both `thumb_cache` and `img_cache`.
+- Both are inside `~/.chatwire/` so the Step 4 `rm -rf` already covered them;
+  the change makes the documentation explicit.
 
 ### img_cache startup warmer (added Phase 49)
 
@@ -450,12 +550,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 49 shipped (commit 838c04b). 1039 pytest (1031 pass + 8 pre-existing),
-190 Vitest — all green. Deployed to mbair (v1.14.0, git+ssh).
-
-img_cache warmer done: on startup, _img_cache_warmer() queries chat.db for HEIC
-attachments from the last 30 days (up to 200) and calls _full_img_for() in the
-background so the first browser request hits the cache. 12 new pytest tests.
+STATE: Phase 51 shipped (chatwire status + img_cache uninstall, commit 873f0e0).
+1052 pytest (1044 pass + 8 pre-existing), 190 Vitest — all green.
+mbair running v1.14.0 (git+ssh, Phase 51 code, healthy).
+Public repo allenbina/chatwire is 2 phases behind (Phases 50-51 not yet synced).
 
 Key blocker for Option A (PyPI publish):
   chatwire-theme-rosepine is NOT on PyPI — marketplace Install button will fail
@@ -469,9 +567,14 @@ Option A — Publish chatwire-theme-rosepine to PyPI so marketplace Install work
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive \
     /home/mediafront/git/chatwire-dev/chatwire-plugins/chatwire-theme-rosepine/dist/*
 
-Option B — Public repo sync: chatwire-dev → chatwire (Phases 13-49 not synced).
+Option B — #20 Automation engine / #28 trigger grammar (larger, plan first).
 
-Option C — #20 Automation engine / #28 trigger grammar (larger, plan first).
+Option C — Sync allenbina/chatwire public repo to Phase 51 (2 phases behind).
+  Use: rsync -a --checksum (no --delete) from chatwire-dev/ to /tmp/chatwire-public/
+  with excludes for dist/, node_modules/, __pycache__/, .git/
+  Then git add -A && git commit && git push in /tmp/chatwire-public/
+
+Option D — Any smaller feature from §4 (plinux test env, MQTT output, docs).
 
 VISUAL QA NOTE: pin icons in SettingsPage, sidebar toggle buttons for hiatus/reminder,
 hiatus sidebar indicator + dismiss button + countdown, hiatus SettingsPage countdown,
@@ -493,8 +596,11 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 50 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 52 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
+NOTE: Public repo sync method: rsync -a --checksum (no --delete) from chatwire-dev/
+  to /tmp/chatwire-public/ with excludes for dist/, node_modules/, __pycache__/, .git/
+  Then git add -A && git commit && git push in /tmp/chatwire-public/
 ```

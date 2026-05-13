@@ -154,16 +154,18 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 6: Thumbnail cache (already inside ~/.chatwire/ but listed explicitly)
+# Step 6: Image caches (already inside ~/.chatwire/ but listed explicitly)
 # ---------------------------------------------------------------------------
 
-_step "Step 6: Thumbnail cache"
+_step "Step 6: Image caches (thumb_cache + img_cache)"
 
 THUMB_DIR="${CHATWIRE_DIR}/thumb_cache"
+IMG_DIR="${CHATWIRE_DIR}/img_cache"
 if [[ "$DRY_RUN" -eq 1 ]]; then
     _info "(dry-run) would remove ${THUMB_DIR}/ (covered by step 4)"
+    _info "(dry-run) would remove ${IMG_DIR}/ (covered by step 4)"
 else
-    _info "covered by step 4 (${THUMB_DIR} removed with parent)"
+    _info "covered by step 4 (${THUMB_DIR} and ${IMG_DIR} removed with parent)"
 fi
 
 # ---------------------------------------------------------------------------

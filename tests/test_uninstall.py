@@ -78,6 +78,10 @@ class TestUninstallScript:
         content = self._content()
         assert "thumb_cache" in content
 
+    def test_contains_img_cache(self):
+        content = self._content()
+        assert "img_cache" in content
+
     def test_has_dry_run_flag(self):
         assert "--dry-run" in self._content()
 
@@ -135,6 +139,13 @@ class TestUninstallPaths:
         paths = _uninstall_paths()
         assert paths["thumb_cache"].parent == paths["chatwire_dir"]
         assert paths["thumb_cache"].name == "thumb_cache"
+
+    def test_img_cache_inside_chatwire_dir(self):
+        """img_cache (Phase 48) must be in _uninstall_paths()."""
+        paths = _uninstall_paths()
+        assert "img_cache" in paths, "img_cache missing from _uninstall_paths()"
+        assert paths["img_cache"].parent == paths["chatwire_dir"]
+        assert paths["img_cache"].name == "img_cache"
 
 
 # ---------------------------------------------------------------------------
