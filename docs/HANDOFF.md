@@ -1,21 +1,121 @@
-# Handoff — Phase 63: Automation rules reordering
+# Handoff — Phase 65: DSL mode toggle in AutomationsSection
 
-> Phase 63 session shipped (2026-05-13, commit be3e74c in chatwire-dev).
-> 1203 pytest (1191 prior + 12 new) + 196 Vitest — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 63 code).
+> Phase 65 session shipped (2026-05-13, commit 6686d81 in chatwire-dev).
+> 1291 pytest (unchanged) + 218 Vitest (196 prior + 22 new) — all green.
+> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 65 code).
 
 ## §1 Current state
 
-- **mbair**: commit be3e74c deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit 6686d81 deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants.
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
-- **Tests**: 1203 pytest / 196 Vitest — all green.
+- **Tests**: 1291 pytest / 218 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 63.
-- **PyPI**: v1.14.0 (no version bump — no public API changes; plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced to Phase 63 (commit be3e74c, 2026-05-13).
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 65.
+- **PyPI**: v1.14.0 (no version bump — frontend-only change; plugins not yet on PyPI).
+- **Public repo (allenbina/chatwire)**: synced to Phase 65 (this session).
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 65 (2026-05-13)
+
+### feat: DSL mode toggle in AutomationsSection (#28 follow-up)
+
+**Problem**: The automation rule dialog only exposed the structured form (trigger
+type drop-down + pattern input + conditions block). Power users who know the DSL
+grammar had no way to type a raw expression directly in the UI.
+
+**Fix**: Added a "Switch to DSL mode" / "Switch to structured form" toggle button
+in the Trigger section header of the rule editor dialog.
+
+**DSL mode UI**:
+- Clicking "Switch to DSL mode" replaces the trigger type select, pattern input,
+  and the entire Conditions section with a single monospace `Textarea`
+  (80 px min-height) for the DSL expression.
+- A compact syntax reference is shown below the textarea:
+  `from:+1 not_from:+1 contains:word exact:hi regex:"…" in:group in:1to1 always`
+  with the operators `AND OR NOT ( )`.
+- Clicking "Switch to structured form" restores the original layout; the DSL
+  expression is discarded (reset to empty).
+- `handleSave` validates non-empty `dslExpr` when DSL mode is on.
+
+**Rule card display**:
+- A "DSL" badge replaces the trigger type pill for DSL rules.
+- The DSL expression (truncated, full text in `title`) is shown instead of the
+  `"pattern"` pill.
+
+**Files changed**:
+- `web/frontend/src/pages/SettingsPage.tsx`:
+  - `TriggerType` union gains `'dsl'`.
+  - `AutomationRuleForm` gains `dslMode: boolean` and `dslExpr: string`.
+  - `_EMPTY_RULE_FORM` updated with `dslMode: false, dslExpr: ''`.
+  - `_formToApiRule` (exported): when `dslMode`, emits
+    `trigger: { type: 'dsl', expr }` with no conditions block; actions and
+    `stop_on_match` pass through unchanged.
+  - `_apiRuleToForm` (exported): detects `trigger.type === 'dsl'` →
+    sets `dslMode: true`, populates `dslExpr`; all structured fields reset to
+    defaults.
+  - Dialog Trigger section: toggle button + conditional rendering of DSL or
+    structured inputs.
+  - Conditions section wrapped in `{!form.dslMode && …}`.
+  - Rule card: extracts `rTrigger.expr`; renders DSL badge + expression preview.
+- `web/frontend/src/pages/AutomationsDslMode.test.tsx` (new) — **22 tests**:
+  - `_formToApiRule` DSL mode: type=dsl, expr, no conditions, stop_on_match,
+    actions pass-through, name.
+  - `_formToApiRule` structured mode: regression tests for existing behaviour.
+  - `_apiRuleToForm` DSL detection: dslMode/dslExpr populated, stop_on_match,
+    actions parsed, defaults for empty fields.
+  - `_apiRuleToForm` structured: dslMode=false, dslExpr=''.
+
+## §2 What shipped in Phase 64 (2026-05-13)
+
+### feat: automation rules trigger grammar DSL (#28)
+
+**Problem**: Complex automation rules required nested JSON (trigger + separate
+conditions block), which was verbose and hard to read.  There was no way to
+express boolean combinations (OR across senders, NOT for exclusions) without
+multiple overlapping rules.
+
+**Fix**: Added a text-based expression language compiled to a callable at
+rule-load time (no runtime parsing overhead).
+
+**New trigger type**: `"type": "dsl"` with `"expr": "<expression>"`.
+A DSL rule's evaluator replaces **both** the trigger and conditions blocks —
+the DSL expression covers the entire matching logic.
+
+**Syntax** (see `integrations/rules/dsl.py` module docstring for full grammar):
+```
+always                                — always matches
+from:+15551234567                     — sender match
+not_from:+15551234567                 — sender exclusion
+contains:"hello world"                — case-insensitive substring
+exact:bye                             — exact match (stripped, lowercased)
+regex:"order\\s+#\\d+"                — case-insensitive regex search
+in:group                              — group-chat messages only
+in:1to1                               — 1:1 messages only (aliases: dm, direct)
+group:iMessage;chat-guid-here         — specific group GUID
+AND / OR / NOT / ( )                  — boolean operators + grouping
+```
+Adjacent predicates with no operator are treated as implicit AND.
+AND binds tighter than OR.  Example:
+```
+(from:+1 OR from:+2) AND contains:urgent AND NOT in:group
+```
+
+**Files changed**:
+- `integrations/rules/dsl.py` (new) — tokenizer + recursive descent parser;
+  `parse_dsl(expr)` returns `Evaluator`; `DSLError` on invalid expressions.
+- `integrations/rules/__init__.py` — `RulesEngine._compile()` handles
+  `trigger.type = "dsl"` (parses `expr`, stores compiled callable);
+  `evaluate()` dispatches DSL rules via the compiled evaluator, skipping the
+  normal conditions block.  `SETTINGS_SCHEMA` updated with `dsl` enum value
+  and `expr` property.
+- `web/api_v1.py` — `_validate_rule_body()` accepts `dsl`; requires
+  non-empty `trigger.expr` for DSL rules.
+- `tests/test_rules_dsl.py` (new) — **88 tests**: all predicate types,
+  AND/OR/NOT/implicit-AND, precedence, grouping, quoted strings with escapes,
+  error cases, RulesEngine end-to-end, stop_on_match, mixed DSL+non-DSL rules,
+  bad-expr compile-time skip, api_v1 validation.
 
 ## §2 What shipped in Phase 63 (2026-05-13)
 
@@ -177,8 +277,7 @@ None.
 
 **Other features**:
 - #41 Demo app on chatwire.app
-- #28 Trigger grammar DSL (chatwire_rules covers the common case; #28 may want
-  a more expressive text DSL: `from:+1... contains:"hello" AND in:group`)
+- #28 Trigger grammar DSL — **fully shipped** (backend Phase 64, frontend DSL toggle Phase 65).
 - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
 - #24 Discord server
 - #21, #22 Documentation
@@ -186,6 +285,10 @@ None.
 
 **Infrastructure**:
 - Set up plinux-local test env (chat.db snapshot, separate port)
+
+**UI polish**:
+- Reply ghost bubble: hide sender name in 1:1 threads (redundant — only two
+  people). Show sender name only in group chats.
 
 **Visual QA** (requires interactive mbair session):
 - Automations UI — confirm dialog renders correctly in light + dark themes.
@@ -207,6 +310,33 @@ None.
   animations without bundling their own copy.
 
 ## §5 Architecture notes
+
+### Automation rules DSL (added Phase 64)
+
+- **`integrations/rules/dsl.py`**:
+  - `_tokenize(expr)` — character-level scanner; yields `(kind, value)` tuples.
+    Kinds: `AND`, `OR`, `NOT`, `LPAREN`, `RPAREN`, `PRED`, `EOF`.
+    Respects double-quoted strings in predicate values (backslash escapes).
+  - `_compile_pred(token_value)` — maps `key:value` to an `Evaluator` closure.
+    Supported keys: `always`, `contains`, `exact`, `regex`, `from`, `not_from`,
+    `in` (group/1to1/dm/direct), `group` (GUID).
+    Raises `DSLError` on unknown key, invalid `in:` value, or bad regex.
+  - `_Parser` — recursive descent; grammar has two precedence levels:
+    OR (`_parse_or`) > AND+implicit (`_parse_and`); NOT is right-recursive via `_parse_term`.
+  - `parse_dsl(expr)` — public entry point; raises `DSLError` on empty string.
+  - `Evaluator` type alias: `Callable[[str, str, bool, Optional[str]], bool]`
+    (text, handle_lc, is_group, chat_guid).
+- **`integrations/rules/__init__.py`** changes:
+  - `_compile()`: `trigger_type == "dsl"` → calls `parse_dsl(trigger_raw["expr"])`;
+    result stored as `compiled_dsl` in compiled rule dict.
+    DSLError / missing expr → `ValueError` → rule skipped with warning.
+  - `evaluate()`: DSL rules checked first in loop body; evaluator called with
+    `(text, handle_lc, msg_is_group, msg_chat_guid)`; `continue` skips the
+    normal conditions block for DSL rules.
+  - `SETTINGS_SCHEMA`: trigger `type` enum gains `"dsl"`; `expr` property added.
+- **`web/api_v1.py`**: `valid_triggers` gains `"dsl"`; extra check rejects
+  `dsl` without a non-empty `trigger.expr`.
+- **88 tests** in `tests/test_rules_dsl.py`.
 
 ### Automation rules reordering (added Phase 63)
 
@@ -240,7 +370,17 @@ None.
 - **42 tests** in `tests/test_automations_api.py`; all use in-memory store patches
   (patch.object on `_load_rules` / `_save_rules`); Python 3.8 compatible (nested `with`).
 
-### AutomationsSection (updated Phase 63, SettingsPage.tsx)
+### AutomationsSection (updated Phase 65, SettingsPage.tsx)
+
+- **DSL mode toggle**: "Switch to DSL mode" button in Trigger section header.
+  When active: monospace Textarea for `dslExpr`; Conditions section hidden;
+  `_formToApiRule` emits `{type:'dsl', expr}`; `handleSave` requires non-empty expr.
+- **`_formToApiRule`** / **`_apiRuleToForm`**: both exported for testing.
+  `_apiRuleToForm` detects `trigger.type === 'dsl'` → `{dslMode: true, dslExpr: …}`.
+- **Rule card**: DSL badge + truncated expression instead of pattern pill.
+- **22 tests** in `web/frontend/src/pages/AutomationsDslMode.test.tsx`.
+
+### AutomationsSection (updated Phase 63)
 
 - **Query key**: `['settings-automations']` (30 s stale time).
 - **Add/Edit**: dialog approach (shadcn `<Dialog>`); form state via `useState`.
@@ -320,10 +460,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 63 shipped (automation rules reordering).
-1203 pytest (1191 prior + 12 new) + 196 Vitest — all green.
-mbair running v1.14.0 (git+ssh, Phase 63 code, healthy).
-Public repo allenbina/chatwire: synced to Phase 63 (commit be3e74c, 2026-05-13).
+STATE: Phase 65 shipped (DSL mode toggle in AutomationsSection).
+1291 pytest (unchanged) + 218 Vitest — all green.
+mbair running v1.14.0 (git+ssh, Phase 65 code, healthy).
+Public repo allenbina/chatwire: synced to Phase 65 (2026-05-13).
 
 Key blockers:
   - Edit history popover (#59 follow-up): mbair is macOS 12 — no date_edited column.
@@ -339,24 +479,19 @@ Option A — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option B — Automation rules trigger grammar DSL (#28):
-  A text-based expression parser: `from:+1... contains:"hello" AND in:group`
-  Would parse into the existing RulesEngine condition/trigger structure.
-  Adds a fifth trigger type or replaces the structured form with a text input.
+Option B — Additional automation trigger types:
+  `schedule` / cron-based triggers using asyncio scheduler.
+  or `on_send` outbound trigger.
 
 Option C — Edited messages: history popover (blocked without macOS 13 chat.db).
   If a chat.db snapshot is available at ~/chat.db or similar, use that.
   Otherwise skip — cannot verify schema on macOS 12.
 
-Option D — Additional automation trigger types:
-  `schedule` / cron-based triggers using asyncio scheduler.
-  or `on_send` outbound trigger.
-
-VISUAL QA NOTE: Automations UI (including reorder ↑/↓ buttons), data exposure modal,
-"edited" badge, pin icons, sidebar toggle buttons, hiatus indicator, reminder contacts
-picker, per-theme custom CSS editor, theme skin ZIP buttons, hover action bar, tapback
-tooltips, mark-all-read icon, Rose Pine theme picker, iOS reply ghost bubble,
-accordion animation, theme picker refresh after install, and HEIC img_cache
+VISUAL QA NOTE: Automations UI (including DSL mode toggle, reorder ↑/↓ buttons),
+data exposure modal, "edited" badge, pin icons, sidebar toggle buttons, hiatus indicator,
+reminder contacts picker, per-theme custom CSS editor, theme skin ZIP buttons, hover
+action bar, tapback tooltips, mark-all-read icon, Rose Pine theme picker, iOS reply
+ghost bubble, accordion animation, theme picker refresh after install, and HEIC img_cache
 warmer behavior all require an interactive session on mbair — skip and note if headless.
 
 Run: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
@@ -371,7 +506,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 64 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 66 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run

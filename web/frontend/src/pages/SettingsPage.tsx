@@ -3159,7 +3159,7 @@ export function SettingsPage() {
 // Automations section — rule builder UI
 // ---------------------------------------------------------------------------
 
-type TriggerType = 'text_exact' | 'text_contains' | 'text_regex' | 'always'
+type TriggerType = 'text_exact' | 'text_contains' | 'text_regex' | 'always' | 'dsl'
 type ActionType = 'reply' | 'webhook' | 'log'
 
 interface RuleActionForm {
@@ -3174,6 +3174,8 @@ interface RuleActionForm {
 
 interface AutomationRuleForm {
   name: string
+  dslMode: boolean
+  dslExpr: string
   triggerType: TriggerType
   pattern: string
   fromHandles: string
@@ -3188,24 +3190,12 @@ const _EMPTY_ACTION: RuleActionForm = {
   type: 'reply', text: '', url: '', method: 'POST', headers: '', level: 'info', message: '',
 }
 const _EMPTY_RULE_FORM: AutomationRuleForm = {
-  name: '', triggerType: 'text_contains', pattern: '',
+  name: '', dslMode: false, dslExpr: '', triggerType: 'text_contains', pattern: '',
   fromHandles: '', notFromHandles: '', inGroup: 'any', groupGuid: '',
   actions: [{ ..._EMPTY_ACTION }], stopOnMatch: false,
 }
 
-function _formToApiRule(f: AutomationRuleForm): Record<string, unknown> {
-  const trigger: Record<string, unknown> = { type: f.triggerType }
-  if (f.triggerType !== 'always') trigger.pattern = f.pattern
-
-  const conditions: Record<string, unknown> = {}
-  const from = f.fromHandles.split(',').map(s => s.trim()).filter(Boolean)
-  if (from.length) conditions.from_handles = from
-  const notFrom = f.notFromHandles.split(',').map(s => s.trim()).filter(Boolean)
-  if (notFrom.length) conditions.not_from_handles = notFrom
-  if (f.inGroup === 'group_only') conditions.in_group = true
-  if (f.inGroup === 'one_to_one') conditions.in_group = false
-  if (f.groupGuid.trim()) conditions.group_guid = f.groupGuid.trim()
-
+export function _formToApiRule(f: AutomationRuleForm): Record<string, unknown> {
   const actions = f.actions.map((a): Record<string, unknown> => {
     if (a.type === 'reply') return { type: 'reply', text: a.text }
     if (a.type === 'webhook') {
@@ -3221,20 +3211,36 @@ function _formToApiRule(f: AutomationRuleForm): Record<string, unknown> {
     return act
   })
 
+  if (f.dslMode) {
+    const rule: Record<string, unknown> = {
+      name: f.name,
+      trigger: { type: 'dsl', expr: f.dslExpr },
+      actions,
+    }
+    if (f.stopOnMatch) rule.stop_on_match = true
+    return rule
+  }
+
+  const trigger: Record<string, unknown> = { type: f.triggerType }
+  if (f.triggerType !== 'always') trigger.pattern = f.pattern
+
+  const conditions: Record<string, unknown> = {}
+  const from = f.fromHandles.split(',').map(s => s.trim()).filter(Boolean)
+  if (from.length) conditions.from_handles = from
+  const notFrom = f.notFromHandles.split(',').map(s => s.trim()).filter(Boolean)
+  if (notFrom.length) conditions.not_from_handles = notFrom
+  if (f.inGroup === 'group_only') conditions.in_group = true
+  if (f.inGroup === 'one_to_one') conditions.in_group = false
+  if (f.groupGuid.trim()) conditions.group_guid = f.groupGuid.trim()
+
   const rule: Record<string, unknown> = { name: f.name, trigger, actions }
   if (Object.keys(conditions).length) rule.conditions = conditions
   if (f.stopOnMatch) rule.stop_on_match = true
   return rule
 }
 
-function _apiRuleToForm(r: Record<string, unknown>): AutomationRuleForm {
+export function _apiRuleToForm(r: Record<string, unknown>): AutomationRuleForm {
   const trigger = (r.trigger as Record<string, unknown>) ?? {}
-  const conds = (r.conditions as Record<string, unknown>) ?? {}
-  const inGroupRaw = conds.in_group
-  let inGroup: AutomationRuleForm['inGroup'] = 'any'
-  if (inGroupRaw === true) inGroup = 'group_only'
-  else if (inGroupRaw === false) inGroup = 'one_to_one'
-
   const rawActions = (r.actions as Record<string, unknown>[]) ?? []
   const actions: RuleActionForm[] = rawActions.map(a => ({
     type: (a.type as ActionType) ?? 'reply',
@@ -3246,8 +3252,27 @@ function _apiRuleToForm(r: Record<string, unknown>): AutomationRuleForm {
     message: (a.message as string) ?? '',
   }))
 
+  if (trigger.type === 'dsl') {
+    return {
+      ..._EMPTY_RULE_FORM,
+      name: (r.name as string) ?? '',
+      dslMode: true,
+      dslExpr: (trigger.expr as string) ?? '',
+      actions: actions.length ? actions : [{ ..._EMPTY_ACTION }],
+      stopOnMatch: Boolean(r.stop_on_match),
+    }
+  }
+
+  const conds = (r.conditions as Record<string, unknown>) ?? {}
+  const inGroupRaw = conds.in_group
+  let inGroup: AutomationRuleForm['inGroup'] = 'any'
+  if (inGroupRaw === true) inGroup = 'group_only'
+  else if (inGroupRaw === false) inGroup = 'one_to_one'
+
   return {
     name: (r.name as string) ?? '',
+    dslMode: false,
+    dslExpr: '',
     triggerType: (trigger.type as TriggerType) ?? 'text_contains',
     pattern: (trigger.pattern as string) ?? '',
     fromHandles: ((conds.from_handles as string[]) ?? []).join(', '),
@@ -3264,6 +3289,7 @@ const _TRIGGER_LABELS: Record<TriggerType, string> = {
   text_exact: 'Exact match',
   text_regex: 'Regex',
   always: 'Always',
+  dsl: 'DSL',
 }
 
 function AutomationsSection() {
@@ -3295,7 +3321,9 @@ function AutomationsSection() {
 
   async function handleSave() {
     if (!form.name.trim()) { toast.error('Rule name is required'); return }
-    if (form.triggerType !== 'always' && !form.pattern.trim()) {
+    if (form.dslMode) {
+      if (!form.dslExpr.trim()) { toast.error('DSL expression is required'); return }
+    } else if (form.triggerType !== 'always' && !form.pattern.trim()) {
       toast.error('Pattern is required for this trigger type'); return
     }
     setSaving(true)
@@ -3387,8 +3415,10 @@ function AutomationsSection() {
       <div className="space-y-2">
         {rules.map((rule, idx) => {
           const ruleActions = (rule.actions as unknown[]) ?? []
-          const triggerType = (rule.trigger as Record<string, unknown>)?.type as TriggerType
-          const pattern = (rule.trigger as Record<string, unknown>)?.pattern as string | undefined
+          const rTrigger = (rule.trigger as Record<string, unknown>) ?? {}
+          const triggerType = rTrigger.type as TriggerType
+          const pattern = rTrigger.pattern as string | undefined
+          const dslExpr = rTrigger.expr as string | undefined
           return (
             <div key={idx} className="flex items-center justify-between rounded border border-border px-3 py-2 text-xs gap-2">
               <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
@@ -3396,7 +3426,12 @@ function AutomationsSection() {
                 <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-[10px]">
                   {_TRIGGER_LABELS[triggerType] ?? triggerType}
                 </span>
-                {pattern && (
+                {triggerType === 'dsl' && dslExpr && (
+                  <span className="text-muted-foreground font-mono truncate max-w-[200px]" title={dslExpr}>
+                    {dslExpr}
+                  </span>
+                )}
+                {triggerType !== 'dsl' && pattern && (
                   <span className="text-muted-foreground font-mono truncate max-w-[140px]">
                     &ldquo;{pattern}&rdquo;
                   </span>
@@ -3470,36 +3505,63 @@ function AutomationsSection() {
 
             {/* Trigger */}
             <div className="space-y-2">
-              <p className="text-xs font-medium">Trigger</p>
-              <div className="flex gap-2">
-                <select
-                  value={form.triggerType}
-                  onChange={e => setForm(f => ({ ...f, triggerType: e.target.value as TriggerType }))}
-                  className="text-xs border border-border rounded px-2 py-1 bg-background flex-shrink-0"
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium">Trigger</p>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                  onClick={() => setForm(f => ({ ...f, dslMode: !f.dslMode, dslExpr: '', pattern: '' }))}
                 >
-                  <option value="text_contains">Contains</option>
-                  <option value="text_exact">Exact match</option>
-                  <option value="text_regex">Regex</option>
-                  <option value="always">Always</option>
-                </select>
-                {form.triggerType !== 'always' && (
-                  <Input
-                    value={form.pattern}
-                    onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
-                    placeholder={form.triggerType === 'text_regex' ? 'e.g. hello|hi' : 'e.g. hello'}
-                    className="text-xs"
-                  />
-                )}
+                  {form.dslMode ? 'Switch to structured form' : 'Switch to DSL mode'}
+                </button>
               </div>
-              {form.triggerType === 'text_regex' && (
-                <p className="text-xs text-muted-foreground">
-                  Case-insensitive regex, searched against the full message text.
-                </p>
+              {form.dslMode ? (
+                <div className="space-y-1.5">
+                  <Textarea
+                    value={form.dslExpr}
+                    onChange={e => setForm(f => ({ ...f, dslExpr: e.target.value }))}
+                    placeholder="(from:+1 OR from:+2) AND contains:urgent AND NOT in:group"
+                    className="text-xs min-h-[80px] font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Predicates: <code>from:+1</code> <code>not_from:+1</code> <code>contains:word</code>{' '}
+                    <code>exact:hi</code> <code>regex:"…"</code> <code>in:group</code> <code>in:1to1</code>{' '}
+                    <code>always</code> · Operators: <code>AND</code> <code>OR</code> <code>NOT</code> <code>( )</code>
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-2">
+                    <select
+                      value={form.triggerType}
+                      onChange={e => setForm(f => ({ ...f, triggerType: e.target.value as TriggerType }))}
+                      className="text-xs border border-border rounded px-2 py-1 bg-background flex-shrink-0"
+                    >
+                      <option value="text_contains">Contains</option>
+                      <option value="text_exact">Exact match</option>
+                      <option value="text_regex">Regex</option>
+                      <option value="always">Always</option>
+                    </select>
+                    {form.triggerType !== 'always' && (
+                      <Input
+                        value={form.pattern}
+                        onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
+                        placeholder={form.triggerType === 'text_regex' ? 'e.g. hello|hi' : 'e.g. hello'}
+                        className="text-xs"
+                      />
+                    )}
+                  </div>
+                  {form.triggerType === 'text_regex' && (
+                    <p className="text-xs text-muted-foreground">
+                      Case-insensitive regex, searched against the full message text.
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
-            {/* Conditions */}
-            <div className="space-y-2">
+            {/* Conditions — hidden in DSL mode (DSL expression covers trigger+conditions) */}
+            {!form.dslMode && <div className="space-y-2">
               <p className="text-xs font-medium">
                 Conditions{' '}
                 <span className="text-muted-foreground font-normal">(optional — absent = unrestricted)</span>
@@ -3551,7 +3613,7 @@ function AutomationsSection() {
                   />
                 </div>
               </div>
-            </div>
+            </div>}
 
             {/* Actions */}
             <div className="space-y-2">
