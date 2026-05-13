@@ -61,6 +61,8 @@ export interface Message {
   // group chat fields (incoming only)
   sender_handle?: string
   sender_name?: string
+  // edited message flag — true when message has been edited (macOS 13+)
+  edited?: boolean
 }
 
 /** 1:1 conversation. */

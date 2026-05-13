@@ -1282,9 +1282,11 @@ def history_for(
                     "total_bytes": size,
                 })
         guids = [r["guid"] for r in rows if r["guid"]]
+        rowids = [r["rowid"] for r in rows]
         tapbacks_by_guid = _fetch_tapbacks(conn, guids)
         reply_guids = [r["reply_to_guid"] for r in rows if r["reply_to_guid"]]
         reply_parents = _fetch_reply_parents(conn, list(set(reply_guids)))
+        edited_by_rowid = _fetch_edited_flags(conn, rowids)
     finally:
         conn.close()
     # thread_originator_guid is only set on real user-initiated replies
@@ -1309,6 +1311,8 @@ def history_for(
             "attachments": atts,
             "link_preview": preview,
         }
+        if edited_by_rowid.get(r["rowid"]):
+            entry["edited"] = True
         if entry["from_me"]:
             entry.update(_delivery_status(r))
             svc = r["service"] or ""
@@ -1382,9 +1386,11 @@ def history_for_group(
                     "total_bytes": size,
                 })
         guids = [r["guid"] for r in rows if r["guid"]]
+        rowids = [r["rowid"] for r in rows]
         tapbacks_by_guid = _fetch_tapbacks(conn, guids)
         reply_guids = [r["reply_to_guid"] for r in rows if r["reply_to_guid"]]
         reply_parents = _fetch_reply_parents(conn, list(set(reply_guids)))
+        edited_by_rowid = _fetch_edited_flags(conn, rowids)
     finally:
         conn.close()
     ordered = list(reversed(rows))
@@ -1408,6 +1414,8 @@ def history_for_group(
             "sender_handle": sender,
             "sender_name": _name(sender) if sender else "",
         }
+        if edited_by_rowid.get(r["rowid"]):
+            entry["edited"] = True
         if entry["from_me"]:
             entry.update(_delivery_status(r))
             svc = r["service"] or ""
@@ -1615,6 +1623,27 @@ def _fetch_reply_parents(conn, reply_guids: list[str]) -> dict[str, dict]:
 
 
 from web.sms_reactions import apply_sms_reactions as _apply_sms_reactions  # noqa: E402
+
+
+def _fetch_edited_flags(conn, rowids: list[int]) -> dict[int, bool]:
+    """Return rowid → True for messages that have been edited (date_edited != 0).
+
+    The ``date_edited`` column was added in macOS 13 (Ventura).  On older
+    systems the column does not exist; catch OperationalError and return an
+    empty dict so the caller degrades gracefully.
+    """
+    if not rowids:
+        return {}
+    placeholders = ",".join("?" * len(rowids))
+    sql = (
+        f"SELECT ROWID, COALESCE(date_edited, 0) AS date_edited "
+        f"FROM message WHERE ROWID IN ({placeholders})"
+    )
+    try:
+        rows = conn.execute(sql, rowids).fetchall()
+    except Exception:  # OperationalError: no such column: date_edited
+        return {}
+    return {int(row["ROWID"]): bool(row["date_edited"]) for row in rows}
 
 
 def _fetch_tapbacks(conn, guids: list[str]) -> dict[str, list[dict]]:

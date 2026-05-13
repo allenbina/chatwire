@@ -1,22 +1,52 @@
-# Handoff — Phase 57: chatwire-mqtt outbound relay (MQTT → iMessage)
+# Handoff — Phase 58: SW attachment fix + public repo sync
 
-> Phase 57 session shipped (2026-05-13, commit 0059202 in chatwire-dev).
+> Phase 58 session shipped (2026-05-13, commit f82ecac in chatwire-dev).
 > 1102 pytest (1094 pass + 8 pre-existing failures) + 190 Vitest — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 57 code).
+> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 58 code).
 
 ## §1 Current state
 
-- **mbair**: commit 0059202 deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit f82ecac deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants (rose-pine, rose-pine-moon, rose-pine-dawn).
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
 - **Tests**: 1102 collected (1094 pass + 8 pre-existing failures) / 190 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 57 changes.
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 58 changes.
 - **PyPI**: v1.14.0 (no version bump — no public API changes; plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced to Phase 56 (commit 920cd4b, 2026-05-13).
-  Phase 57 NOT yet synced — sync is the next easy task.
+- **Public repo (allenbina/chatwire)**: synced to Phase 58 (commit f615376, 2026-05-13).
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 58 (2026-05-13)
+
+### Fix: video attachments intercepted by service worker
+
+**Problem**: Some videos (e.g. IMG_2047.mov, 12 MB) returned 1028 bytes of HTML
+(the SPA `index.html`) instead of the file. Root cause: the Workbox
+`runtimeCaching` rule for attachments used the regex `/\/(avatar|attachment)/`
+which requires a trailing `/` after the path segment. Actual URLs are
+`/attachment?path=…` (no trailing slash), so the rule never matched.
+Navigation requests (opening a video in a new tab) fell through to the
+`navigateFallback` and were served `index.html`.
+
+**Fix** (`web/frontend/vite.config.ts`):
+- Replace the regex `urlPattern` with a pathname-based callback
+  (`url.pathname.startsWith('/attachment|avatar')`) — now correctly matches
+  `/attachment?…` URLs.
+- Change handler to `NetworkOnly` — attachment files are served from the local
+  filesystem (already fast) and caching 12 MB `.mov` files in SW quota is wasteful.
+- Add `navigateFallbackDenylist` entries for `/attachment`, `/avatar`, and all
+  server-side API / system paths so the SW never serves `index.html` for these
+  endpoints regardless of runtime-cache state.
+
+**Tests**: all 190 Vitest pass (no frontend behaviour tests for SW rules).
+**Rebuild**: `dist/sw.js` and `dist/workbox-*.js` updated.
+**Deploy**: mbair updated, health check ok.
+
+### Public repo sync (allenbina/chatwire) — Phases 57–58
+
+Synced `allenbina/chatwire` from Phase 56 (commit 920cd4b) → Phase 58 (f615376).
+Includes: MQTT outbound relay source + tests + docs, vite.config.ts SW fix.
 
 ## §2 What shipped in Phase 57 (2026-05-13)
 
@@ -64,7 +94,7 @@ Synced `allenbina/chatwire` public repo from Phase 54 (6879d85) → Phase 56 (92
 
 ## §3 Open bugs
 
-None.
+None (video attachment SW bug fixed in Phase 58).
 
 ## §4 Follow-ups (Phase 58+ candidates)
 
@@ -79,10 +109,7 @@ None.
   See NOTE below for rsync method.
 
 **Bugs from interactive QA (2026-05-13)**:
-- Video attachment not serving: attachment endpoint returns HTML (1028 bytes)
-  instead of the actual file for some videos (e.g. ROWID 40122, IMG_2047.mov,
-  12MB). The DB stores path with `~` prefix (`~/Library/Messages/...`) — may
-  need `expanduser()` in the path resolution. Other videos work fine.
+- ~~Video attachment not serving~~ — fixed in Phase 58 (SW urlPattern bug).
 - Edited messages: show bold "edited" label next to timestamp. On click,
   expand the bubble (animated) to show all previous edit versions. Check
   how iMessage stores edit history in chat.db (likely in `message` table
@@ -263,10 +290,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 57 shipped (chatwire-mqtt outbound relay: MQTT → iMessage).
+STATE: Phase 58 shipped (SW attachment fix + public repo sync to Phase 58).
 1102 pytest (1094 pass + 8 pre-existing), 190 Vitest — all green.
-mbair running v1.14.0 (git+ssh, Phase 57 code, healthy).
-Public repo allenbina/chatwire: NOT YET synced to Phase 57 (last sync: Phase 56, commit 920cd4b).
+mbair running v1.14.0 (git+ssh, Phase 58 code, healthy).
+Public repo allenbina/chatwire: synced to Phase 58 (commit f615376, 2026-05-13).
 
 Key blocker for PyPI publish of plugins:
   chatwire-theme-rosepine, chatwire-mqtt, chatwire-ha, chatwire-xmpp are NOT on PyPI.
@@ -275,24 +302,18 @@ Key blocker for PyPI publish of plugins:
 
 Pick a task from §4 options:
 
-Option A — Sync public repo to Phase 57 (easy, ~10 min).
-  rsync + git push to allenbina/chatwire as per NOTE below.
-
-Option B — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
+Option A — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Requires TWINE_TOKEN env var or ~/.pypirc.
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option C — Fix video attachment serving (expanduser bug).
-  Some videos return HTML instead of file content. Path in DB has `~` prefix —
-  add os.path.expanduser() in the attachment path resolution.
-  File to look at: web/attachments.py or wherever /attachment endpoint resolves paths.
-
-Option D — Edited messages: show edit history.
+Option B — Edited messages: show edit history.
   iMessage stores edit history in chat.db. Show "edited" label on bubble; on click
   expand to show previous versions. Research chat.db schema first.
+  Look at: message table columns — likely thread_originator_guid or an
+  edited_message join table. Also check if there's a `date_edited` column.
 
-Option E — #20 Automation engine / #28 trigger grammar (larger, plan first).
+Option C — #20 Automation engine / #28 trigger grammar (larger, plan first).
 
 VISUAL QA NOTE: pin icons in SettingsPage, sidebar toggle buttons for hiatus/reminder,
 hiatus sidebar indicator + dismiss button + countdown, hiatus SettingsPage countdown,
@@ -301,6 +322,8 @@ action bar, tapback tooltips, mark-all-read icon, Rose Pine theme picker, iOS
 reply ghost bubble, accordion animation, theme picker refresh after install,
 and HEIC img_cache warmer behavior all require an interactive session on mbair
 — skip and note if headless.
+NOTE: Video attachment SW fix deployed in Phase 58 — users must reload the
+page once so the new service worker activates (old SW had the broken cache rule).
 
 Run: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 Run: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
@@ -314,7 +337,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 58 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 59 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run

@@ -772,6 +772,9 @@ export function MessageBubble({
         ].join(' ')}
       >
         <span>{msg.ts}</span>
+        {msg.edited && (
+          <span className="italic opacity-70">edited</span>
+        )}
         {isMine && msg.status && (
           <DeliveryBadge status={msg.status} service={msg.service} hint={(msg as Message & { hint?: string }).hint} />
         )}
