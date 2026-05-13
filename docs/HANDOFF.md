@@ -1,21 +1,54 @@
-# Handoff — Phase 59: Edited messages badge
+# Handoff — Phase 60: Data exposure warning modal
 
-> Phase 59 session shipped (2026-05-13, commit b2b7ba8 in chatwire-dev).
-> 1110 pytest (1102 pass + 8 pre-existing failures) + 190 Vitest — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 59 code).
+> Phase 60 session shipped (2026-05-13, commit e056ca7 in chatwire-dev).
+> 196 Vitest (190 prior + 6 new) + 1110 pytest (1102 pass + 8 pre-existing) — all green.
+> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 60 code).
 
 ## §1 Current state
 
-- **mbair**: commit b2b7ba8 deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit e056ca7 deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants (rose-pine, rose-pine-moon, rose-pine-dawn).
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
-- **Tests**: 1110 collected (1102 pass + 8 pre-existing failures) / 190 Vitest — all green.
+- **Tests**: 196 Vitest / 1110 pytest (1102 pass + 8 pre-existing failures) — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 59 changes.
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 60 changes.
 - **PyPI**: v1.14.0 (no version bump — no public API changes; plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced to Phase 59 (commit 4acc355, 2026-05-13).
+- **Public repo (allenbina/chatwire)**: synced to Phase 60 (commit 54ef0fc, 2026-05-13).
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 60 (2026-05-13)
+
+### feat: data exposure warning modal on first launch (#23)
+
+**Problem**: chatwire serves iMessages over HTTP on the local network with no
+indication to the user. Anyone on the same network who knows the port can read
+conversations and attachments. There was no first-run warning about this.
+
+**Fix**:
+
+- **`web/frontend/src/components/DataWarningModal.tsx`** (new component):
+  - Uses the shadcn Dialog primitive (Radix UI).
+  - Reads `chatwire-dismissed-data-warning` from localStorage on mount.
+  - If key absent: opens a modal warning about network exposure; recommends
+    setting a password in Settings → Security.
+  - Clicking "I understand" writes the localStorage key and closes the modal.
+  - `onInteractOutside` is blocked — user must click the button (can't
+    accidentally dismiss by clicking the overlay).
+- **`web/frontend/src/App.tsx`**: `<DataWarningModal />` rendered inside
+  `QueryClientProvider`, outside all routes — appears globally on every page.
+
+**Tests** (`DataWarningModal.test.tsx` — 6 new, all pass):
+- Modal visible when localStorage key absent.
+- Modal hidden when key already set.
+- "I understand" button hides the modal.
+- "I understand" button writes the localStorage key.
+- Warning text about same-network exposure present.
+- Settings recommendation text present.
+
+**Note on visual QA**: Requires an interactive session to confirm the modal
+renders correctly and that the "Settings → Security" text is legible in both
+light and dark themes.
 
 ## §2 What shipped in Phase 59 (2026-05-13)
 
@@ -39,16 +72,11 @@ indication that a message had been edited.
 - **`web/frontend/src/components/MessageBubble.tsx`**: italic "edited" span
   rendered next to the timestamp when `msg.edited` is set.
 
-**Tests** (`tests/test_edited_messages.py` — 8 new, all pass):
-- Mirrors `_fetch_edited_flags` locally (project pattern for main.py helpers).
-- Covers: not-edited (0), edited (non-zero), NULL, missing-column fallback,
-  empty list, absent rowid, subset batch.
+**Tests** (`tests/test_edited_messages.py` — 8 new, all pass).
 
-**Note on edit history popover**: The HANDOFF listed "on click expand to show
-all previous edit versions". Previous edit versions in chat.db require further
-research — it's unclear whether they appear as associated-message rows (type 1?)
-or another mechanism. The badge itself is functional; the expand UI is a
-follow-up (see §4).
+**Note on edit history popover**: The badge is live but the popover showing
+previous edit versions is not yet implemented. Schema research on macOS 13
+chat.db is needed (mbair is macOS 12 — no `date_edited` column exists there).
 
 ## §2 What shipped in Phase 58 (2026-05-13)
 
@@ -63,54 +91,32 @@ Navigation requests (opening a video in a new tab) fell through to the
 `navigateFallback` and were served `index.html`.
 
 **Fix** (`web/frontend/vite.config.ts`):
-- Replace the regex `urlPattern` with a pathname-based callback
-  (`url.pathname.startsWith('/attachment|avatar')`) — now correctly matches
-  `/attachment?…` URLs.
-- Change handler to `NetworkOnly` — attachment files are served from the local
-  filesystem (already fast) and caching 12 MB `.mov` files in SW quota is wasteful.
-- Add `navigateFallbackDenylist` entries for `/attachment`, `/avatar`, and all
-  server-side API / system paths so the SW never serves `index.html` for these
-  endpoints regardless of runtime-cache state.
-
-**Tests**: all 190 Vitest pass (no frontend behaviour tests for SW rules).
-**Rebuild**: `dist/sw.js` and `dist/workbox-*.js` updated.
-**Deploy**: mbair updated, health check ok.
-
-### Public repo sync (allenbina/chatwire) — Phases 57–58
-
-Synced `allenbina/chatwire` from Phase 56 (commit 920cd4b) → Phase 58 (f615376).
-
-## §2 What shipped in Phase 57 (2026-05-13)
-
-### chatwire-mqtt: outbound relay (MQTT → iMessage)
-
-- **New config field**: `send_topic` — optional string (default `""`). When non-empty,
-  the plugin subscribes to this MQTT topic on the broker and relays any published
-  message as an outbound iMessage.
-- **Payload schemas**:
-  - 1:1: `{"handle": "+15551234567", "text": "Hello!"}`
-  - Group: `{"chat": "iMessage;+;chat123", "text": "Hi!", "label": "My Group"}`
-- **12 new tests** in `TestOutboundConfig` and `TestOutboundRelay` (43 total, all pass).
+- Replace the regex `urlPattern` with a pathname-based callback.
+- Change handler to `NetworkOnly`.
+- Add `navigateFallbackDenylist` entries for `/attachment`, `/avatar`, and
+  all server-side API / system paths.
 
 ## §3 Open bugs
 
 None.
 
-## §4 Follow-ups (Phase 59+ candidates)
+## §4 Follow-ups (Phase 60+ candidates)
 
 **Edited messages — history popover** (research needed):
 - The "edited" badge is now live. On click, expand the bubble to show previous
   edit versions. Requires researching chat.db schema for edit history:
-  - Likely stored as associated-message rows with a specific `associated_message_type`
-    (tapbacks use 2000+; edits use something below 2000, possibly 1).
+  - Likely stored as associated-message rows (`associated_message_type` TBD;
+    tapbacks use 2000+; edits use something else, possibly 1).
   - Verify on a real macOS 13+ chat.db using `PRAGMA table_info(message)` and
     inspecting rows with non-zero `date_edited` alongside their associated rows.
+  - **Blocker**: mbair is macOS 12 — no `date_edited` column. Needs macOS 13
+    hardware or a chat.db snapshot from a macOS 13 user.
   - Once type confirmed, add `EDIT_HISTORY_SQL` and `_fetch_edit_history()` in
-    `web/main.py`, return as `edit_history` array on the message dict, wire
-    frontend to show popover on click.
+    `web/main.py`, return as `edit_history` array, wire frontend popover.
 
 **PyPI publishing** (needs `TWINE_TOKEN` or `~/.pypirc`):
-- Publish `chatwire-theme-rosepine` to PyPI — marketplace Install button currently fails at pip.
+- Publish `chatwire-theme-rosepine` to PyPI — marketplace Install button
+  currently fails at pip for these until published.
 - Publish `chatwire-mqtt`, `chatwire-ha`, `chatwire-xmpp` to PyPI.
   Build: `python3 -m build <plugin-dir>`
   Upload: `TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*`
@@ -118,8 +124,6 @@ None.
 **Other features**:
 - #41 Demo app on chatwire.app
 - #20 Automation engine + #28 trigger grammar
-- #23 Data exposure warning
-- #65 Offline mode — already fully implemented.
 - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
 - #24 Discord server
 - #21, #22 Documentation
@@ -129,8 +133,8 @@ None.
 - Set up plinux-local test env (chat.db snapshot, separate port)
 
 **Visual QA** (requires interactive mbair session):
-- "edited" badge — visible only when macOS 13+ user has edited a message; confirm
-  renders correctly next to timestamp.
+- Data exposure warning modal — confirm renders correctly in light + dark themes.
+- "edited" badge — visible only when macOS 13+ user has edited a message.
 - Per-theme custom CSS editor, theme skin ZIP buttons, theme picker with Rose Pine schemes
 - Hover action bar, tapback tooltips, mark-all-read icon (Phase 33)
 - Reminder contacts picker (Phase 39)
@@ -142,10 +146,25 @@ None.
 - HEIC img_cache warmer behavior (Phase 49)
 
 **Shared libraries for plugins** (post-RC):
-- Expose Motion (Framer Motion) on `window.__chatwire` so plugins can use animations
-  without bundling their own copy. ~34KB addition to core.
+- Expose Motion (Framer Motion) on `window.__chatwire` so plugins can use
+  animations without bundling their own copy. ~34KB addition to core.
 
 ## §5 Architecture notes
+
+### Data exposure warning modal (added Phase 60)
+
+- **`DataWarningModal.tsx`** in `web/frontend/src/components/`:
+  - localStorage key: `chatwire-dismissed-data-warning` (value `"1"` when dismissed).
+  - Initial state: `useState(() => !localStorage.getItem(DISMISSED_KEY))`.
+  - Uses shadcn `Dialog` / `DialogContent` / `DialogHeader` / `DialogFooter`.
+  - `onInteractOutside` blocks Radix's default close-on-overlay-click behaviour.
+  - `onOpenChange` fires `dismiss()` if `v === false` (e.g. Escape key), so
+    pressing Escape also persists the dismissal.
+  - Icon: `ShieldAlert` from lucide-react (`text-warning`).
+- Wired in `App.tsx` inside `<QueryClientProvider>` but outside `<BrowserRouter>`,
+  so it renders on every page including `/login`.
+- **6 tests** in `DataWarningModal.test.tsx`; all stub the Dialog with a simple
+  open/close wrapper to avoid Radix Portal rendering in jsdom.
 
 ### Edited messages (added Phase 59)
 
@@ -158,8 +177,9 @@ None.
   `MessageBubble.tsx` timestamp row.
 - **chat.db schema note**: `date_edited` was added in macOS 13 (Ventura). On macOS
   ≤ 12, the column does not exist — `_fetch_edited_flags` returns `{}` silently.
+  mbair is macOS 12.7.6, so this feature cannot be visually QA'd there.
 - **Edit history (future)**: Previous text versions may be stored as associated
-  messages (`associated_message_type` TBD). Needs verification on a real chat.db.
+  messages (`associated_message_type` TBD). Needs verification on macOS 13+ chat.db.
 
 ### chatwire-mqtt plugin (updated Phase 57)
 
@@ -303,15 +323,17 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 59 shipped (edited message badge).
-1110 pytest (1102 pass + 8 pre-existing), 190 Vitest — all green.
-mbair running v1.14.0 (git+ssh, Phase 59 code, healthy).
-Public repo allenbina/chatwire: synced to Phase 59 (commit 4acc355, 2026-05-13).
+STATE: Phase 60 shipped (data exposure warning modal, #23).
+196 Vitest (190 prior + 6 new) + 1110 pytest (1102 pass + 8 pre-existing) — all green.
+mbair running v1.14.0 (git+ssh, Phase 60 code, healthy).
+Public repo allenbina/chatwire: synced to Phase 60 (commit 54ef0fc, 2026-05-13).
 
-Key blocker for PyPI publish of plugins:
-  chatwire-theme-rosepine, chatwire-mqtt, chatwire-ha, chatwire-xmpp are NOT on PyPI.
-  Marketplace Install button will fail at pip for these until published.
-  Requires TWINE_TOKEN env var or ~/.pypirc with PyPI API token.
+Key blockers:
+  - Edit history popover (#59 follow-up): mbair is macOS 12 — no date_edited column.
+    Needs macOS 13+ chat.db snapshot or hardware. Cannot verify schema headless.
+  - PyPI plugin publishing: requires TWINE_TOKEN env var or ~/.pypirc with API token.
+    chatwire-theme-rosepine, chatwire-mqtt, chatwire-ha, chatwire-xmpp not on PyPI.
+    Marketplace Install button will fail at pip until published.
 
 Pick a task from §4 options:
 
@@ -320,26 +342,23 @@ Option A — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option B — Edited messages: expand to show edit history.
-  The badge is live. Now add the popover with previous versions.
-  FIRST: verify chat.db edit history schema. On mbair:
-    sqlite3 ~/Library/Messages/chat.db "PRAGMA table_info(message)" | grep -i edit
-    # Find a rowid with date_edited != 0, then look for associated rows:
-    sqlite3 ~/Library/Messages/chat.db \
-      "SELECT ROWID, associated_message_guid, associated_message_type, text \
-       FROM message WHERE associated_message_guid = '<guid-of-edited-msg>' LIMIT 10"
-  Once type confirmed, add EDIT_HISTORY_SQL and _fetch_edit_history() in web/main.py,
-  return as edit_history array, wire frontend popover.
+Option B — Edited messages: history popover (blocked without macOS 13 chat.db).
+  If a chat.db snapshot is available at ~/chat.db or similar, use that.
+  Otherwise skip — cannot verify schema on macOS 12.
 
 Option C — #20 Automation engine / #28 trigger grammar (larger, plan first).
 
-VISUAL QA NOTE: "edited" badge, pin icons in SettingsPage, sidebar toggle buttons
-for hiatus/reminder, hiatus sidebar indicator + dismiss button + countdown, hiatus
-SettingsPage countdown, reminder contacts picker, per-theme custom CSS editor,
-theme skin ZIP buttons, hover action bar, tapback tooltips, mark-all-read icon,
-Rose Pine theme picker, iOS reply ghost bubble, accordion animation, theme picker
-refresh after install, and HEIC img_cache warmer behavior all require an interactive
-session on mbair — skip and note if headless.
+Option D — #23 visual QA follow-up: confirm DataWarningModal renders in both
+  themes. Requires interactive mbair session — skip if headless.
+
+VISUAL QA NOTE: Data exposure modal, "edited" badge, pin icons in SettingsPage,
+sidebar toggle buttons for hiatus/reminder, hiatus sidebar indicator + dismiss
+button + countdown, hiatus SettingsPage countdown, reminder contacts picker,
+per-theme custom CSS editor, theme skin ZIP buttons, hover action bar, tapback
+tooltips, mark-all-read icon, Rose Pine theme picker, iOS reply ghost bubble,
+accordion animation, theme picker refresh after install, and HEIC img_cache
+warmer behavior all require an interactive session on mbair — skip and note if
+headless.
 
 Run: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 Run: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
@@ -353,7 +372,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 60 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 61 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
@@ -366,4 +385,6 @@ NOTE: After rsync, RESTORE .gitignore (git checkout -- .gitignore) to preserve
   web/frontend/dist/ exclusion — chatwire-dev commits dist/ but public repo does not.
 NOTE: Tests mirror web/main.py helpers locally (never import web.main directly —
   module-level side-effects and Python-3.10+ annotation syntax breaks on Python 3.8).
+NOTE: mbair is macOS 12.7.6 — date_edited column does not exist in chat.db there.
+  Edit history feature verification requires macOS 13+ hardware or a DB snapshot.
 ```
