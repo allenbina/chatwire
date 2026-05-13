@@ -52,6 +52,24 @@ function CooldownBanner({ countdown }: { countdown: number | null }) {
   )
 }
 
+function LockoutFooterNote({ step }: { step: number }) {
+  const isPermanent = step >= 6
+  return (
+    <div
+      className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
+      data-testid="lockout-footer-note"
+    >
+      <p className="text-destructive/80 flex items-center gap-1.5">
+        <TriangleAlert className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+        {isPermanent
+          ? <>Messaging permanently locked — enter unlock code in <a href="/settings" className="underline font-medium">Settings</a>.</>
+          : <>Messaging locked — cooling down. View status in <a href="/settings" className="underline font-medium">Settings</a>.</>
+        }
+      </p>
+    </div>
+  )
+}
+
 export function ComposeBox({ handle, isGroup = false, replyToGuid = '', replyToText = '', onClearReply }: ComposeBoxProps) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -104,6 +122,9 @@ export function ComposeBox({ handle, isGroup = false, replyToGuid = '', replyToT
     fuseStatus.step >= 1 &&
     fuseStatus.step <= 3
   )
+
+  // True when full lockout is in effect (steps 4+)
+  const isLockedOut = !!(fuseStatus?.locked && fuseStatus.step >= 4)
 
   async function doSend() {
     const trimmed = text.trim()
@@ -210,6 +231,10 @@ export function ComposeBox({ handle, isGroup = false, replyToGuid = '', replyToT
     <div className="border-t border-border bg-background px-4 py-3">
       <SlotRenderer slot="compose.extension" handle={handle} />
 
+      {isLockedOut ? (
+        <LockoutFooterNote step={fuseStatus!.step} />
+      ) : (
+        <>
       {/* Offline notice — shown above compose area when network is unavailable */}
       {!isOnline && (
         <div className="mb-2 px-3 py-1.5 rounded-md border border-destructive/30 bg-destructive/5 flex items-center gap-2">
@@ -301,6 +326,8 @@ export function ComposeBox({ handle, isGroup = false, replyToGuid = '', replyToT
           <p className="mt-1 text-[10px] text-muted-foreground">
             Enter to send &nbsp;&#183;&nbsp; Shift+Enter for newline
           </p>
+        </>
+      )}
         </>
       )}
     </div>

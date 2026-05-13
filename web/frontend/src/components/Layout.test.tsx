@@ -139,6 +139,113 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// ---------------------------------------------------------------------------
+// LockoutTopBanner helpers
+// ---------------------------------------------------------------------------
+
+interface FuseStatusStub {
+  locked: boolean
+  step: number
+  cooldown_remaining_s: number | null
+  unlock_code: string | null
+}
+
+function stubFetchWithFuse(fuseStatus: FuseStatusStub) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => {
+      let body: object = {}
+      if (url.includes('settings/notifications')) {
+        body = {
+          hiatus_enabled: false,
+          hiatus_duration_minutes: 30,
+          hiatus_started_at: 0,
+          reminder_enabled: false,
+          reminder_days: 7,
+          reminder_contacts: [],
+          notification_detail: 'rich',
+          notification_depth: {},
+        }
+      } else if (url.includes('auth/has-password')) {
+        body = { has_password: false }
+      } else if (url.includes('fuse-status')) {
+        body = fuseStatus
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(body),
+      } as Response)
+    }),
+  )
+}
+
+function renderLayoutFuse(fuseStatus: FuseStatusStub) {
+  stubFetchWithFuse(fuseStatus)
+  const qc = makeQC()
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <Layout>
+          <div data-testid="mock-child" />
+        </Layout>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// LockoutTopBanner tests
+// ---------------------------------------------------------------------------
+
+describe('Layout — LockoutTopBanner', () => {
+  it('shows the banner when locked=true and step=4', async () => {
+    renderLayoutFuse({ locked: true, step: 4, cooldown_remaining_s: null, unlock_code: null })
+    await waitFor(() => {
+      expect(screen.getByTestId('lockout-top-banner')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('lockout-top-banner').textContent).toMatch(/cooling down/i)
+  })
+
+  it('shows permanent message when step=6', async () => {
+    renderLayoutFuse({ locked: true, step: 6, cooldown_remaining_s: null, unlock_code: null })
+    await waitFor(() => {
+      expect(screen.getByTestId('lockout-top-banner')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('lockout-top-banner').textContent).toMatch(/permanently locked/i)
+  })
+
+  it('is hidden when locked=false', async () => {
+    renderLayoutFuse({ locked: false, step: 0, cooldown_remaining_s: null, unlock_code: null })
+    await waitFor(() => {
+      expect(vi.mocked(fetch)).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('lockout-top-banner')).not.toBeInTheDocument()
+  })
+
+  it('is hidden when step < 4 even if locked=true', async () => {
+    renderLayoutFuse({ locked: true, step: 3, cooldown_remaining_s: null, unlock_code: null })
+    await waitFor(() => {
+      expect(vi.mocked(fetch)).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('lockout-top-banner')).not.toBeInTheDocument()
+  })
+
+  it('contains a "Settings" link when the banner is shown', async () => {
+    renderLayoutFuse({ locked: true, step: 5, cooldown_remaining_s: 120, unlock_code: null })
+    await waitFor(() => {
+      expect(screen.getByTestId('lockout-top-banner')).toBeInTheDocument()
+    })
+    const banner = screen.getByTestId('lockout-top-banner')
+    const link = banner.querySelector('a')
+    expect(link).not.toBeNull()
+    expect(link?.textContent).toBe('Settings')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Hiatus indicator tests
+// ---------------------------------------------------------------------------
+
 describe('Layout — hiatus indicator', () => {
   it('shows "Hiatus ON" banner when hiatus_enabled is true', async () => {
     renderLayout(true)

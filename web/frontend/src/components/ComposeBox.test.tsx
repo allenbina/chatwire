@@ -13,6 +13,7 @@
  *   - optimistic message is added to the zustand store on send
  *   - optimistic message is cleared from the store after send completes
  *   - cooldown banner is shown when fuse is locked (steps 1-3)
+ *   - lockout footer note is shown when fuse is locked (steps 4+)
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -344,5 +345,95 @@ describe('ComposeBox — cooldown banner', () => {
     await waitFor(() => {
       expect(screen.getByText(/Normal chatting resumes soon/i)).toBeInTheDocument()
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Lockout footer note (fuse steps 4+)
+// ---------------------------------------------------------------------------
+
+describe('ComposeBox — lockout footer note', () => {
+  it('shows lockout footer note when fuse is locked at step 4', async () => {
+    mockedGetFuseStatus.mockResolvedValue({
+      locked: true,
+      step: 4,
+      cooldown_remaining_s: 7200,
+      unlock_code: null,
+    })
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('lockout-footer-note')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('textbox', { name: /type a message/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Sends paused/i)).not.toBeInTheDocument()
+  })
+
+  it('shows cooling-down text for step 5', async () => {
+    mockedGetFuseStatus.mockResolvedValue({
+      locked: true,
+      step: 5,
+      cooldown_remaining_s: 3600,
+      unlock_code: null,
+    })
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByText(/cooling down/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows permanently locked text for step 6', async () => {
+    mockedGetFuseStatus.mockResolvedValue({
+      locked: true,
+      step: 6,
+      cooldown_remaining_s: null,
+      unlock_code: 'CW-XXXX-YYYY',
+    })
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByText(/permanently locked/i)).toBeInTheDocument()
+    })
+  })
+
+  it('does not show lockout footer note when fuse is not locked', async () => {
+    mockedGetFuseStatus.mockResolvedValue(FUSE_INACTIVE)
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: /type a message/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('lockout-footer-note')).not.toBeInTheDocument()
+  })
+
+  it('does not show lockout footer note at step 3 (shows cooldown banner instead)', async () => {
+    mockedGetFuseStatus.mockResolvedValue({
+      locked: true,
+      step: 3,
+      cooldown_remaining_s: 600,
+      unlock_code: null,
+    })
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Sends paused/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('lockout-footer-note')).not.toBeInTheDocument()
+  })
+
+  it('lockout footer note contains a Settings link', async () => {
+    mockedGetFuseStatus.mockResolvedValue({
+      locked: true,
+      step: 4,
+      cooldown_remaining_s: 1800,
+      unlock_code: null,
+    })
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('lockout-footer-note')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument()
   })
 })

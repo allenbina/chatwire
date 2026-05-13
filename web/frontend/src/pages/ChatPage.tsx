@@ -271,9 +271,33 @@ function ActiveConversation({ slugParam }: { slugParam: string }) {
     )
   }
 
-  // Full lockout (step 4+): replace chat content with overlay
+  // Full lockout (step 4+): keep header + show overlay in message area + lockout note in compose
   if (isLockedOut && fuseStatus) {
-    return <LockoutOverlay fuseStatus={fuseStatus} />
+    return (
+      <>
+        <ConversationHeader
+          handle={handle}
+          isGroup={isGroup}
+          conversations={conversations}
+          onInfoClick={() => setInfoOpen(true)}
+        />
+        <LockoutOverlay fuseStatus={fuseStatus} />
+        <ComposeBox
+          handle={handle}
+          isGroup={isGroup}
+          replyToGuid={replyTo?.guid ?? ''}
+          replyToText={replyTo?.text ?? ''}
+          onClearReply={() => setReplyTo(null)}
+        />
+        <ContactInfoSheet
+          open={infoOpen}
+          onClose={() => setInfoOpen(false)}
+          handle={handle}
+          isGroup={isGroup}
+          onRemoved={handleRemoved}
+        />
+      </>
+    )
   }
 
   return (
