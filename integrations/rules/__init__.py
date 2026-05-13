@@ -54,6 +54,12 @@ import logging
 import re
 from typing import Any
 
+try:
+    from integrations.rules.dsl import DSLError, parse_dsl  # type: ignore[import]
+except ImportError:  # pragma: no cover — isolated test environments
+    parse_dsl = None  # type: ignore[assignment]
+    DSLError = ValueError  # type: ignore[misc,assignment]
+
 log = logging.getLogger(__name__)
 
 try:
@@ -122,10 +128,18 @@ class RulesEngine:
         pattern: str = trigger_raw.get("pattern") or ""
 
         compiled_regex = None
+        compiled_dsl = None
         if trigger_type == "text_regex":
             compiled_regex = re.compile(pattern, re.IGNORECASE)
+        elif trigger_type == "dsl":
+            if parse_dsl is None:
+                raise ValueError("dsl trigger requires the integrations.rules.dsl module")
+            expr: str = trigger_raw.get("expr") or ""
+            if not expr:
+                raise ValueError("dsl trigger requires a non-empty 'expr' field")
+            compiled_dsl = parse_dsl(expr)
         elif trigger_type not in ("text_exact", "text_contains", "always"):
-            raise ValueError(f"unknown trigger type: {trigger_type!r}")
+            raise ValueError("unknown trigger type: {!r}".format(trigger_type))
 
         conds: dict = raw.get("conditions") or {}
         from_handles = frozenset(
@@ -147,6 +161,7 @@ class RulesEngine:
             # store lowercased for text_exact / text_contains comparisons
             "pattern": pattern.lower() if trigger_type != "text_regex" else pattern,
             "compiled_regex": compiled_regex,
+            "compiled_dsl": compiled_dsl,
             "from_handles": from_handles,
             "not_from_handles": not_from_handles,
             "in_group": in_group,
@@ -182,8 +197,19 @@ class RulesEngine:
         results: list[tuple[str, list[dict]]] = []
 
         for rule in self._rules:
-            # ---- Trigger ----
             tt = rule["trigger_type"]
+
+            # ---- DSL rules: evaluator covers both trigger and conditions ----
+            if tt == "dsl":
+                if rule["compiled_dsl"] is None:
+                    continue  # compile failed at startup; skip
+                if rule["compiled_dsl"](text, handle_lc, msg_is_group, msg_chat_guid):
+                    results.append((rule["name"], rule["actions"]))
+                    if rule["stop_on_match"]:
+                        break
+                continue  # skip normal trigger + conditions block
+
+            # ---- Trigger (non-DSL) ----
             if tt == "always":
                 triggered = True
             elif tt == "text_exact":
@@ -267,15 +293,30 @@ class RulesIntegration:
                         "trigger": {
                             "type": "object",
                             "title": "Trigger",
-                            "description": "When to fire: text_exact / text_contains / text_regex / always.",
+                            "description": (
+                                "When to fire: text_exact / text_contains / text_regex / always / dsl."
+                            ),
                             "properties": {
                                 "type": {
                                     "type": "string",
-                                    "enum": ["text_exact", "text_contains", "text_regex", "always"],
+                                    "enum": [
+                                        "text_exact",
+                                        "text_contains",
+                                        "text_regex",
+                                        "always",
+                                        "dsl",
+                                    ],
                                 },
                                 "pattern": {
                                     "type": "string",
-                                    "description": "Text to match (not used for 'always').",
+                                    "description": "Text to match (text_exact / text_contains / text_regex).",
+                                },
+                                "expr": {
+                                    "type": "string",
+                                    "description": (
+                                        "DSL expression (dsl trigger type only). "
+                                        "Example: 'from:+15551234567 contains:\"hello\" AND in:group'"
+                                    ),
                                 },
                             },
                             "required": ["type"],

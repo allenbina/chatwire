@@ -251,9 +251,11 @@ def _validate_rule_body(body: object) -> dict:
     trigger = body.get("trigger")
     if not isinstance(trigger, dict) or not trigger.get("type"):
         raise HTTPException(400, "trigger.type is required")
-    valid_triggers = {"text_exact", "text_contains", "text_regex", "always"}
+    valid_triggers = {"text_exact", "text_contains", "text_regex", "always", "dsl"}
     if trigger["type"] not in valid_triggers:
         raise HTTPException(400, f"trigger.type must be one of: {', '.join(sorted(valid_triggers))}")
+    if trigger["type"] == "dsl" and not trigger.get("expr"):
+        raise HTTPException(400, "trigger.expr is required for dsl trigger type")
     if not isinstance(body.get("actions"), list):
         raise HTTPException(400, "actions must be a list")
     return body  # type: ignore[return-value]
