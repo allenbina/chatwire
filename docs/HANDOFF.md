@@ -1,6 +1,6 @@
-# Handoff — Phase 74: CHANGELOG [Unreleased] documentation
+# Handoff — Phase 75: README feature list update
 
-> Phase 74 session shipped (2026-05-13, commit 938557d).
+> Phase 75 session shipped (2026-05-13, commit 1a92ddf).
 > 1409 pytest / 234 Vitest — all green.
 > mbair running v1.14.0 (git+ssh, Phase 73 code, healthy). No code change — no redeploy needed.
 
@@ -12,7 +12,24 @@
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
 - **Tests**: 1409 pytest / 234 Vitest — all green.
 - **PyPI**: v1.14.0 (plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced through Phase 74 (commit 27c4ab2, 2026-05-13).
+- **Public repo (allenbina/chatwire)**: synced through Phase 75 (commit bf5de22, 2026-05-13).
+
+## §2 What shipped in Phase 75 (2026-05-13)
+
+### docs: update README feature list to reflect Phases 29-74
+
+- `README.md` "What it does" section updated with new bullets for Automation rules,
+  Anti-spam protection, and Hiatus mode; Plugins bullet updated to list all
+  standalone packages (ntfy, Telegram, MQTT, Home Assistant, XMPP).
+- React UI Features section expanded from 5 bullets to 10: added Rich message
+  display (tapbacks, read receipts, reply ghosts, edited badge, location cards,
+  SMS reactions), Automation rules, Anti-spam/fuse banners, Hiatus mode, Theme
+  system (CSS variable editor, custom CSS, ZIP import/export, Rose Pine), and Data
+  exposure warning; Performance bullet extended with HEIC img_cache / startup warmer.
+- Repo layout updated: added `rules.py`, `chatwire-plugins/` tree with all 7 plugins,
+  `docs/admin/`, and `status` in the CLI comment.
+- No code change; no redeploy needed.
+- Public repo (allenbina/chatwire) synced — commit bf5de22.
 
 ## §2 What shipped in Phase 74 (2026-05-13)
 
@@ -183,10 +200,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 74 shipped (CHANGELOG [Unreleased] documentation — Phases 29-73).
+STATE: Phase 75 shipped (README feature list update).
 1409 pytest / 234 Vitest — all green.
 mbair running v1.14.0 (git+ssh, Phase 73 code, healthy). No redeploy needed.
-Public repo allenbina/chatwire: synced through Phase 74 (commit 27c4ab2).
+Public repo allenbina/chatwire: synced through Phase 75 (commit bf5de22).
 
 Key blockers:
   - Edit history popover (#59 follow-up): mbair is macOS 12 — no date_edited column.
@@ -195,12 +212,12 @@ Key blockers:
     chatwire-theme-rosepine, chatwire-mqtt, chatwire-ha, chatwire-xmpp not on PyPI.
     Marketplace Install button will fail at pip until published.
 
-Documentation done (#21, #22): CHANGELOG [Unreleased] is now fully populated.
+Documentation done (#21, #22, #75): CHANGELOG [Unreleased] and README are both current.
 Next candidates from §4:
   - PyPI publishing (needs TWINE_TOKEN)
   - #41 Demo app on chatwire.app
   - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
-  - README improvements — update feature list to reflect Phases 29-74
+  - #24 Discord server
   - Any other §4 item that fits in one session.
 
 VISUAL QA NOTE: LockoutTopBanner, CooldownBanner icon, LockoutFooterNote,
@@ -218,7 +235,7 @@ DEPLOY (only needed if code changed):
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy (if code changed), sync public repo, and notify:
-  curl -s -d "Phase 74 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 75 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 Public repo sync (after future code phases):
   rsync -a --checksum --exclude='dist/' --exclude='node_modules/' --exclude='__pycache__/' --exclude='.git/' --exclude='*.pyc' --exclude='*.egg-info/' /home/mediafront/git/chatwire-dev/ /tmp/chatwire-public/
