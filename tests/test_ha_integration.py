@@ -354,6 +354,162 @@ class TestGroupMessages:
         _run(_go())
 
 
+class TestAllowedSenders:
+    """Tests for per-command allowed_senders filter."""
+
+    def _config_with_senders(self, senders: list) -> dict:
+        return {
+            "enabled": True,
+            "ha_url": "http://ha.local:8123",
+            "access_token": "tok_abc123",
+            "commands": [
+                {
+                    "keyword": "lights off",
+                    "domain": "light",
+                    "service": "turn_off",
+                    "entity_id": "light.living_room",
+                    "description": "Living room lights off",
+                    "allowed_senders": senders,
+                },
+            ],
+        }
+
+    def test_allowed_sender_fires(self) -> None:
+        """Handle in allowed_senders → command fires normally."""
+        async def _go() -> None:
+            integ = _make_integration(self._config_with_senders(["+15551234567"]))
+            ctx = await _start(integ)
+
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+
+            with patch.object(integ._client, "post", new_callable=AsyncMock) as mock_post:
+                mock_post.return_value = mock_resp
+                await integ.on_inbound(FakeMsg(text="lights off", handle="+15551234567"))
+
+            mock_post.assert_awaited_once()
+            assert len(ctx.sent) == 1
+
+            await integ.stop()
+
+        _run(_go())
+
+    def test_disallowed_sender_skipped(self) -> None:
+        """Handle NOT in allowed_senders → command is silently skipped."""
+        async def _go() -> None:
+            integ = _make_integration(self._config_with_senders(["+15551234567"]))
+            ctx = await _start(integ)
+
+            with patch.object(integ._client, "post", new_callable=AsyncMock) as mock_post:
+                await integ.on_inbound(FakeMsg(text="lights off", handle="+19998887777"))
+
+            mock_post.assert_not_called()
+            assert ctx.sent == []
+
+            await integ.stop()
+
+        _run(_go())
+
+    def test_empty_allowed_senders_fires_for_any_sender(self) -> None:
+        """Empty allowed_senders list → any sender may trigger the command."""
+        async def _go() -> None:
+            integ = _make_integration(self._config_with_senders([]))
+            ctx = await _start(integ)
+
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+
+            with patch.object(integ._client, "post", new_callable=AsyncMock) as mock_post:
+                mock_post.return_value = mock_resp
+                await integ.on_inbound(FakeMsg(text="lights off", handle="+10000000000"))
+
+            mock_post.assert_awaited_once()
+            assert len(ctx.sent) == 1
+
+            await integ.stop()
+
+        _run(_go())
+
+    def test_absent_allowed_senders_fires_for_any_sender(self) -> None:
+        """Missing allowed_senders key → any sender may trigger (backward compat)."""
+        async def _go() -> None:
+            # BASE_CONFIG has no allowed_senders
+            integ = _make_integration()
+            ctx = await _start(integ)
+
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+
+            with patch.object(integ._client, "post", new_callable=AsyncMock) as mock_post:
+                mock_post.return_value = mock_resp
+                await integ.on_inbound(FakeMsg(text="lights off", handle="+19990000001"))
+
+            mock_post.assert_awaited_once()
+            assert len(ctx.sent) == 1
+
+            await integ.stop()
+
+        _run(_go())
+
+    def test_allowed_senders_case_insensitive(self) -> None:
+        """Email-format handles match case-insensitively."""
+        async def _go() -> None:
+            integ = _make_integration(self._config_with_senders(["Alice@Example.com"]))
+            ctx = await _start(integ)
+
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+
+            with patch.object(integ._client, "post", new_callable=AsyncMock) as mock_post:
+                mock_post.return_value = mock_resp
+                # Sender arrives lowercase from bridge normalisation
+                await integ.on_inbound(FakeMsg(text="lights off", handle="alice@example.com"))
+
+            mock_post.assert_awaited_once()
+            assert len(ctx.sent) == 1
+
+            await integ.stop()
+
+        _run(_go())
+
+    def test_allowed_senders_multiple_handles(self) -> None:
+        """Multiple handles in allowed_senders — each is permitted."""
+        async def _go() -> None:
+            integ = _make_integration(
+                self._config_with_senders(["+15551111111", "+15552222222"])
+            )
+            ctx = await _start(integ)
+
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+
+            with patch.object(integ._client, "post", new_callable=AsyncMock) as mock_post:
+                mock_post.return_value = mock_resp
+                await integ.on_inbound(FakeMsg(text="lights off", handle="+15552222222"))
+
+            mock_post.assert_awaited_once()
+
+            # Third handle not in list → skipped
+            mock_post.reset_mock()
+            ctx.sent.clear()
+            with patch.object(integ._client, "post", new_callable=AsyncMock) as mock_post2:
+                await integ.on_inbound(FakeMsg(text="lights off", handle="+15553333333"))
+
+            mock_post2.assert_not_called()
+
+            await integ.stop()
+
+        _run(_go())
+
+    def test_allowed_senders_stored_as_frozenset(self) -> None:
+        """Internals: allowed_senders is a frozenset for O(1) lookup."""
+        integ = _make_integration(self._config_with_senders(["+15551234567", "+15559876543"]))
+        cmd = integ._commands.get("lights off")
+        assert cmd is not None
+        assert isinstance(cmd["allowed_senders"], frozenset)
+        assert "+15551234567" in cmd["allowed_senders"]
+
+
 class TestLifecycle:
     def test_on_inbound_before_start_does_nothing(self) -> None:
         """j. Calling on_inbound() before start() is a silent no-op."""

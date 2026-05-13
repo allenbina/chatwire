@@ -1,113 +1,101 @@
-# Handoff — Phase 53: chatwire-mqtt plugin + registry expansion
+# Handoff — Phase 55: chatwire-ha allowed_senders + ha.md README
 
-> Phase 53 session shipped (2026-05-13, commit 72fc96d in chatwire-dev).
-> 1082 pytest (1074 pass + 8 pre-existing failures) + 190 Vitest — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 53 code).
+> Phase 55 session shipped (2026-05-13, commits a621b5b, 0a388c9 in chatwire-dev).
+> 1090 pytest (1082 pass + 8 pre-existing failures) + 190 Vitest — all green.
+> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 55 code).
 
 ## §1 Current state
 
-- **mbair**: commit 72fc96d deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit 0a388c9 deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants (rose-pine, rose-pine-moon, rose-pine-dawn).
-- **chatwire-plugins registry**: 9 plugins now live on GitHub (`allenbina/chatwire-plugins`).
-  New entries: chatwire-mqtt, chatwire-ha, chatwire-xmpp.
-- **Tests**: 1082 collected (1074 pass + 8 pre-existing failures) / 190 Vitest — all green.
+- **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
+- **Tests**: 1090 collected (1082 pass + 8 pre-existing failures) / 190 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 53 changes.
-- **PyPI**: v1.14.0 (no version bump — no public API changes).
-- **Public repo (allenbina/chatwire)**: synced to Phase 51 as of aff5292. Phase 53 adds only
-  plugin source + tests; a sync is due but not blocking (mbair uses git+ssh).
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 55 changes.
+- **PyPI**: v1.14.0 (no version bump — no public API changes; plugins not yet on PyPI).
+- **Public repo (allenbina/chatwire)**: NOT yet synced to Phase 55 (last sync: Phase 54 / 6879d85).
 - **Open bugs**: 0.
 
-## §2 What shipped in Phase 53 (2026-05-13)
+## §2 What shipped in Phase 55 (2026-05-13)
 
-### chatwire-mqtt plugin — closes #27 MQTT output
+### chatwire-ha: per-command allowed_senders filter
 
-**Problem**: No MQTT output for home automation pipelines (Home Assistant, Node-RED, OpenHAB).
+**Problem**: Any iMessage sender could trigger HA commands, even unknown numbers.
 
-**Fix** (`chatwire-plugins/chatwire-mqtt/`):
+**Fix** (`chatwire-plugins/chatwire-ha/chatwire_ha/__init__.py`):
 
-- **`MQTTIntegration`** class in `chatwire_mqtt/__init__.py`:
-  - Publishes every inbound iMessage as JSON (v=1) to a paho-mqtt broker.
-  - Topic layout: `<base>/<sanitized_handle>` for 1:1, `<base>/group/<sanitized_chat_id>` for groups.
-  - MQTT-reserved chars (`+`, `#`, `/`, NUL) replaced with `_` via `_sanitize_topic_segment()`.
-  - Payload: `{v, rowid, handle, text, is_from_me, chat: {guid, identifier, name, is_group}}`.
-  - Config: `host` (required), `port` (1883), `topic` ("chatwire/messages"), `username`, `password`,
-    `qos` (0/1/2), `client_id` ("chatwire").
-  - paho-mqtt guard: lazy import with `_PAHO_AVAILABLE` flag; `start()` raises `RuntimeError`
-    if paho is not installed (same pattern as xmpp/ha).
-  - `on_inbound()` and `stop()` are always safe before `start()`.
-  - `publish()` failures (exception or non-zero rc) are logged but never re-raised.
-- **`pyproject.toml`**: name=chatwire-mqtt, version=1.0.0, dep=paho-mqtt>=1.6.
-  Entry-point: `chatwire.integrations: chatwire_mqtt = "chatwire_mqtt:MQTTIntegration"`.
+- **New per-command field**: `allowed_senders` — optional list of handles (phone numbers or
+  email addresses). When non-empty, only senders in the list trigger the command.
+  Empty or absent = any sender (backward compatible).
+- **`__init__`**: stores `allowed_senders` as a `frozenset` of lowercased handles for O(1) lookup.
+- **`on_inbound`**: after keyword match, checks `msg.handle.lower()` against the frozenset.
+  If not in set, logs at DEBUG and silently returns — no reply, no HA call.
+- **Matching**: case-insensitive (lowercased both sides); exact on phone numbers.
+- **`SETTINGS_SCHEMA`**: new `allowed_senders` array field per command item.
+- **Docstring**: updated with per-sender filter example and explanation.
+- **7 new tests** in `TestAllowedSenders` class (`tests/test_ha_integration.py`).
+  Total HA tests: 22.
 
-**Tests** (`tests/test_mqtt_integration.py`): 22 tests, all pass in isolation and in full suite.
-- Uses `asyncio.run()` (not `asyncio.get_event_loop().run_until_complete()`) to avoid
-  event-loop state leakage from the pre-existing test_mcp.py failures.
-- Covers: 1:1 topic, group topic, handle sanitization, payload schema, is_from_me filter,
-  empty text, publish exception, non-zero rc, missing host, paho unavailable, pre-start safety,
-  double-stop idempotency, username/password, custom client_id.
+### docs/plugins/ha.md
 
-### Plugin registry expansion
+**New file**: `docs/plugins/ha.md`
 
-**`chatwire-plugins/plugins.json`** — three new entries:
-- `chatwire-mqtt`  (action, signed) — MQTT broker output
-- `chatwire-ha`    (action, signed) — Home Assistant keyword→service trigger
-- `chatwire-xmpp`  (bridge, signed) — iMessage ↔ XMPP relay via slixmpp
+Covers: what it does, install command, configuration walkthrough, settings reference
+table (all fields including `allowed_senders`), minimal config, full config with
+`allowed_senders`, how the per-sender filter works, keyword matching rules, HA automation
++ scene config examples, troubleshooting FAQ.
 
-Pushed to `allenbina/chatwire-plugins` (commit 9d4de54). Registry now has 9 entries.
+## §2 What shipped in Phase 54 (2026-05-13)
 
-Note: `chatwire-ha` and `chatwire-xmpp` source code already existed locally
-(`chatwire-plugins/chatwire-ha/`, `chatwire-plugins/chatwire-xmpp/`) with full implementations
-and tests (`test_ha_integration.py`, `test_xmpp_integration.py`). Added to registry only.
+### chatwire-mqtt: TLS support
 
-## §2 What shipped in Phase 52 (2026-05-12)
+**Problem**: No encrypted broker support — cleartext only.
 
-### Public repo sync — allenbina/chatwire to Phase 51
+**Fix** (`chatwire-plugins/chatwire-mqtt/chatwire_mqtt/__init__.py`):
 
-**Result** (commit aff5292 in allenbina/chatwire):
-- 5 files changed: 407 insertions / 20 deletions
-- Public repo now fully in sync with Phase 51
+- **Two new config keys**:
+  - `use_tls` (bool, default `false`) — enable TLS/SSL.
+  - `ca_cert` (str, default `""`) — path to PEM CA cert; blank = system CA bundle.
+- **`start()` change**: when `use_tls=true`, calls `client.tls_set(ca_certs=<path or None>)`
+  before `connect()`. If `tls_set()` raises, wraps as `RuntimeError("TLS setup failed: ...")`.
+- **`SETTINGS_SCHEMA`**: two new entries (`use_tls` at `x-ui-order: 8`, `ca_cert` at `9`).
+- **Docstring**: updated with TLS configuration example.
+- **9 new tests** in `TestTLS` class (`tests/test_mqtt_integration.py`).
+  Total MQTT tests: 31.
 
-## §2 What shipped in Phase 51 (2026-05-12)
+### chatwire-mqtt: plugin README
 
-### `chatwire status` subcommand
+**New file**: `docs/plugins/mqtt.md`
 
-Prints version, config path+port, launchd agent status (macOS), installed plugins.
-`cmd_status()` in `chatwire_cli.py`; always exits 0; 21 tests in `tests/test_status.py`.
+Covers: what it does, install command, configuration walkthrough, topic layout with
+examples, full JSON payload schema (v=1), settings reference table (all 10 config keys),
+minimal config, full TLS config, Home Assistant automation YAML example, troubleshooting FAQ.
 
-### img_cache in uninstall paths (Phase 48 gap)
+### Public repo sync (allenbina/chatwire) — Phases 52–54
 
-`_uninstall_paths()` now includes `img_cache`; `scripts/uninstall.sh` Step 6 updated.
+Synced `allenbina/chatwire` public repo from Phase 51 → Phase 54 (commit 6879d85).
+**Not yet synced to Phase 55** — do this in the next session or a dedicated sync pass.
 
 ## §3 Open bugs
 
 None.
 
-## §4 Follow-ups (Phase 54+ candidates)
+## §4 Follow-ups (Phase 56+ candidates)
 
-**Theme ecosystem**:
-- Publish `chatwire-theme-rosepine` to PyPI (needs `TWINE_TOKEN` or `~/.pypirc`).
-  Once on PyPI, the marketplace Install button will work end-to-end without git+ssh.
-  Currently install from marketplace fails at pip.
-- Publish `chatwire-mqtt`, `chatwire-ha`, `chatwire-xmpp` to PyPI for marketplace installs.
-- Visual QA of per-theme custom CSS editor.
-- Visual QA of theme skin ZIP buttons.
-- Visual QA of theme picker dropdown with Rose Pine plugin schemes.
-- Visual QA of hover action bar, tapback tooltips, mark-all-read icon (Phase 33).
-- Visual QA of reminder contacts picker (Phase 39).
-- Visual QA of hiatus sidebar indicator + End button + countdown (Phases 40–42).
-- Visual QA of hiatus SettingsPage countdown (Phase 43).
-- Visual QA of pinnable settings pin icons + sidebar toggle buttons (Phase 44).
-- Visual QA of iOS reply ghost bubble (Phase 45).
-- Visual QA of accordion animation (Phase 46).
-- Visual QA of theme picker refresh after install/uninstall (Phase 47).
+**PyPI publishing** (needs `TWINE_TOKEN` or `~/.pypirc`):
+- Publish `chatwire-theme-rosepine` to PyPI — marketplace Install button currently fails at pip.
+- Publish `chatwire-mqtt`, `chatwire-ha`, `chatwire-xmpp` to PyPI.
+  Build: `python3 -m build <plugin-dir>`
+  Upload: `TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*`
+
+**Public repo sync**:
+- Sync `allenbina/chatwire` to Phase 55 (commits a621b5b, 0a388c9).
+  Use rsync method from §6 notes. Remember to restore .gitignore after rsync.
 
 **Plugin gaps**:
-- `chatwire-mqtt`: Add TLS support (`use_tls`, `ca_cert` config options) for encrypted brokers.
-- `chatwire-ha`: Allow per-keyword allowed-sender filters (restrict commands to specific handles).
 - `chatwire-mqtt`: Add outbound relay (MQTT→iMessage) so automations can send replies.
-- Write `chatwire-mqtt.md` README (matches pattern of chatwire-ha.md, chatwire-xmpp.md).
+- Write `docs/plugins/xmpp.md` README (matches pattern of mqtt.md / ha.md).
 
 **Other features**:
 - #41 Demo app on chatwire.app
@@ -117,42 +105,65 @@ None.
 - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
 - #24 Discord server
 - #21, #22 Documentation
-- #25 Uninstaller: script + Python cmd both done; testing complete as of Phase 51.
 - #1 Mac DMG, #2 Custom marketplaces
 
 **Infrastructure**:
 - Set up plinux-local test env (chat.db snapshot, separate port)
-- Public repo sync: allenbina/chatwire needs sync to Phase 52-53.
+
+**Visual QA** (requires interactive mbair session):
+- Per-theme custom CSS editor, theme skin ZIP buttons, theme picker with Rose Pine schemes
+- Hover action bar, tapback tooltips, mark-all-read icon (Phase 33)
+- Reminder contacts picker (Phase 39)
+- Hiatus sidebar indicator + End button + countdown (Phases 40–42), SettingsPage countdown (Phase 43)
+- Pinnable settings pin icons + sidebar toggle buttons (Phase 44)
+- iOS reply ghost bubble (Phase 45)
+- Accordion animation (Phase 46)
+- Theme picker refresh after install/uninstall (Phase 47)
+- HEIC img_cache warmer behavior (Phase 49)
 
 **Shared libraries for plugins** (post-RC):
-- Expose Motion (Framer Motion) on `window.__chatwire` so plugins can use
-  animations without bundling their own copy. ~34KB addition to core.
+- Expose Motion (Framer Motion) on `window.__chatwire` so plugins can use animations
+  without bundling their own copy. ~34KB addition to core.
 
 ## §5 Architecture notes
 
-### chatwire-mqtt plugin (added Phase 53)
+### chatwire-ha plugin (updated Phase 55)
+
+- **Package**: `chatwire-plugins/chatwire-ha/` — `chatwire_ha/__init__.py` + `pyproject.toml`.
+- **Class**: `HAIntegration` — `NAME = "chatwire_ha"`, `TIER = "notify"`.
+- **Dependency**: `httpx` (declared in pyproject.toml).
+- **Lifecycle**: `start(ctx)` → creates `httpx.AsyncClient` with Bearer auth. `stop()` → `aclose()`.
+- **Keyword matching**: `text.strip().lower()` → exact lookup in `self._commands` dict.
+- **allowed_senders** (new Phase 55): per-command `frozenset` of lowercased handles.
+  `on_inbound` checks `msg.handle.lower() in allowed` before firing. Empty set = unrestricted.
+- **HA call**: `POST {ha_url}/api/services/{domain}/{service}` with `{"entity_id": ...}`.
+- **Reply**: `ctx.send_text(SendTarget(...), f"Done: {description}")`.
+- **22 tests** in `tests/test_ha_integration.py`.
+- **README**: `docs/plugins/ha.md`.
+
+### chatwire-mqtt plugin (updated Phase 54)
 
 - **Package**: `chatwire-plugins/chatwire-mqtt/` — `chatwire_mqtt/__init__.py` + `pyproject.toml`.
 - **Class**: `MQTTIntegration` — `NAME = "chatwire_mqtt"`, `TIER = "official"`.
 - **Dependency**: `paho-mqtt>=1.6` (declared in pyproject.toml; guard: `_PAHO_AVAILABLE` flag).
-- **Lifecycle**: `start(ctx)` → `paho.Client.connect() + loop_start()`. `stop()` → `loop_stop() + disconnect()`.
+- **Lifecycle**: `start(ctx)` → `tls_set()` (if use_tls) → `connect()` → `loop_start()`. `stop()` → `loop_stop() + disconnect()`.
+- **TLS**: `use_tls=true` → `client.tls_set(ca_certs=<path or None>)` before connect.
+  `tls_set()` failure → `RuntimeError("TLS setup failed: ...")`.
 - **Topic segments**: `_sanitize_topic_segment(s)` replaces `+#/\x00` → `_`; empty → `"_"`.
 - **Topic routing**: 1:1 → `<topic>/_15551234567`, group → `<topic>/group/<chat_id>`.
-  (Phone numbers: `+` in handle becomes `_` in topic.)
 - **Payload schema (v=1)**:
   ```json
   {"v": 1, "rowid": 12345, "handle": "+1...", "text": "...",
    "is_from_me": false, "chat": {"guid": "...", "identifier": "...", "name": null, "is_group": false}}
   ```
-- **publish()** errors: non-zero rc → log warning; exceptions → log warning. Both are no-ops.
-- **22 tests** in `tests/test_mqtt_integration.py`; all use `asyncio.run()` to isolate event loop.
+- **31 tests** in `tests/test_mqtt_integration.py`; all use `asyncio.run()` to isolate event loop.
+- **README**: `docs/plugins/mqtt.md`.
 
 ### Plugin registry (chatwire-plugins, updated Phase 53)
 
 - Repo: `github.com/allenbina/chatwire-plugins` — tracks `plugins.json` only.
-- Now 9 entries: apprise, telegram, webhook, stats, theme-rosepine, example,
-  mqtt (new), ha (new), xmpp (new).
-- Plugin source dirs live in `chatwire-plugins/chatwire-*/` in chatwire-dev only (not tracked in the plugins repo).
+- 9 entries: apprise, telegram, webhook, stats, theme-rosepine, example, mqtt, ha, xmpp.
+- Plugin source dirs live in `chatwire-plugins/chatwire-*/` in chatwire-dev (and public repo).
 
 ### chatwire status subcommand (added Phase 51)
 
@@ -247,10 +258,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 53 shipped (chatwire-mqtt plugin closes #27, registry +ha +xmpp, commit 72fc96d).
-1082 pytest (1074 pass + 8 pre-existing), 190 Vitest — all green.
-mbair running v1.14.0 (git+ssh, Phase 53 code, healthy).
-Public repo allenbina/chatwire: still at Phase 51 (aff5292) — sync needed.
+STATE: Phase 55 shipped (chatwire-ha allowed_senders filter + ha.md README).
+1090 pytest (1082 pass + 8 pre-existing), 190 Vitest — all green.
+mbair running v1.14.0 (git+ssh, Phase 55 code, healthy).
+Public repo allenbina/chatwire: NOT yet synced to Phase 55 (last sync: Phase 54 / 6879d85).
 
 Key blocker for PyPI publish of plugins:
   chatwire-theme-rosepine, chatwire-mqtt, chatwire-ha, chatwire-xmpp are NOT on PyPI.
@@ -264,14 +275,14 @@ Option A — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option B — chatwire-mqtt TLS support: add use_tls, ca_cert config options.
-  Small feature, ~30 lines in __init__.py + tests. No PyPI token needed.
+Option B — Sync public repo allenbina/chatwire to Phase 55.
+  Use rsync method from HANDOFF notes. Remember to restore .gitignore after rsync.
 
-Option C — #20 Automation engine / #28 trigger grammar (larger, plan first).
+Option C — docs/plugins/xmpp.md README (matches pattern of mqtt.md / ha.md).
 
-Option D — Public repo sync (allenbina/chatwire to Phase 52–53).
+Option D — chatwire-mqtt outbound relay (MQTT→iMessage), so automations can send replies.
 
-Option E — chatwire-mqtt README (chatwire-mqtt.md) + chatwire-ha/xmpp README review.
+Option E — #20 Automation engine / #28 trigger grammar (larger, plan first).
 
 VISUAL QA NOTE: pin icons in SettingsPage, sidebar toggle buttons for hiatus/reminder,
 hiatus sidebar indicator + dismiss button + countdown, hiatus SettingsPage countdown,
@@ -293,7 +304,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 54 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 56 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run

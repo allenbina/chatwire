@@ -17,7 +17,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { fetchConversations, markSeen, markAllSeen, convRouteKey, type Conversation } from '../api'
 import { useChatStore } from '../store'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { SlidingHighlight } from './SlidingHighlight'
 
@@ -129,20 +128,10 @@ function ConversationRow({ convo }: { convo: Conversation }) {
                 convo.preview || '\u00a0'
               )}
             </p>
-            {/* Show badge when unseen (cross-interface read state) or n > 0 (iMessage unread) */}
-            {(convo.unseen !== false && convo.n > 0) && (
-              <Badge
-                className="flex-shrink-0 min-w-[1.25rem] h-5 rounded-full
-                           bg-primary text-primary-foreground
-                           text-[10px] font-bold px-1 hover:bg-primary"
-              >
-                {convo.n > 99 ? '99+' : convo.n}
-              </Badge>
-            )}
-            {/* Unseen dot: seen by other interface, no iMessage unread count, but we haven't opened it */}
-            {convo.unseen === true && convo.n === 0 && (
+            {/* Unseen dot — based on Chatwire's own read state, not iMessage is_read */}
+            {convo.unseen && (
               <span
-                className="flex-shrink-0 w-2 h-2 rounded-full bg-primary"
+                className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-primary"
                 aria-label="New messages"
               />
             )}
