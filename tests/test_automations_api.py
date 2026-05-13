@@ -139,7 +139,7 @@ class TestAutomationsCreate:
         assert r.status_code == 400
 
     def test_invalid_trigger_type_returns_400(self):
-        bad = {"name": "x", "trigger": {"type": "on_send"}, "actions": []}
+        bad = {"name": "x", "trigger": {"type": "bad_type"}, "actions": []}
         with _rule_store():
             r = client.post("/automations", json=bad, headers=_AUTH)
         assert r.status_code == 400

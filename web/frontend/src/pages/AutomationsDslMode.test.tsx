@@ -38,6 +38,8 @@ const _BASE_FORM = {
   pattern: 'hello',
   fromHandles: '',
   notFromHandles: '',
+  toHandles: '',
+  notToHandles: '',
   inGroup: 'any' as const,
   groupGuid: '',
   actions: [{ ..._EMPTY_ACTION }],

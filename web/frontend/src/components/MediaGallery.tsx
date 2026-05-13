@@ -56,6 +56,7 @@ export function Lightbox({
         <DialogPrimitive.Content
           className="fixed inset-0 z-50 flex items-center justify-center p-4 focus:outline-none"
           aria-describedby={undefined}
+          onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
         >
           {/* Visually-hidden title: accessible name for the dialog */}
           <DialogTitle className="sr-only">

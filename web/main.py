@@ -364,7 +364,7 @@ CONVOS_SQL = """
 SELECT
     h.id AS handle,
     MAX(m.date) AS last_dt,
-    MAX(m.ROWID) AS last_rowid,
+    MAX(CASE WHEN COALESCE(m.associated_message_type, 0) = 0 THEN m.ROWID ELSE 0 END) AS last_rowid,
     SUM(CASE WHEN m.is_read = 0 AND m.is_from_me = 0 THEN 1 ELSE 0 END) AS n,
     (SELECT COALESCE(SUBSTR(m2.text,1,80), '')
        FROM message m2
@@ -1078,7 +1078,7 @@ def _list_group_convos() -> list[dict]:
             COALESCE(c.display_name, '') AS name,
             c.chat_identifier AS chat_identifier,
             MAX(m.date) AS last_dt,
-            MAX(m.ROWID) AS last_rowid,
+            MAX(CASE WHEN COALESCE(m.associated_message_type, 0) = 0 THEN m.ROWID ELSE 0 END) AS last_rowid,
             SUM(CASE WHEN m.is_read = 0 AND m.is_from_me = 0 THEN 1 ELSE 0 END) AS n,
             (SELECT COALESCE(SUBSTR(m2.text,1,80), '')
                FROM message m2

@@ -375,7 +375,10 @@ class BridgeContextImpl:
             # Group outgoing rows have handle='' and are filtered by
             # _should_relay anyway; only 1:1 sends need echo registration.
             _record_text_send(target.value, body)
-        return _to_outcome(r)
+        outcome = _to_outcome(r)
+        # Fire on_outbound hooks (fire-and-forget; errors are logged, not raised).
+        await _fan_out_outbound(self.integrations, target, body)
+        return outcome
 
     async def send_file(self, target: SendTarget, path: Path) -> SendOutcome:
         # File transfers have no text body to transform; run the pipeline with
@@ -730,6 +733,30 @@ async def _fan_out(
                     record_plugin_run(name, _success, _error_msg)
                 except Exception:
                     log.exception("health tracking failed for %s", name)
+
+
+async def _fan_out_outbound(integrations: list, target: "SendTarget", body: str) -> None:
+    """Call ``on_outbound(event)`` on every integration that defines the hook.
+
+    Errors are caught and logged per-integration; a failing hook never
+    interrupts the caller's send flow.
+    """
+    from integrations.base import OutboundEvent  # local import avoids circularity
+    event = OutboundEvent(
+        handle=target.value if not target.is_group else "",
+        text=body,
+        is_group=target.is_group,
+        chat_guid=target.value if target.is_group else "",
+    )
+    for integ in integrations:
+        fn = getattr(integ, "on_outbound", None)
+        if fn is None:
+            continue
+        name = getattr(integ, "NAME", "?")
+        try:
+            await fn(event)
+        except Exception as exc:
+            log.warning("integration %s on_outbound failed: %s", name, exc)
 
 
 async def poll_loop(reader: ChatDBReader, integrations: list, conv_map: ConversationMap) -> None:

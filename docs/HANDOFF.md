@@ -1,21 +1,103 @@
-# Handoff — Phase 65: DSL mode toggle in AutomationsSection
+# Handoff — Phase 66: on_send automation trigger
 
-> Phase 65 session shipped (2026-05-13, commit 6686d81 in chatwire-dev).
-> 1291 pytest (unchanged) + 218 Vitest (196 prior + 22 new) — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 65 code).
+> Phase 66 session shipped (2026-05-13, commit b1b4275 in chatwire-dev).
+> 1326 pytest (+35 new) + 218 Vitest — all green.
+> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 66 code).
 
 ## §1 Current state
 
-- **mbair**: commit 6686d81 deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit b1b4275 deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants.
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
-- **Tests**: 1291 pytest / 218 Vitest — all green.
+- **Tests**: 1326 pytest / 218 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 65.
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 66.
 - **PyPI**: v1.14.0 (no version bump — frontend-only change; plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced to Phase 65 (this session).
+- **Public repo (allenbina/chatwire)**: needs sync to Phase 66.
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 66 (2026-05-13)
+
+### feat: on_send automation trigger for outbound iMessages
+
+**Problem**: The automation rules engine only evaluated inbound iMessages.
+There was no way to trigger actions (webhook calls, log lines, auto-replies)
+when the user or an integration sends an outbound iMessage.
+
+**Fix**: Added a new `on_send` trigger type to the rules engine.
+
+**New trigger type**: `"type": "on_send"` — fires for every outbound text
+message sent via the bridge (integration-initiated or web UI).
+
+**Direction isolation**:
+- `evaluate()` (inbound) silently skips `on_send` rules.
+- `evaluate_outbound()` (outbound) skips all non-`on_send` rules.
+- DSL-mode rules remain inbound-only.
+
+**Outbound-specific conditions** (in the `conditions` block):
+```json
+{
+  "to_handles":     ["+15551234567"],
+  "not_to_handles": ["+15550000001"],
+  "in_group":       false,
+  "group_guid":     "iMessage;+;chat..."
+}
+```
+`to_handles` / `not_to_handles` filter by recipient (lowercased frozensets).
+`in_group` / `group_guid` shared semantics with inbound rules.
+
+**Actions**: `reply`, `webhook`, `log` — same as inbound rules.
+`webhook` payload carries `handle` (recipient), `text`, `is_group`, `chat_guid`.
+
+**Example rule**:
+```json
+{
+  "name": "log-urgent-sends",
+  "trigger": {"type": "on_send"},
+  "conditions": {"to_handles": ["+15551234567"]},
+  "actions": [{"type": "log", "message": "sent to {handle}: {text}"}]
+}
+```
+
+**Files changed**:
+- `integrations/base.py`: `OutboundEvent` dataclass (`handle`, `text`,
+  `is_group`, `chat_guid`); exported in `__all__`.
+- `integrations/rules/__init__.py`:
+  - `_compile()`: handles `"on_send"`; compiles `to_handles` / `not_to_handles`.
+  - `evaluate()`: skips `on_send` rules.
+  - `evaluate_outbound()`: new method; evaluates only `on_send` rules;
+    checks `to_handles`, `not_to_handles`, `in_group`, `group_guid`,
+    `stop_on_match`.
+  - `RulesIntegration.on_outbound(event)`: new async hook; dispatches
+    matched rules through the existing action pipeline.
+  - `SETTINGS_SCHEMA`: `on_send` in trigger type enum; `to_handles` /
+    `not_to_handles` in conditions properties.
+- `bridge.py`: `_fan_out_outbound(integrations, target, body)` helper;
+  called after each successful `BridgeContextImpl.send_text()`.
+  Per-integration error catching — a failing hook never blocks the send.
+- `web/api_v1.py`: `on_send` added to `valid_triggers`; no `expr` required.
+- `web/frontend/src/pages/SettingsPage.tsx`:
+  - `TriggerType` union gains `'on_send'`.
+  - `AutomationRuleForm` gains `toHandles` / `notToHandles` string fields.
+  - Trigger dropdown: "On send (outbound)" option; pattern input hidden.
+  - Conditions: "To handles" / "Not to handles" shown for `on_send`;
+    "From handles" / "Not from handles" shown for all other trigger types.
+  - `_formToApiRule` / `_apiRuleToForm` handle `on_send` bidirectionally.
+  - `_TRIGGER_LABELS`: `on_send` → "On send".
+- `web/frontend/src/pages/AutomationsDslMode.test.tsx`: `_BASE_FORM` gains
+  `toHandles`/`notToHandles` for TypeScript compliance.
+- `tests/test_on_send_rules.py` (new) — **35 tests**:
+  - `_compile`: to_handles lowercased frozensets, no pattern/regex needed.
+  - `evaluate()`: skips on_send rules (direction isolation).
+  - `evaluate_outbound()`: fires on_send rules, conditions (to_handles,
+    not_to_handles, in_group, group_guid), stop_on_match, None inputs.
+  - `api_v1._validate_rule_body`: accepts `on_send`; no `expr` required.
+  - `OutboundEvent` dataclass: field values, group vs 1:1.
+  - `RulesIntegration.on_outbound`: log action dispatch, no-match silence,
+    no-ctx noop, webhook dispatch, action error isolation.
+- `tests/test_automations_api.py`: updated `test_invalid_trigger_type_returns_400`
+  to use `"bad_type"` (not `"on_send"`, which is now valid).
 
 ## §2 What shipped in Phase 65 (2026-05-13)
 
@@ -165,105 +247,16 @@ required hand-editing `config.json`.
 
 ### feat: automation rules REST API + Settings UI rule builder
 
-**Problem**: The RulesEngine and RulesIntegration from Phase 61 had no
-management interface — rules could only be edited by hand-editing config.json.
-Users had no way to create, update, or delete automation rules from the web UI.
-
-**Fix**:
-
-**Backend — `web/api_v1.py`** (GET/POST/PUT/DELETE `/api/v1/automations`):
-- `_load_rules()` — reads `config["integrations"]["chatwire_rules"]["rules"]`.
-- `_save_rules(rules)` — atomic-writes the updated list back to config.
-- `_validate_rule_body(body)` — validates name, trigger.type (must be one of
-  text_exact/text_contains/text_regex/always), and actions is a list.
-  Returns 400 on error.
-- `GET /api/v1/automations` — returns `{"rules": [...]}`.
-- `POST /api/v1/automations` — appends a rule; returns `{"ok": true, "index": N}`.
-- `PUT /api/v1/automations/{index}` — replaces rule at index; 404 if OOB.
-- `DELETE /api/v1/automations/{index}` — removes rule at index; 404 if OOB.
-- All endpoints gated by `X-API-Key` (existing `_AUTH` dependency).
-
-**Backend — `web/main.py`** (session-cookie auth for Settings UI):
-- `GET /api/settings/automations` — same shape as api_v1 list.
-- `POST /api/settings/automations` — same validation as api_v1 create.
-- `PUT /api/settings/automations/{index}` — replace at index.
-- `DELETE /api/settings/automations/{index}` — remove at index.
-- No separate auth dependency — covered by the existing `_auth_gate` middleware.
-
-**Frontend — `SettingsPage.tsx`**:
-- `AutomationsSection` component with compact rule list, Edit/Delete buttons,
-  dialog-based rule editor (name, trigger type, conditions, dynamic actions).
-
-**Tests** (`tests/test_automations_api.py` — 30 new):
-- Full CRUD coverage plus auth tests.
-
-## §2 What shipped in Phase 61 (2026-05-13)
-
-### feat: built-in automation rules engine (#20)
-
-**Problem**: The only way to automate actions on inbound iMessages was to write
-a Python plugin. There was no generic, declarative automation system.
-
-**Fix**: Added `integrations/rules/` — a built-in `chatwire_rules` integration
-that evaluates a list of declarative rules against every inbound iMessage.
-
-**Rule format** (under `integrations.chatwire_rules.rules` in `config.json`):
-
-```json
-{
-  "name": "greeting",
-  "trigger": {"type": "text_contains", "pattern": "hello"},
-  "conditions": {
-    "from_handles": ["+15551234567"],
-    "in_group": false
-  },
-  "actions": [
-    {"type": "reply", "text": "Hi {name}! You said: {text}"}
-  ]
-}
-```
-
-**Trigger types**: `text_exact`, `text_contains`, `text_regex`, `always`.
-**Condition keys**: `from_handles`, `not_from_handles`, `in_group`, `group_guid`.
-**Actions**: `reply`, `webhook`, `log`.
-**Rule options**: `stop_on_match: true`.
-**51 tests** in `tests/test_rules_engine.py`.
-
-## §2 What shipped in Phase 60 (2026-05-13)
-
-### feat: data exposure warning modal on first launch (#23)
-
-- `DataWarningModal.tsx`: shadcn Dialog shown on first launch.
-  localStorage key `chatwire-dismissed-data-warning` tracks dismissal.
-  `onInteractOutside` blocked — user must click "I understand".
-- Wired in `App.tsx` inside `<QueryClientProvider>`.
-- **6 tests** in `DataWarningModal.test.tsx`.
-
-## §2 What shipped in Phase 59 (2026-05-13)
-
-### feat: "edited" badge on edited iMessage bubbles
-
-- `_fetch_edited_flags(conn, rowids)` in `web/main.py`: queries
-  `COALESCE(date_edited, 0)`, catches OperationalError on macOS ≤ 12.
-- Frontend: `Message.edited?: boolean`; italic "edited" span in `MessageBubble.tsx`.
-- **8 tests** in `tests/test_edited_messages.py`.
-
-## §2 What shipped in Phase 58 (2026-05-13)
-
-### Fix: video attachments intercepted by service worker
-
-- `vite.config.ts`: replaced regex urlPattern with pathname callback;
-  changed handler to `NetworkOnly`; added `navigateFallbackDenylist`.
+(See Phase 62 notes in git history for full details.)
 
 ## §3 Open bugs
 
 None.
 
-## §4 Follow-ups (Phase 64+ candidates)
+## §4 Follow-ups (Phase 67+ candidates)
 
 **Automation rules — additional trigger types** (future):
 - `schedule` / cron-based triggers (would need APScheduler or asyncio scheduler).
-- `on_send` / outbound trigger.
 
 **Edited messages — history popover** (research needed):
 - Blocker: mbair is macOS 12 — no `date_edited` column. Needs macOS 13+ hardware
@@ -275,9 +268,12 @@ None.
   Build: `python3 -m build <plugin-dir>`
   Upload: `TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*`
 
+**Public repo sync** (allenbina/chatwire):
+- Needs rsync from chatwire-dev to /tmp/chatwire-public, then push.
+  (Was noted as done for Phase 65 but Phase 66 not yet synced.)
+
 **Other features**:
 - #41 Demo app on chatwire.app
-- #28 Trigger grammar DSL — **fully shipped** (backend Phase 64, frontend DSL toggle Phase 65).
 - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
 - #24 Discord server
 - #21, #22 Documentation
@@ -291,9 +287,10 @@ None.
   people). Show sender name only in group chats.
 
 **Visual QA** (requires interactive mbair session):
-- Automations UI — confirm dialog renders correctly in light + dark themes.
-- Automations reorder buttons — confirm ↑/↓ visually correct and disabled states work.
-- Data exposure warning modal — confirm renders correctly in light + dark themes.
+- Automations UI — confirm on_send trigger dropdown + To handles / Not to handles
+  conditions render correctly in the rule editor dialog.
+- Automations UI — confirm DSL mode toggle, reorder ↑/↓ buttons, data exposure
+  modal all render correctly in light + dark themes.
 - "edited" badge — visible only when macOS 13+ user has edited a message.
 - Per-theme custom CSS editor, theme skin ZIP buttons, theme picker with Rose Pine schemes
 - Hover action bar, tapback tooltips, mark-all-read icon (Phase 33)
@@ -310,6 +307,29 @@ None.
   animations without bundling their own copy.
 
 ## §5 Architecture notes
+
+### on_send trigger (added Phase 66)
+
+- **`integrations/base.py`** — `OutboundEvent` dataclass: `handle`, `text`,
+  `is_group`, `chat_guid`.  Added to `__all__`.
+- **`integrations/rules/__init__.py`** changes:
+  - `_compile()`: `"on_send"` joins the valid trigger set; compiles
+    `to_handles` and `not_to_handles` frozensets from `conds["to_handles"]`
+    / `conds["not_to_handles"]`.  No regex or DSL parse needed.
+  - `evaluate()`: `if tt == "on_send": continue` — direction isolation.
+  - `evaluate_outbound(text, to_handle, is_group, chat_guid)`:
+    iterates only `on_send` rules; checks `to_handles`, `not_to_handles`,
+    `in_group`, `group_guid`; respects `stop_on_match`.
+  - `RulesIntegration.on_outbound(event)`: calls `evaluate_outbound()`;
+    dispatches matched rules via `_dispatch()`.  No-ctx early return.
+  - `SETTINGS_SCHEMA`: `"on_send"` in trigger type enum; `to_handles` /
+    `not_to_handles` added to conditions properties.
+- **`bridge.py`** — `_fan_out_outbound(integrations, target, body)`:
+  constructs `OutboundEvent`; iterates integrations; calls `on_outbound`
+  when present; swallows per-integration exceptions with a warning log.
+  Called from `BridgeContextImpl.send_text()` after the actual send.
+- **`web/api_v1.py`**: `"on_send"` in `valid_triggers`; no `expr` check.
+- **35 tests** in `tests/test_on_send_rules.py`.
 
 ### Automation rules DSL (added Phase 64)
 
@@ -338,37 +358,14 @@ None.
   `dsl` without a non-empty `trigger.expr`.
 - **88 tests** in `tests/test_rules_dsl.py`.
 
-### Automation rules reordering (added Phase 63)
+### AutomationsSection (updated Phase 66, SettingsPage.tsx)
 
-- **`web/api_v1.py`** — `POST /api/v1/automations/reorder`:
-  - Body: `{"order": [i, j, k, ...]}` — permutation of `range(len(rules))`.
-  - Validation in `_reorder()`: `sorted(new_order) != list(range(n))` → returns
-    error string; caller raises `HTTPException(400, err)`.
-  - Saves reordered list via `_save_rules`.
-- **`web/main.py`** — `POST /api/settings/automations/reorder`:
-  - Same semantics, inline validation.
-- **12 tests** appended to `tests/test_automations_api.py`.
-- **Frontend**: `handleMove(idx, dir)` builds permutation by `splice` and POSTs
-  to `/api/settings/automations/reorder`.  ↑ disabled at `idx === 0`;
-  ↓ disabled at `idx === rules.length - 1`.
-
-### Automation rules REST API (added Phase 62)
-
-- **`web/api_v1.py`** — public CRUD (X-API-Key auth):
-  - `_load_rules()` / `_save_rules(rules)` — module-level helpers; patchable in tests.
-  - `_validate_rule_body(body)` — raises `HTTPException(400, ...)` for bad input.
-    Validates: isinstance(dict), name non-empty, trigger is dict with valid type,
-    actions is list.
-  - `GET /api/v1/automations` → `{"rules": [...]}`.
-  - `POST /api/v1/automations` → `{"ok": true, "index": N}`.
-  - `PUT /api/v1/automations/{index}` → `{"ok": true}` or 404.
-  - `DELETE /api/v1/automations/{index}` → `{"ok": true}` or 404.
-  - `POST /api/v1/automations/reorder` → `{"ok": true}` or 400.
-- **`web/main.py`** — Settings UI CRUD (session-cookie auth):
-  - Same 5 endpoints at `/api/settings/automations[/{index}|/reorder]`.
-  - Inline validation (mirrors api_v1 logic; no shared function to avoid import coupling).
-- **42 tests** in `tests/test_automations_api.py`; all use in-memory store patches
-  (patch.object on `_load_rules` / `_save_rules`); Python 3.8 compatible (nested `with`).
+- **`on_send` trigger**: dropdown option "On send (outbound)"; pattern input
+  hidden; conditions section shows To/Not-to handles instead of From/Not-from.
+- **`_formToApiRule`**: for `on_send`, emits `to_handles`/`not_to_handles` in
+  conditions; no `trigger.pattern`.
+- **`_apiRuleToForm`**: detects `trigger.type === 'on_send'` →
+  populates `toHandles`/`notToHandles`; clears `fromHandles`/`notFromHandles`.
 
 ### AutomationsSection (updated Phase 65, SettingsPage.tsx)
 
@@ -379,67 +376,6 @@ None.
   `_apiRuleToForm` detects `trigger.type === 'dsl'` → `{dslMode: true, dslExpr: …}`.
 - **Rule card**: DSL badge + truncated expression instead of pattern pill.
 - **22 tests** in `web/frontend/src/pages/AutomationsDslMode.test.tsx`.
-
-### AutomationsSection (updated Phase 63)
-
-- **Query key**: `['settings-automations']` (30 s stale time).
-- **Add/Edit**: dialog approach (shadcn `<Dialog>`); form state via `useState`.
-- **Delete**: direct DELETE fetch, invalidates query, toast.
-- **Reorder**: `handleMove(idx, dir: -1 | 1)` builds `order[]` via splice and
-  POSTs to `/api/settings/automations/reorder`; ↑/↓ buttons disabled at bounds.
-- **Form → API**: `_formToApiRule()` strips empty conditions.
-- **API → Form**: `_apiRuleToForm()` inverse.
-
-### Automation rules engine (added Phase 61)
-
-- **`integrations/rules/__init__.py`**:
-  - `RulesEngine` — pure class; pre-compiles regexes at startup.
-  - `RulesIntegration` — `NAME = "chatwire_rules"`, `TIER = "core"`.
-  - **Config location**: `config.json["integrations"]["chatwire_rules"]["rules"]`.
-- **51 tests** in `tests/test_rules_engine.py`.
-
-### Data exposure warning modal (added Phase 60)
-
-- **`DataWarningModal.tsx`**: localStorage key `chatwire-dismissed-data-warning`.
-- Wired in `App.tsx` inside `<QueryClientProvider>`.
-
-### Edited messages (added Phase 59)
-
-- `_fetch_edited_flags(conn, rowids)` catches `OperationalError` on macOS ≤ 12.
-- Frontend: `Message.edited?: boolean`; italic "edited" span in `MessageBubble.tsx`.
-- **macOS 12 note**: `date_edited` column absent on mbair — feature cannot be visually QA'd.
-
-### chatwire-mqtt plugin (updated Phase 57)
-
-- **Package**: `chatwire-plugins/chatwire-mqtt/` — `chatwire_mqtt/__init__.py` + `pyproject.toml`.
-- **43 tests** in `tests/test_mqtt_integration.py`.
-
-### chatwire-xmpp plugin (added Phase 56)
-
-- **Package**: `chatwire-plugins/chatwire-xmpp/` — `chatwire_xmpp/__init__.py` + `pyproject.toml`.
-
-### chatwire-ha plugin (updated Phase 55)
-
-- **Package**: `chatwire-plugins/chatwire-ha/` — `chatwire_ha/__init__.py` + `pyproject.toml`.
-- **22 tests** in `tests/test_ha_integration.py`.
-
-### Plugin registry (chatwire-plugins, updated Phase 53)
-
-- Repo: `github.com/allenbina/chatwire-plugins` — tracks `plugins.json` only.
-- 9 entries: apprise, telegram, webhook, stats, theme-rosepine, example, mqtt, ha, xmpp.
-
-### chatwire status subcommand (added Phase 51)
-
-- Function: `cmd_status()` in `chatwire_cli.py`.
-- 21 tests in `tests/test_status.py`.
-
-### img_cache startup warmer (added Phase 49)
-
-- `_img_cache_warmer()`: async task, 10 s delay, 30 days / 200 max.
-
-### Attachment image cache (added Phase 48)
-
-- `FULL_IMG_CACHE_DIR`: `~/.chatwire/img_cache`; 90-day TTL; daily evictor.
 
 ### Deploy pipeline (updated 2026-05-12)
 
@@ -460,10 +396,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 65 shipped (DSL mode toggle in AutomationsSection).
-1291 pytest (unchanged) + 218 Vitest — all green.
-mbair running v1.14.0 (git+ssh, Phase 65 code, healthy).
-Public repo allenbina/chatwire: synced to Phase 65 (2026-05-13).
+STATE: Phase 66 shipped (on_send automation trigger for outbound iMessages).
+1326 pytest (+35 new) + 218 Vitest — all green.
+mbair running v1.14.0 (git+ssh, Phase 66 code, healthy).
+Public repo allenbina/chatwire: needs rsync sync to Phase 66.
 
 Key blockers:
   - Edit history popover (#59 follow-up): mbair is macOS 12 — no date_edited column.
@@ -474,25 +410,29 @@ Key blockers:
 
 Pick a task from §4 options:
 
-Option A — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
+Option A — Sync public repo (allenbina/chatwire) to Phase 66.
+  rsync -a --checksum (no --delete) from chatwire-dev/ to /tmp/chatwire-public/
+  with excludes for dist/, node_modules/, __pycache__/, .git/
+  Then git add -A && git commit && git push in /tmp/chatwire-public/
+  After rsync, RESTORE .gitignore: git checkout -- .gitignore
+
+Option B — Schedule trigger type (cron-based automation):
+  `schedule` trigger using asyncio scheduler.
+  Fires rules at a configured cron schedule (no incoming message context).
+  Would need APScheduler or similar, or a simple asyncio.sleep loop.
+
+Option C — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Requires TWINE_TOKEN env var or ~/.pypirc.
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option B — Additional automation trigger types:
-  `schedule` / cron-based triggers using asyncio scheduler.
-  or `on_send` outbound trigger.
-
-Option C — Edited messages: history popover (blocked without macOS 13 chat.db).
-  If a chat.db snapshot is available at ~/chat.db or similar, use that.
-  Otherwise skip — cannot verify schema on macOS 12.
-
-VISUAL QA NOTE: Automations UI (including DSL mode toggle, reorder ↑/↓ buttons),
-data exposure modal, "edited" badge, pin icons, sidebar toggle buttons, hiatus indicator,
-reminder contacts picker, per-theme custom CSS editor, theme skin ZIP buttons, hover
-action bar, tapback tooltips, mark-all-read icon, Rose Pine theme picker, iOS reply
-ghost bubble, accordion animation, theme picker refresh after install, and HEIC img_cache
-warmer behavior all require an interactive session on mbair — skip and note if headless.
+VISUAL QA NOTE: on_send trigger UI (To handles / Not to handles conditions),
+Automations UI (DSL mode toggle, reorder ↑/↓ buttons), data exposure modal,
+"edited" badge, pin icons, sidebar toggle buttons, hiatus indicator,
+reminder contacts picker, per-theme custom CSS editor, theme skin ZIP buttons,
+hover action bar, tapback tooltips, mark-all-read icon, Rose Pine theme picker,
+iOS reply ghost bubble, accordion animation, theme picker refresh after install,
+and HEIC img_cache warmer behavior all require an interactive session on mbair.
 
 Run: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 Run: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
@@ -506,7 +446,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 66 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 67 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
@@ -523,4 +463,6 @@ NOTE: mbair is macOS 12.7.6 — date_edited column does not exist in chat.db the
   Edit history feature verification requires macOS 13+ hardware or a DB snapshot.
 NOTE: Python 3.8 on plinux — use nested with statements (not parenthesized form)
   in test files. No walrus operator (:=), no match statements.
+NOTE: Use asyncio.run() in new test files (not asyncio.get_event_loop().run_until_complete)
+  to avoid test_mcp.py event loop closure affecting async tests.
 ```

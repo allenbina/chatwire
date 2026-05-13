@@ -33,6 +33,7 @@ __all__ = [
     "InboundMessage",
     "Integration",
     "OfficialMessage",
+    "OutboundEvent",
     "SanitizedEvent",
     "SendOutcome",
     "SendTarget",
@@ -85,6 +86,26 @@ class SendOutcome:
     fell_back_to_sms: bool
     error: int = 0
     original_error: int = 0
+
+
+@dataclass
+class OutboundEvent:
+    """Describes one outbound text message that was just successfully sent.
+
+    Passed to ``Integration.on_outbound()`` for integrations that want to
+    react to messages the user (or another integration) sends.  Common uses:
+    logging, audit-trail webhooks, and outbound-triggered automations.
+
+    Fields mirror the inbound equivalent (``InboundMessage``) where possible:
+      handle   — recipient handle for 1:1 sends ('' for group sends).
+      text     — outbound message text (may be '' if a file was sent).
+      is_group — True when the message was sent to a group chat.
+      chat_guid — AppleScript-addressable group GUID ('' for 1:1 sends).
+    """
+    handle: str
+    text: str
+    is_group: bool
+    chat_guid: str
 
 
 class BridgeContext(Protocol):

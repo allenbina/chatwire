@@ -1,7 +1,8 @@
 """chatwire_rules — built-in automation / rules engine.
 
-Evaluates a declarative list of rules against every inbound iMessage and
-executes the configured actions (reply, webhook, log) on a match.
+Evaluates a declarative list of rules against every inbound iMessage (and
+optionally outbound sends) and executes the configured actions (reply,
+webhook, log) on a match.
 
 Rule format (under ``integrations.chatwire_rules.rules`` in config.json):
 
@@ -19,21 +20,32 @@ Rule format (under ``integrations.chatwire_rules.rules`` in config.json):
 
 Trigger types
 -------------
-  text_exact    — stripped, lowercased exact match
-  text_contains — case-insensitive substring match
-  text_regex    — case-insensitive regex search (compiled at startup)
-  always        — fires for every message (regardless of text)
+  text_exact    — stripped, lowercased exact match (inbound)
+  text_contains — case-insensitive substring match (inbound)
+  text_regex    — case-insensitive regex search (compiled at startup; inbound)
+  always        — fires for every inbound message (regardless of text)
+  dsl           — boolean expression grammar covering trigger + conditions
+  on_send       — fires for every outbound text message the user (or any
+                  integration) sends via the bridge
 
 Condition keys (all absent = no restriction)
 --------------------------------------------
-  from_handles     — sender must be in list (lowercased, case-insensitive)
-  not_from_handles — sender must NOT be in list (lowercased)
-  in_group         — true → group only; false → 1:1 only
-  group_guid       — must match this specific group chat GUID
+  Inbound rules (text_exact / text_contains / text_regex / always / dsl):
+    from_handles     — sender must be in list (lowercased, case-insensitive)
+    not_from_handles — sender must NOT be in list (lowercased)
+    in_group         — true → group only; false → 1:1 only
+    group_guid       — must match this specific group chat GUID
+
+  Outbound rules (on_send):
+    to_handles       — recipient must be in list (1:1 sends; lowercased)
+    not_to_handles   — recipient must NOT be in list (lowercased)
+    in_group         — true → group sends only; false → 1:1 sends only
+    group_guid       — must match this specific group chat GUID
 
 Action types
 ------------
   reply   — send a text reply; supports {handle}, {name}, {text} templates
+             (for on_send rules, {handle} is the recipient handle)
   webhook — HTTP POST (or configurable method) to a URL with JSON context
   log     — emit a log line at info/warning/debug/error level
 
@@ -44,9 +56,9 @@ Rule-level options
 
 Template variables for ``reply`` and ``log`` actions
 ------------------------------------------------------
-  {handle} — raw sender handle (e.g. "+15551234567")
+  {handle} — raw sender/recipient handle (e.g. "+15551234567")
   {name}   — contact display name, falls back to handle when not in address book
-  {text}   — full inbound message text (stripped)
+  {text}   — full message text (stripped)
 """
 from __future__ import annotations
 
@@ -70,10 +82,11 @@ except ImportError:  # pragma: no cover
     _HTTPX_AVAILABLE = False
 
 try:
-    from integrations.base import BridgeContext, InboundMessage, SendTarget  # type: ignore[import]
+    from integrations.base import BridgeContext, InboundMessage, OutboundEvent, SendTarget  # type: ignore[import]
 except ImportError:  # pragma: no cover — only missing in isolated unit tests
     BridgeContext = object  # type: ignore[misc,assignment]
     InboundMessage = object  # type: ignore[misc,assignment]
+    OutboundEvent = object  # type: ignore[misc,assignment]
     SendTarget = None  # type: ignore[misc,assignment]
 
 
@@ -138,7 +151,7 @@ class RulesEngine:
             if not expr:
                 raise ValueError("dsl trigger requires a non-empty 'expr' field")
             compiled_dsl = parse_dsl(expr)
-        elif trigger_type not in ("text_exact", "text_contains", "always"):
+        elif trigger_type not in ("text_exact", "text_contains", "always", "on_send"):
             raise ValueError("unknown trigger type: {!r}".format(trigger_type))
 
         conds: dict = raw.get("conditions") or {}
@@ -147,6 +160,13 @@ class RulesEngine:
         )
         not_from_handles = frozenset(
             h.lower() for h in (conds.get("not_from_handles") or []) if h
+        )
+        # on_send-specific recipient filters
+        to_handles = frozenset(
+            h.lower() for h in (conds.get("to_handles") or []) if h
+        )
+        not_to_handles = frozenset(
+            h.lower() for h in (conds.get("not_to_handles") or []) if h
         )
         # in_group: None = unrestricted; True = groups only; False = 1:1 only
         in_group = conds.get("in_group")
@@ -164,6 +184,8 @@ class RulesEngine:
             "compiled_dsl": compiled_dsl,
             "from_handles": from_handles,
             "not_from_handles": not_from_handles,
+            "to_handles": to_handles,
+            "not_to_handles": not_to_handles,
             "in_group": in_group,
             "group_guid": group_guid,
             "actions": actions,
@@ -199,6 +221,10 @@ class RulesEngine:
         for rule in self._rules:
             tt = rule["trigger_type"]
 
+            # on_send rules fire for outbound only — skip here
+            if tt == "on_send":
+                continue
+
             # ---- DSL rules: evaluator covers both trigger and conditions ----
             if tt == "dsl":
                 if rule["compiled_dsl"] is None:
@@ -228,6 +254,57 @@ class RulesEngine:
             if rule["from_handles"] and handle_lc not in rule["from_handles"]:
                 continue
             if rule["not_from_handles"] and handle_lc in rule["not_from_handles"]:
+                continue
+            if rule["in_group"] is True and not msg_is_group:
+                continue
+            if rule["in_group"] is False and msg_is_group:
+                continue
+            if rule["group_guid"] is not None and msg_chat_guid != rule["group_guid"]:
+                continue
+
+            results.append((rule["name"], rule["actions"]))
+
+            if rule["stop_on_match"]:
+                break
+
+        return results
+
+
+    def evaluate_outbound(
+        self,
+        msg_text: str | None,
+        to_handle: str | None,
+        msg_is_group: bool,
+        msg_chat_guid: str | None,
+    ) -> list[tuple[str, list[dict]]]:
+        """Return (rule_name, actions) for every ``on_send`` rule that matches.
+
+        Evaluates only rules whose ``trigger.type`` is ``"on_send"``; all
+        other rules are skipped.  Evaluation order and ``stop_on_match``
+        behave identically to :meth:`evaluate`.
+
+        Args:
+            msg_text:      outbound message text (may be None/empty)
+            to_handle:     recipient handle for 1:1 sends; '' for group sends
+            msg_is_group:  True when sending to a group chat
+            msg_chat_guid: group GUID ('' or None for 1:1 sends)
+
+        Returns:
+            List of ``(rule_name, actions)`` tuples, one per matching rule.
+        """
+        text = (msg_text or "").strip()
+        text_lc = text.lower()
+        handle_lc = (to_handle or "").lower()
+        results: list[tuple[str, list[dict]]] = []
+
+        for rule in self._rules:
+            if rule["trigger_type"] != "on_send":
+                continue
+
+            # ---- Conditions for on_send ----
+            if rule["to_handles"] and handle_lc not in rule["to_handles"]:
+                continue
+            if rule["not_to_handles"] and handle_lc in rule["not_to_handles"]:
                 continue
             if rule["in_group"] is True and not msg_is_group:
                 continue
@@ -305,6 +382,7 @@ class RulesIntegration:
                                         "text_regex",
                                         "always",
                                         "dsl",
+                                        "on_send",
                                     ],
                                 },
                                 "pattern": {
@@ -329,14 +407,28 @@ class RulesIntegration:
                                 "from_handles": {
                                     "type": "array",
                                     "title": "From handles",
-                                    "description": "Sender must be one of these handles.",
+                                    "description": "Sender must be one of these handles (inbound rules).",
                                     "items": {"type": "string"},
                                     "default": [],
                                 },
                                 "not_from_handles": {
                                     "type": "array",
                                     "title": "Not from handles",
-                                    "description": "Sender must NOT be one of these handles.",
+                                    "description": "Sender must NOT be one of these handles (inbound rules).",
+                                    "items": {"type": "string"},
+                                    "default": [],
+                                },
+                                "to_handles": {
+                                    "type": "array",
+                                    "title": "To handles",
+                                    "description": "Recipient must be one of these handles (on_send rules).",
+                                    "items": {"type": "string"},
+                                    "default": [],
+                                },
+                                "not_to_handles": {
+                                    "type": "array",
+                                    "title": "Not to handles",
+                                    "description": "Recipient must NOT be one of these handles (on_send rules).",
                                     "items": {"type": "string"},
                                     "default": [],
                                 },
@@ -457,6 +549,33 @@ class RulesIntegration:
                 except Exception as exc:
                     log.warning(
                         "chatwire_rules: rule %r action %r raised: %s",
+                        rule_name, action.get("type"), exc,
+                    )
+
+    async def on_outbound(self, event: Any) -> None:
+        """Called by the bridge after each successful outbound send.
+
+        Evaluates all ``on_send`` rules against the outbound message and
+        dispatches matching actions.  ``reply`` actions in outbound rules send
+        a follow-up iMessage back to the same recipient — use with care.
+        """
+        if self._ctx is None:
+            return
+
+        matches = self._engine.evaluate_outbound(
+            msg_text=event.text,
+            to_handle=event.handle,
+            msg_is_group=getattr(event, "is_group", False),
+            msg_chat_guid=getattr(event, "chat_guid", None),
+        )
+
+        for rule_name, actions in matches:
+            for action in actions:
+                try:
+                    await self._dispatch(action, event, rule_name)
+                except Exception as exc:
+                    log.warning(
+                        "chatwire_rules: on_send rule %r action %r raised: %s",
                         rule_name, action.get("type"), exc,
                     )
 

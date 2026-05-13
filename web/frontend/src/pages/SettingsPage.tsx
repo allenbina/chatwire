@@ -3159,7 +3159,7 @@ export function SettingsPage() {
 // Automations section — rule builder UI
 // ---------------------------------------------------------------------------
 
-type TriggerType = 'text_exact' | 'text_contains' | 'text_regex' | 'always' | 'dsl'
+type TriggerType = 'text_exact' | 'text_contains' | 'text_regex' | 'always' | 'dsl' | 'on_send'
 type ActionType = 'reply' | 'webhook' | 'log'
 
 interface RuleActionForm {
@@ -3180,6 +3180,8 @@ interface AutomationRuleForm {
   pattern: string
   fromHandles: string
   notFromHandles: string
+  toHandles: string
+  notToHandles: string
   inGroup: 'any' | 'group_only' | 'one_to_one'
   groupGuid: string
   actions: RuleActionForm[]
@@ -3191,7 +3193,8 @@ const _EMPTY_ACTION: RuleActionForm = {
 }
 const _EMPTY_RULE_FORM: AutomationRuleForm = {
   name: '', dslMode: false, dslExpr: '', triggerType: 'text_contains', pattern: '',
-  fromHandles: '', notFromHandles: '', inGroup: 'any', groupGuid: '',
+  fromHandles: '', notFromHandles: '', toHandles: '', notToHandles: '',
+  inGroup: 'any', groupGuid: '',
   actions: [{ ..._EMPTY_ACTION }], stopOnMatch: false,
 }
 
@@ -3222,13 +3225,20 @@ export function _formToApiRule(f: AutomationRuleForm): Record<string, unknown> {
   }
 
   const trigger: Record<string, unknown> = { type: f.triggerType }
-  if (f.triggerType !== 'always') trigger.pattern = f.pattern
+  if (f.triggerType !== 'always' && f.triggerType !== 'on_send') trigger.pattern = f.pattern
 
   const conditions: Record<string, unknown> = {}
-  const from = f.fromHandles.split(',').map(s => s.trim()).filter(Boolean)
-  if (from.length) conditions.from_handles = from
-  const notFrom = f.notFromHandles.split(',').map(s => s.trim()).filter(Boolean)
-  if (notFrom.length) conditions.not_from_handles = notFrom
+  if (f.triggerType === 'on_send') {
+    const to = f.toHandles.split(',').map(s => s.trim()).filter(Boolean)
+    if (to.length) conditions.to_handles = to
+    const notTo = f.notToHandles.split(',').map(s => s.trim()).filter(Boolean)
+    if (notTo.length) conditions.not_to_handles = notTo
+  } else {
+    const from = f.fromHandles.split(',').map(s => s.trim()).filter(Boolean)
+    if (from.length) conditions.from_handles = from
+    const notFrom = f.notFromHandles.split(',').map(s => s.trim()).filter(Boolean)
+    if (notFrom.length) conditions.not_from_handles = notFrom
+  }
   if (f.inGroup === 'group_only') conditions.in_group = true
   if (f.inGroup === 'one_to_one') conditions.in_group = false
   if (f.groupGuid.trim()) conditions.group_guid = f.groupGuid.trim()
@@ -3269,14 +3279,17 @@ export function _apiRuleToForm(r: Record<string, unknown>): AutomationRuleForm {
   if (inGroupRaw === true) inGroup = 'group_only'
   else if (inGroupRaw === false) inGroup = 'one_to_one'
 
+  const tt = (trigger.type as TriggerType) ?? 'text_contains'
   return {
     name: (r.name as string) ?? '',
     dslMode: false,
     dslExpr: '',
-    triggerType: (trigger.type as TriggerType) ?? 'text_contains',
+    triggerType: tt,
     pattern: (trigger.pattern as string) ?? '',
-    fromHandles: ((conds.from_handles as string[]) ?? []).join(', '),
-    notFromHandles: ((conds.not_from_handles as string[]) ?? []).join(', '),
+    fromHandles: tt !== 'on_send' ? ((conds.from_handles as string[]) ?? []).join(', ') : '',
+    notFromHandles: tt !== 'on_send' ? ((conds.not_from_handles as string[]) ?? []).join(', ') : '',
+    toHandles: tt === 'on_send' ? ((conds.to_handles as string[]) ?? []).join(', ') : '',
+    notToHandles: tt === 'on_send' ? ((conds.not_to_handles as string[]) ?? []).join(', ') : '',
     inGroup,
     groupGuid: (conds.group_guid as string) ?? '',
     actions: actions.length ? actions : [{ ..._EMPTY_ACTION }],
@@ -3290,6 +3303,7 @@ const _TRIGGER_LABELS: Record<TriggerType, string> = {
   text_regex: 'Regex',
   always: 'Always',
   dsl: 'DSL',
+  on_send: 'On send',
 }
 
 function AutomationsSection() {
@@ -3402,8 +3416,9 @@ function AutomationsSection() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Declarative trigger → action rules evaluated against every inbound iMessage.
+        Declarative trigger → action rules evaluated against inbound and outbound iMessages.
         Rules fire in order. Supports <code>reply</code>, <code>webhook</code>, and <code>log</code> actions.
+        Use <em>On send</em> trigger for outbound automation.
       </p>
 
       {isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
@@ -3541,8 +3556,9 @@ function AutomationsSection() {
                       <option value="text_exact">Exact match</option>
                       <option value="text_regex">Regex</option>
                       <option value="always">Always</option>
+                      <option value="on_send">On send (outbound)</option>
                     </select>
-                    {form.triggerType !== 'always' && (
+                    {form.triggerType !== 'always' && form.triggerType !== 'on_send' && (
                       <Input
                         value={form.pattern}
                         onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
@@ -3567,28 +3583,57 @@ function AutomationsSection() {
                 <span className="text-muted-foreground font-normal">(optional — absent = unrestricted)</span>
               </p>
               <div className="space-y-2 pl-2 border-l border-border">
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">
-                    From handles (comma-separated)
-                  </label>
-                  <Input
-                    value={form.fromHandles}
-                    onChange={e => setForm(f => ({ ...f, fromHandles: e.target.value }))}
-                    placeholder="+15551234567, +15559876543"
-                    className="text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">
-                    Not from handles (comma-separated)
-                  </label>
-                  <Input
-                    value={form.notFromHandles}
-                    onChange={e => setForm(f => ({ ...f, notFromHandles: e.target.value }))}
-                    placeholder="+15551234567"
-                    className="text-xs"
-                  />
-                </div>
+                {form.triggerType === 'on_send' ? (
+                  <>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        To handles (comma-separated)
+                      </label>
+                      <Input
+                        value={form.toHandles}
+                        onChange={e => setForm(f => ({ ...f, toHandles: e.target.value }))}
+                        placeholder="+15551234567, +15559876543"
+                        className="text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        Not to handles (comma-separated)
+                      </label>
+                      <Input
+                        value={form.notToHandles}
+                        onChange={e => setForm(f => ({ ...f, notToHandles: e.target.value }))}
+                        placeholder="+15551234567"
+                        className="text-xs"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        From handles (comma-separated)
+                      </label>
+                      <Input
+                        value={form.fromHandles}
+                        onChange={e => setForm(f => ({ ...f, fromHandles: e.target.value }))}
+                        placeholder="+15551234567, +15559876543"
+                        className="text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        Not from handles (comma-separated)
+                      </label>
+                      <Input
+                        value={form.notFromHandles}
+                        onChange={e => setForm(f => ({ ...f, notFromHandles: e.target.value }))}
+                        placeholder="+15551234567"
+                        className="text-xs"
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Chat type</label>
                   <select
