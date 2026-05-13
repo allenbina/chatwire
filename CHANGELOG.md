@@ -5,6 +5,148 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+**Automation rules engine**
+- **Built-in automation rules** (#20): Rule engine that evaluates condition/action
+  pairs on every inbound message. Rules persist to `~/.chatwire/rules.json`.
+  Supports `send_reply`, `send_to_chat`, `webhook`, `suppress`, and `log` actions.
+- **Automation rules REST API + Settings UI** (#62): Full CRUD at
+  `GET/POST/PUT/DELETE /api/ui/rules`. Settings page has a rule-builder dialog
+  with condition and action dropdowns, ordered rule list with enable/disable toggles.
+- **Automation rules reordering** (#63): ↑/↓ buttons reorder rules in the UI;
+  order is preserved in JSON and applied during evaluation.
+- **Automation rules DSL** (#28): Human-readable condition grammar
+  (e.g. `from:Alice AND contains:urgent OR group:Family`).
+  Parse errors shown inline; DSL round-trips back to structured form.
+- **DSL mode toggle** (#28 follow-up): AutomationsSection in Settings has a
+  "DSL" toggle switching between the structured editor and the raw grammar text field.
+- **`on_send` trigger** (#66): Rules can fire on outbound iMessages in addition to
+  inbound — useful for logging, Telegram mirrors, and webhook alerts.
+- **Schedule (cron) trigger** (#68): Rules can fire on a cron schedule
+  (e.g. `0 9 * * 1-5`) with no message required. Syntax hint shown in the editor.
+
+**Anti-spam / message fuse**
+- **Anti-spam lockout hardening** (#70): Six-step message fuse — counting (steps 1-3),
+  timed cooldown (steps 4-5), and permanent lockout (step 6). Unlock via
+  `CW-XXXX-XXXX` challenge code at `chatwire.app/unlock`. Defense-in-depth: fuse
+  is checked inside every raw send function, not only at the API layer. Telegram,
+  MQTT, and XMPP plugins all surface the lockout message to the operator.
+  Admin setup guide at `docs/admin/unlock-setup.md`.
+- **CooldownBanner** (#71): ComposeBox shows a live-countdown banner with a
+  TriangleAlert icon at fuse steps 1-3. Textarea is hidden during cooldown.
+- **LockoutTopBanner** (#71): Persistent thin warning bar at the top of every Layout
+  page at steps 4+. Polls `fuse-status` every 30 s. Step 4-5 says "cooling down";
+  step 6 says "permanently locked."
+- **LockoutFooterNote** (#73): At steps 4+, ComposeBox replaces the textarea with a
+  styled footer note directing users to Settings. Step 4-5: "cooling down";
+  step 6: "permanently locked." `data-testid="lockout-footer-note"`.
+- **ChatPage lockout layout** (#73): When locked out, ChatPage preserves the
+  ConversationHeader and ComposeBox (showing LockoutFooterNote) around the
+  LockoutOverlay, so users retain context and guidance.
+
+**Hiatus and reminders**
+- **Hiatus mode sidebar indicator**: Sidebar shows an active-hiatus badge while
+  hiatus is enabled.
+- **Hiatus dismiss button**: "End" button in the sidebar hiatus banner ends hiatus
+  immediately without navigating to Settings.
+- **Hiatus auto-off timer**: Hiatus auto-expires after the configured duration;
+  a live countdown is shown in the sidebar banner and in Settings.
+- **Hiatus settings countdown**: SettingsPage shows a live countdown to the hiatus
+  end time alongside the toggle.
+- **Reminder contacts picker**: Filter reminder notifications to a configurable list
+  of specific contacts.
+- **Pinnable settings** (#36): Pin the hiatus and reminder toggles to the sidebar
+  footer for one-click access from any page.
+
+**Message display**
+- **iOS reply ghost bubble** (Bug 12): Message bubbles with a `reply_to_guid` show
+  an iOS-style quoted-reply ghost above the bubble; clicking it scrolls to the
+  original message.
+- **Reply ghost — hide sender in 1:1 threads** (#69): In direct-message threads the
+  sender name is omitted from the reply ghost, matching native iOS behavior.
+- **"edited" badge** (#59): Messages edited by the sender show a small "edited" label
+  (requires macOS 13+ for `date_edited` column in `chat.db`).
+- **SMS text-pattern reactions** (#5): Sending a reaction to an SMS thread inserts a
+  formatted text response (e.g. "Loved "…"") since SMS does not support tapbacks.
+- **Tapback corner overlay** (#5): Tapback reaction emoji shown as a small badge
+  anchored to the bottom-right corner of the message bubble.
+
+**Themes**
+- **Theme color editor** (#30): Per-theme CSS variable overrides editable from the
+  Appearance section in Settings; changes are scoped and saved per theme name.
+- **Custom notification sounds** (#73): Configure a custom audio file path for
+  message notifications in the Appearance section.
+- **Theme import preference cascade** (#31): Theme loading respects a priority order:
+  user-selected → plugin default → built-in default.
+- **Color picker enhancements** (#39): Semantic color picker in the theme editor shows
+  role labels and live preview swatches.
+- **Sliding highlight** (#31): Sidebar conversation items and footer links have an
+  animated sliding highlight on hover.
+- **Per-theme custom CSS** (#15): Each installed theme pack can include scoped CSS
+  overrides. CSS is sanitized (strips `@import` and external `url()`) before
+  application. Settings shows a warning when the active theme contains custom CSS.
+- **Theme skin ZIP** (#43): Export the active theme (variables + custom CSS) as a ZIP
+  file, and import a previously exported ZIP to restore it.
+- **Themes filter tab**: Plugins page has a "Themes" tab that filters the installed
+  plugin list to theme plugins only.
+- **Rose Pine theme plugin**: Extracted from core into `chatwire-theme-rosepine`.
+  Provides Moon, Dawn, and Main color schemes. Install with
+  `pipx inject chatwire chatwire-theme-rosepine`.
+- **Theme picker refresh** (#47): Theme picker re-queries the server after a plugin
+  is installed or uninstalled, so new themes appear immediately.
+- **Unified theme dropdown + sun/moon toggle**: A single color-scheme dropdown in
+  the sidebar footer replaces the previous scattered controls.
+
+**Performance**
+- **Photo CDN / img\_cache** (#48): HEIC attachments are converted to JPEG on first
+  request and cached under `~/.chatwire/img_cache/`. All `/attachment` paths now
+  carry `Cache-Control: max-age=86400` headers.
+- **HEIC startup warmer** (#49): On bridge launch, recent HEIC attachments are
+  pre-converted in a background thread, warming the cache before any UI request.
+
+**Plugins**
+- **chatwire-mqtt** (#53): MQTT plugin relaying inbound messages to an MQTT broker.
+  Supports TLS (`use_tls`, `ca_cert`), configurable topic prefix, and QoS.
+  Outbound relay (MQTT → iMessage) added in follow-up (#57).
+  Install: `pipx inject chatwire chatwire-mqtt`.
+- **chatwire-ha** (#55): Home Assistant plugin. `allowed_senders` config option
+  restricts which contacts can trigger HA commands.
+- **chatwire-xmpp**: XMPP relay plugin. See `docs/plugins/xmpp.md`.
+
+**CLI and admin**
+- **`chatwire status`** (#51): New subcommand showing the live status of the bridge,
+  web, and toolbar processes along with PID and uptime.
+- **`chatwire uninstall`** now removes the `img_cache` directory.
+
+**Privacy**
+- **Data exposure warning** (#23): A modal on first launch explains which data
+  chatwire can access (messages, contacts, attachments). The user must dismiss it;
+  it is not shown again once acknowledged.
+
+### Fixed
+- **Unlock fallback URL**: Updated `chatwire.app/unlock` throughout (`chat_send.py`,
+  `LockoutOverlay.tsx`, `test_lockout_hardening.py`); previously pointed to
+  `chatwireapp.com/unlock`.
+- **Lightbox backdrop close**: Clicking the backdrop outside a media lightbox now
+  closes it.
+- **Tapback query**: Renamed SQL alias `inner` → `tb` (reserved keyword that broke
+  the tapback query on some SQLite versions).
+- **Self-chat dedup**: `GROUP BY m.ROWID` eliminates duplicate rows when a message
+  appears in multiple chat handles.
+- **Reply detection**: Uses `thread_originator_guid` (not `reply_to_guid`) for
+  thread-chaining detection to filter iMessage thread chains from inline replies.
+- **Service worker**: No longer intercepts `/attachment` URLs as a navigation fallback,
+  preventing blank screens when opening attachments directly.
+- **Unread badge**: Replaced the iMessage unread count badge (unreliable) with
+  chatwire's own unseen-message dot.
+- **Scroll on image load**: `ResizeObserver` triggers a re-scroll when an image
+  finishes loading so the message list stays anchored to the bottom (#6).
+- **Hiatus/reminder settings**: Config is now read from `cfg["web"]` (not root) in
+  the notifications endpoint.
+- **SMS reaction unicode**: SMS fallback reaction text now uses the full emoji
+  character instead of an escaped codepoint.
+
 ## [1.14.0] - 2026-05-11
 
 ### Added
