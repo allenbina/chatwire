@@ -19,6 +19,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ChatPage } from './pages/ChatPage'
 import { LoginPage } from './pages/LoginPage'
 import { Toaster } from '@/components/ui/sonner'
+import { DataWarningModal } from './components/DataWarningModal'
 
 // Lazy chunks — split out of the main bundle
 const SettingsPage = lazy(() =>
@@ -96,6 +97,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      <DataWarningModal />
       <Toaster />
     </QueryClientProvider>
   )

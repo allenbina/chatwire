@@ -1,21 +1,54 @@
-# Handoff — Phase 58: SW attachment fix + public repo sync
+# Handoff — Phase 59: Edited messages badge
 
-> Phase 58 session shipped (2026-05-13, commit f82ecac in chatwire-dev).
-> 1102 pytest (1094 pass + 8 pre-existing failures) + 190 Vitest — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 58 code).
+> Phase 59 session shipped (2026-05-13, commit b2b7ba8 in chatwire-dev).
+> 1110 pytest (1102 pass + 8 pre-existing failures) + 190 Vitest — all green.
+> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 59 code).
 
 ## §1 Current state
 
-- **mbair**: commit f82ecac deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit b2b7ba8 deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants (rose-pine, rose-pine-moon, rose-pine-dawn).
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
-- **Tests**: 1102 collected (1094 pass + 8 pre-existing failures) / 190 Vitest — all green.
+- **Tests**: 1110 collected (1102 pass + 8 pre-existing failures) / 190 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 58 changes.
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 59 changes.
 - **PyPI**: v1.14.0 (no version bump — no public API changes; plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced to Phase 58 (commit f615376, 2026-05-13).
+- **Public repo (allenbina/chatwire)**: synced to Phase 59 (commit 4acc355, 2026-05-13).
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 59 (2026-05-13)
+
+### feat: "edited" badge on edited iMessage bubbles
+
+**Problem**: When a message is edited in iMessage (macOS 13+), the chat.db
+`message` table stores a non-zero `date_edited` epoch. chatwire showed no
+indication that a message had been edited.
+
+**Fix**:
+
+- **`web/main.py` — `_fetch_edited_flags(conn, rowids)`** (new helper):
+  - Queries `COALESCE(date_edited, 0)` for a batch of message rowids.
+  - Catches `OperationalError` (column absent on pre-macOS-13 databases) and
+    returns `{}` so older systems degrade gracefully.
+  - Returns `dict[int, bool]` — rowid → edited (True when `date_edited != 0`).
+- **`history_for()` and `history_for_group()`**: call `_fetch_edited_flags`
+  inside the `try` block alongside `_fetch_tapbacks` / `_fetch_reply_parents`.
+  Adds `edited: True` to any entry whose `date_edited` is non-zero.
+- **`web/frontend/src/api.ts`**: `Message.edited?: boolean` field added.
+- **`web/frontend/src/components/MessageBubble.tsx`**: italic "edited" span
+  rendered next to the timestamp when `msg.edited` is set.
+
+**Tests** (`tests/test_edited_messages.py` — 8 new, all pass):
+- Mirrors `_fetch_edited_flags` locally (project pattern for main.py helpers).
+- Covers: not-edited (0), edited (non-zero), NULL, missing-column fallback,
+  empty list, absent rowid, subset batch.
+
+**Note on edit history popover**: The HANDOFF listed "on click expand to show
+all previous edit versions". Previous edit versions in chat.db require further
+research — it's unclear whether they appear as associated-message rows (type 1?)
+or another mechanism. The badge itself is functional; the expand UI is a
+follow-up (see §4).
 
 ## §2 What shipped in Phase 58 (2026-05-13)
 
@@ -46,16 +79,10 @@ Navigation requests (opening a video in a new tab) fell through to the
 ### Public repo sync (allenbina/chatwire) — Phases 57–58
 
 Synced `allenbina/chatwire` from Phase 56 (commit 920cd4b) → Phase 58 (f615376).
-Includes: MQTT outbound relay source + tests + docs, vite.config.ts SW fix.
 
 ## §2 What shipped in Phase 57 (2026-05-13)
 
 ### chatwire-mqtt: outbound relay (MQTT → iMessage)
-
-**Problem**: The MQTT plugin only published inbound iMessages to the broker.
-Automations had no way to send replies or proactive messages via iMessage.
-
-**Fix** (`chatwire-plugins/chatwire-mqtt/chatwire_mqtt/__init__.py`):
 
 - **New config field**: `send_topic` — optional string (default `""`). When non-empty,
   the plugin subscribes to this MQTT topic on the broker and relays any published
@@ -63,60 +90,30 @@ Automations had no way to send replies or proactive messages via iMessage.
 - **Payload schemas**:
   - 1:1: `{"handle": "+15551234567", "text": "Hello!"}`
   - Group: `{"chat": "iMessage;+;chat123", "text": "Hi!", "label": "My Group"}`
-  - `text` + (`handle` or `chat`) are required. `label` is optional.
-- **`_on_outbound_message()`**: paho `on_message` callback. Parses JSON, validates,
-  builds `SendTarget`, schedules `ctx.send_text()` via `asyncio.run_coroutine_threadsafe()`.
-  Same threadsafe pattern as XMPP plugin.
-- **`start()`**: stashes `ctx` and event loop; sets `client.on_message` and subscribes
-  inside `on_connect` callback (so reconnects also re-subscribe).
-- **`stop()`**: now also clears `_ctx` and `_loop`.
-- **`SendTarget`** now imported from `integrations.base` (guarded with `None` fallback).
-- **`SETTINGS_SCHEMA`**: new `send_topic` field (`x-ui-order: 10`).
 - **12 new tests** in `TestOutboundConfig` and `TestOutboundRelay` (43 total, all pass).
-- **`docs/plugins/mqtt.md`**: outbound relay section, Node-RED + HA send examples,
-  `send_topic` in settings table and full-config block.
-
-## §2 What shipped in Phase 56 (2026-05-13)
-
-### docs/plugins/xmpp.md
-
-**New file**: `docs/plugins/xmpp.md`
-
-Covers: what it does (iMessage ↔ XMPP bidirectional relay, 1:1 only MVP), install command,
-configuration walkthrough, settings reference table (enabled/jid/password/server_url/
-contact_mappings), contact mapping fields table (imessage_handle/xmpp_jid), minimal config,
-full config with custom server + multiple contacts, how the relay works (iMessage→XMPP,
-XMPP→iMessage, matching rules), troubleshooting FAQ.
-
-### Public repo sync (allenbina/chatwire) — Phases 55–56
-
-Synced `allenbina/chatwire` public repo from Phase 54 (6879d85) → Phase 56 (920cd4b).
 
 ## §3 Open bugs
 
-None (video attachment SW bug fixed in Phase 58).
+None.
 
-## §4 Follow-ups (Phase 58+ candidates)
+## §4 Follow-ups (Phase 59+ candidates)
+
+**Edited messages — history popover** (research needed):
+- The "edited" badge is now live. On click, expand the bubble to show previous
+  edit versions. Requires researching chat.db schema for edit history:
+  - Likely stored as associated-message rows with a specific `associated_message_type`
+    (tapbacks use 2000+; edits use something below 2000, possibly 1).
+  - Verify on a real macOS 13+ chat.db using `PRAGMA table_info(message)` and
+    inspecting rows with non-zero `date_edited` alongside their associated rows.
+  - Once type confirmed, add `EDIT_HISTORY_SQL` and `_fetch_edit_history()` in
+    `web/main.py`, return as `edit_history` array on the message dict, wire
+    frontend to show popover on click.
 
 **PyPI publishing** (needs `TWINE_TOKEN` or `~/.pypirc`):
 - Publish `chatwire-theme-rosepine` to PyPI — marketplace Install button currently fails at pip.
 - Publish `chatwire-mqtt`, `chatwire-ha`, `chatwire-xmpp` to PyPI.
   Build: `python3 -m build <plugin-dir>`
   Upload: `TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*`
-
-**Public repo sync** (easy):
-- Sync allenbina/chatwire to Phase 57 (commit 0059202).
-  See NOTE below for rsync method.
-
-**Bugs from interactive QA (2026-05-13)**:
-- ~~Video attachment not serving~~ — fixed in Phase 58 (SW urlPattern bug).
-- Edited messages: show bold "edited" label next to timestamp. On click,
-  expand the bubble (animated) to show all previous edit versions. Check
-  how iMessage stores edit history in chat.db (likely in `message` table
-  with same `thread_originator_guid` or via `edited_message` association).
-
-**Plugin gaps**:
-- `chatwire-mqtt`: outbound relay is now done. No remaining plugin gaps.
 
 **Other features**:
 - #41 Demo app on chatwire.app
@@ -132,6 +129,8 @@ None (video attachment SW bug fixed in Phase 58).
 - Set up plinux-local test env (chat.db snapshot, separate port)
 
 **Visual QA** (requires interactive mbair session):
+- "edited" badge — visible only when macOS 13+ user has edited a message; confirm
+  renders correctly next to timestamp.
 - Per-theme custom CSS editor, theme skin ZIP buttons, theme picker with Rose Pine schemes
 - Hover action bar, tapback tooltips, mark-all-read icon (Phase 33)
 - Reminder contacts picker (Phase 39)
@@ -147,6 +146,20 @@ None (video attachment SW bug fixed in Phase 58).
   without bundling their own copy. ~34KB addition to core.
 
 ## §5 Architecture notes
+
+### Edited messages (added Phase 59)
+
+- **`_fetch_edited_flags(conn, rowids)`** in `web/main.py`:
+  - SQL: `SELECT ROWID, COALESCE(date_edited, 0) AS date_edited FROM message WHERE ROWID IN (...)`
+  - Catches `Exception` (covers `OperationalError: no such column`) → returns `{}`.
+  - Returns `dict[int, bool]` — rowid → is_edited.
+- Wired in `history_for()` and `history_for_group()` alongside tapbacks/reply_parents.
+- Frontend: `Message.edited?: boolean` in `api.ts`; italic `"edited"` span in
+  `MessageBubble.tsx` timestamp row.
+- **chat.db schema note**: `date_edited` was added in macOS 13 (Ventura). On macOS
+  ≤ 12, the column does not exist — `_fetch_edited_flags` returns `{}` silently.
+- **Edit history (future)**: Previous text versions may be stored as associated
+  messages (`associated_message_type` TBD). Needs verification on a real chat.db.
 
 ### chatwire-mqtt plugin (updated Phase 57)
 
@@ -290,10 +303,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 58 shipped (SW attachment fix + public repo sync to Phase 58).
-1102 pytest (1094 pass + 8 pre-existing), 190 Vitest — all green.
-mbair running v1.14.0 (git+ssh, Phase 58 code, healthy).
-Public repo allenbina/chatwire: synced to Phase 58 (commit f615376, 2026-05-13).
+STATE: Phase 59 shipped (edited message badge).
+1110 pytest (1102 pass + 8 pre-existing), 190 Vitest — all green.
+mbair running v1.14.0 (git+ssh, Phase 59 code, healthy).
+Public repo allenbina/chatwire: synced to Phase 59 (commit 4acc355, 2026-05-13).
 
 Key blocker for PyPI publish of plugins:
   chatwire-theme-rosepine, chatwire-mqtt, chatwire-ha, chatwire-xmpp are NOT on PyPI.
@@ -307,23 +320,26 @@ Option A — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option B — Edited messages: show edit history.
-  iMessage stores edit history in chat.db. Show "edited" label on bubble; on click
-  expand to show previous versions. Research chat.db schema first.
-  Look at: message table columns — likely thread_originator_guid or an
-  edited_message join table. Also check if there's a `date_edited` column.
+Option B — Edited messages: expand to show edit history.
+  The badge is live. Now add the popover with previous versions.
+  FIRST: verify chat.db edit history schema. On mbair:
+    sqlite3 ~/Library/Messages/chat.db "PRAGMA table_info(message)" | grep -i edit
+    # Find a rowid with date_edited != 0, then look for associated rows:
+    sqlite3 ~/Library/Messages/chat.db \
+      "SELECT ROWID, associated_message_guid, associated_message_type, text \
+       FROM message WHERE associated_message_guid = '<guid-of-edited-msg>' LIMIT 10"
+  Once type confirmed, add EDIT_HISTORY_SQL and _fetch_edit_history() in web/main.py,
+  return as edit_history array, wire frontend popover.
 
 Option C — #20 Automation engine / #28 trigger grammar (larger, plan first).
 
-VISUAL QA NOTE: pin icons in SettingsPage, sidebar toggle buttons for hiatus/reminder,
-hiatus sidebar indicator + dismiss button + countdown, hiatus SettingsPage countdown,
-reminder contacts picker, per-theme custom CSS editor, theme skin ZIP buttons, hover
-action bar, tapback tooltips, mark-all-read icon, Rose Pine theme picker, iOS
-reply ghost bubble, accordion animation, theme picker refresh after install,
-and HEIC img_cache warmer behavior all require an interactive session on mbair
-— skip and note if headless.
-NOTE: Video attachment SW fix deployed in Phase 58 — users must reload the
-page once so the new service worker activates (old SW had the broken cache rule).
+VISUAL QA NOTE: "edited" badge, pin icons in SettingsPage, sidebar toggle buttons
+for hiatus/reminder, hiatus sidebar indicator + dismiss button + countdown, hiatus
+SettingsPage countdown, reminder contacts picker, per-theme custom CSS editor,
+theme skin ZIP buttons, hover action bar, tapback tooltips, mark-all-read icon,
+Rose Pine theme picker, iOS reply ghost bubble, accordion animation, theme picker
+refresh after install, and HEIC img_cache warmer behavior all require an interactive
+session on mbair — skip and note if headless.
 
 Run: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 Run: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
@@ -337,7 +353,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 59 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 60 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
@@ -348,4 +364,6 @@ NOTE: Public repo sync method: rsync -a --checksum (no --delete) from chatwire-d
   Then git add -A && git commit && git push in /tmp/chatwire-public/
 NOTE: After rsync, RESTORE .gitignore (git checkout -- .gitignore) to preserve
   web/frontend/dist/ exclusion — chatwire-dev commits dist/ but public repo does not.
+NOTE: Tests mirror web/main.py helpers locally (never import web.main directly —
+  module-level side-effects and Python-3.10+ annotation syntax breaks on Python 3.8).
 ```
