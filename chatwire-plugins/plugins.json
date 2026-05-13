@@ -58,5 +58,35 @@
     "homepage": "https://github.com/allenbina/chatwire-example",
     "icon": "🧪",
     "tags": ["ui"]
+  },
+  {
+    "name": "chatwire-mqtt",
+    "pypi": "chatwire-mqtt",
+    "description": "Publish every inbound iMessage to an MQTT broker. Integrates with Home Assistant, Node-RED, OpenHAB, and any MQTT subscriber.",
+    "author": "allenbina",
+    "signed": true,
+    "homepage": "https://github.com/allenbina/chatwire-mqtt",
+    "icon": "📡",
+    "tags": ["action"]
+  },
+  {
+    "name": "chatwire-ha",
+    "pypi": "chatwire-ha",
+    "description": "Control Home Assistant automations, scenes, and services by typing keywords into iMessage.",
+    "author": "allenbina",
+    "signed": true,
+    "homepage": "https://github.com/allenbina/chatwire-ha",
+    "icon": "🏠",
+    "tags": ["action"]
+  },
+  {
+    "name": "chatwire-xmpp",
+    "pypi": "chatwire-xmpp",
+    "description": "Bridge iMessage ↔ XMPP (Jabber) for whitelisted contacts. Two-way relay via slixmpp.",
+    "author": "allenbina",
+    "signed": true,
+    "homepage": "https://github.com/allenbina/chatwire-xmpp",
+    "icon": "💬",
+    "tags": ["bridge"]
   }
 ]
