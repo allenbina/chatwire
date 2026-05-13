@@ -242,12 +242,18 @@ class _FuseState:
             if self._step == 0:
                 return
             if self._step >= 6:
-                raise BroadcastBlockedError(
-                    "Outbound sending is permanently locked. "
-                    "Request an unlock code at chatwireapp@gmail.com.",
-                    None,
-                    step=self._step,
-                )
+                # Build a message that includes the challenge code + form URL
+                # so every entry point (plugins, API, CLI) shows the same info.
+                cw_code = _read_unlock_code()
+                form_url = _get_unlock_form_url() or "https://chatwire.app/unlock"
+                if cw_code:
+                    msg = (
+                        f"Chatwire locked. Code: {cw_code}. "
+                        f"Request unlock: {form_url}"
+                    )
+                else:
+                    msg = f"Chatwire locked. Request unlock: {form_url}"
+                raise BroadcastBlockedError(msg, None, step=self._step)
             if self._cooldown_until is not None:
                 remaining = self._cooldown_until - time.time()
                 if remaining > 0:
@@ -704,6 +710,9 @@ def _service_const(service: str) -> str:
 
 
 def send_text(handle: str, body: str, service: str = "iMessage") -> None:
+    # Defense-in-depth: enforce the fuse even if the caller skipped
+    # check_send_guard().  BroadcastBlockedError propagates to the caller.
+    _fuse.check()
     svc = _service_const(service)
     script = f'''
     tell application "Messages"
@@ -717,6 +726,8 @@ def send_text(handle: str, body: str, service: str = "iMessage") -> None:
 
 
 def send_file(handle: str, path: Path, service: str = "iMessage") -> None:
+    # Defense-in-depth: fuse check before the osascript call.
+    _fuse.check()
     svc = _service_const(service)
     script = f'''
     tell application "Messages"
@@ -735,6 +746,8 @@ def send_file(handle: str, path: Path, service: str = "iMessage") -> None:
 # fallback for groups — the service is fixed by how the chat was created.
 
 def send_text_to_chat(chat_guid: str, body: str) -> None:
+    # Defense-in-depth: fuse check before the osascript call.
+    _fuse.check()
     script = f'''
     tell application "Messages"
         set targetChat to chat id "{_escape(chat_guid)}"
@@ -746,6 +759,8 @@ def send_text_to_chat(chat_guid: str, body: str) -> None:
 
 
 def send_file_to_chat(chat_guid: str, path: Path) -> None:
+    # Defense-in-depth: fuse check before the osascript call.
+    _fuse.check()
     script = f'''
     tell application "Messages"
         set targetChat to chat id "{_escape(chat_guid)}"

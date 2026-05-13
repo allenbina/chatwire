@@ -358,15 +358,15 @@ class TestMcpIntegration:
         import asyncio
         integ = McpIntegration({})
         ctx = MagicMock()
-        asyncio.get_event_loop().run_until_complete(integ.start(ctx))
+        asyncio.run(integ.start(ctx))
 
     def test_stop_does_not_raise(self):
         import asyncio
         integ = McpIntegration({})
-        asyncio.get_event_loop().run_until_complete(integ.stop())
+        asyncio.run(integ.stop())
 
     def test_on_inbound_does_not_raise(self):
         import asyncio
         integ = McpIntegration({})
         msg = MagicMock()
-        asyncio.get_event_loop().run_until_complete(integ.on_inbound(msg))
+        asyncio.run(integ.on_inbound(msg))

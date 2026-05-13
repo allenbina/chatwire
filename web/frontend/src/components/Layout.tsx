@@ -13,7 +13,7 @@
 import { ReactNode, useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LogOut, Settings, Puzzle, Palette, ScrollText, Sun, Moon, CheckCheck, PauseCircle, Bell } from 'lucide-react'
+import { LogOut, Settings, Puzzle, Palette, ScrollText, Sun, Moon, CheckCheck, PauseCircle, Bell, TriangleAlert } from 'lucide-react'
 import { useChatStore } from '../store'
 import { useTheme } from '../hooks/useTheme'
 import { usePinnedSettings } from '../hooks/usePinnedSettings'
@@ -21,7 +21,7 @@ import { SlidingHighlight } from './SlidingHighlight'
 import { ConversationList } from './ConversationList'
 import { SlotRenderer } from '../plugins/SlotRenderer'
 import { useOnline } from '../hooks/useOnline'
-import { fetchConversations, markAllSeen } from '../api'
+import { fetchConversations, markAllSeen, getFuseStatus } from '../api'
 import {
   Sheet,
   SheetContent,
@@ -342,11 +342,54 @@ function SidebarContent() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Persistent lockout banner — shown at the top of every Layout page when
+// the anti-spam fuse is at step 4+ (LockoutOverlay only covers the chat view;
+// this banner ensures Settings / Plugins / Logs pages also communicate the
+// locked state).
+// ---------------------------------------------------------------------------
+
+function LockoutTopBanner() {
+  const { data: fuseStatus } = useQuery({
+    queryKey: ['fuse-status'],
+    queryFn: getFuseStatus,
+    staleTime: 0,
+    refetchInterval: 30_000,
+  })
+
+  if (!fuseStatus?.locked || fuseStatus.step < 4) return null
+
+  const isPermanent = fuseStatus.step >= 6
+
+  return (
+    <div
+      role="alert"
+      aria-live="polite"
+      className="flex items-center gap-2 px-4 py-1.5 text-xs font-medium
+                 bg-destructive/10 border-b border-destructive/20 text-destructive"
+      data-testid="lockout-top-banner"
+    >
+      <TriangleAlert className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+      <span className="flex-1">
+        {isPermanent
+          ? 'Outbound messaging permanently locked — enter unlock code in Settings to restore.'
+          : 'Outbound messaging locked — cooling down. Check Settings for details.'}
+      </span>
+      <Link
+        to="/settings"
+        className="underline hover:no-underline flex-shrink-0"
+      >
+        Settings
+      </Link>
+    </div>
+  )
+}
+
 export function Layout({ children }: LayoutProps) {
   const { sidebarOpen, setSidebarOpen } = useChatStore()
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Skip-nav link */}
       <a
         href="#messages"
@@ -357,6 +400,12 @@ export function Layout({ children }: LayoutProps) {
       >
         Skip to messages
       </a>
+
+      {/* Persistent lockout banner — visible from any page when fuse step ≥ 4 */}
+      <LockoutTopBanner />
+
+      {/* ── App shell: sidebar + main (fills remaining height) ── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
       {/* ── Desktop sidebar (always visible on md+) ── */}
       <aside className="hidden md:flex flex-col flex-shrink-0 w-[var(--sidebar-width)] h-full
@@ -396,6 +445,7 @@ export function Layout({ children }: LayoutProps) {
 
         {children}
       </main>
+      </div>{/* end app shell */}
     </div>
   )
 }

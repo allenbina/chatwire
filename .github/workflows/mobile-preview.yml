@@ -20,11 +20,6 @@ on:
     paths:
       - 'packages/mobile/**'
       - 'packages/shared/**'
-  push:
-    branches: [main]
-    paths:
-      - 'packages/mobile/**'
-      - 'packages/shared/**'
   workflow_dispatch:
 
 concurrency:

@@ -300,5 +300,5 @@ class TestIntegrationProtocol:
         import asyncio
         ctx = MagicMock()
         inst = _make()
-        asyncio.get_event_loop().run_until_complete(inst.start(ctx))
-        asyncio.get_event_loop().run_until_complete(inst.stop())
+        asyncio.run(inst.start(ctx))
+        asyncio.run(inst.stop())

@@ -14,7 +14,7 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ImagePlus, Send } from 'lucide-react'
+import { ImagePlus, Send, TriangleAlert } from 'lucide-react'
 import { sendMessage, sendFile, getFuseStatus } from '../api'
 import { playSentSound } from '../hooks/useSounds'
 import { useChatStore, nextOptimisticId } from '../store'
@@ -43,8 +43,9 @@ function formatCountdown(seconds: number): string {
 function CooldownBanner({ countdown }: { countdown: number | null }) {
   return (
     <div className="rounded-lg border border-amber-500/40 bg-amber-50/5 px-4 py-3 text-sm">
-      <p className="font-medium text-amber-600 dark:text-amber-400">
-        ⏸ Sends paused{countdown != null && countdown > 0 ? ` for ${formatCountdown(countdown)}` : ''} — chatwire detected a broadcast pattern.
+      <p className="font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+        <TriangleAlert className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+        Sends paused{countdown != null && countdown > 0 ? ` for ${formatCountdown(countdown)}` : ''} — chatwire detected a broadcast pattern.
       </p>
       <p className="text-xs text-muted-foreground mt-1">Normal chatting resumes soon.</p>
     </div>

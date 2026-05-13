@@ -18,7 +18,7 @@ import { getFuseStatus, postUnlock, type FuseStatus } from '../api'
 // Constants
 // ---------------------------------------------------------------------------
 
-const UNLOCK_FORM_FALLBACK = 'https://chatwireapp.com/unlock'
+const UNLOCK_FORM_FALLBACK = 'https://chatwire.app/unlock'
 
 function getUnlockFormUrl(fromApi?: string | null): string {
   // Priority: API config → window injection → hard-coded fallback

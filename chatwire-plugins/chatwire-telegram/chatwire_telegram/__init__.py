@@ -164,6 +164,20 @@ class TelegramIntegration:
             uid = update.effective_user.id if update.effective_user else None
             return uid in allowed
 
+        async def _reply_lockout_error(update: Any, exc: Exception) -> None:
+            """Reply to the Telegram user with a human-readable lockout message."""
+            try:
+                from chat_send import BroadcastBlockedError, RateLimitError  # noqa: PLC0415
+            except ImportError:
+                return
+            msg_obj = getattr(update, "message", None)
+            if msg_obj is None:
+                return
+            if isinstance(exc, BroadcastBlockedError):
+                await msg_obj.reply_text(f"Chatwire locked: {exc}")
+            elif isinstance(exc, RateLimitError):
+                await msg_obj.reply_text(f"Rate limit: {exc}")
+
         async def cmd_send(update: Any, ctx_: Any) -> None:
             if not await _guard(update, ctx_):
                 return
@@ -174,7 +188,11 @@ class TelegramIntegration:
             contact, text = args[0], " ".join(args[1:])
             if SendTarget is not None:
                 target = SendTarget(kind="handle", value=contact, label=contact)
-                await self._ctx.send_text(target, text)
+                try:
+                    await self._ctx.send_text(target, text)
+                except Exception as exc:
+                    await _reply_lockout_error(update, exc)
+                    raise
 
         async def on_message(update: Any, ctx_: Any) -> None:
             if not await _guard(update, ctx_):
@@ -186,10 +204,18 @@ class TelegramIntegration:
             # Default: reply to the last active conversation
             if self._last_handle and SendTarget is not None:
                 target = SendTarget(kind="handle", value=self._last_handle, label=self._last_handle)
-                await self._ctx.send_text(target, text)
+                try:
+                    await self._ctx.send_text(target, text)
+                except Exception as exc:
+                    await _reply_lockout_error(update, exc)
+                    raise
             elif self._last_group_guid and SendTarget is not None:
                 target = SendTarget(kind="chat", value=self._last_group_guid, label="Group")
-                await self._ctx.send_text(target, text)
+                try:
+                    await self._ctx.send_text(target, text)
+                except Exception as exc:
+                    await _reply_lockout_error(update, exc)
+                    raise
             else:
                 await msg.reply_text("No active conversation — use /send <contact> <message>")
 

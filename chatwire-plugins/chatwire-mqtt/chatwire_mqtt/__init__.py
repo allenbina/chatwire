@@ -110,6 +110,38 @@ except ImportError:  # pragma: no cover
     _HAS_LOG_STREAM = False
 
 
+def _log_send_future_error(fut: Any, label: str) -> None:
+    """Done-callback for run_coroutine_threadsafe futures.
+
+    Logs BroadcastBlockedError / RateLimitError so silent swallowing of
+    anti-spam blocks is avoided.  Never raises (callbacks must not raise).
+    """
+    try:
+        exc = fut.exception()
+    except Exception:
+        return
+    if exc is None:
+        return
+    # Import lazily — chat_send is not available in plugin unit-test env.
+    try:
+        from chat_send import BroadcastBlockedError, RateLimitError  # noqa: PLC0415
+    except ImportError:
+        log.error("%s send failed: %s: %s", label, type(exc).__name__, exc)
+        return
+    if isinstance(exc, BroadcastBlockedError):
+        log.error(
+            "%s blocked by anti-spam fuse (step=%d): %s",
+            label, exc.step, exc,
+        )
+        _ls_error("mqtt", f"outbound blocked: {exc}")
+    elif isinstance(exc, RateLimitError):
+        log.warning("%s rate-limited: %s", label, exc)
+        _ls_warn("mqtt", f"outbound rate-limited: {exc}")
+    else:
+        log.error("%s send failed: %s: %s", label, type(exc).__name__, exc)
+        _ls_error("mqtt", f"outbound error: {type(exc).__name__}: {exc}")
+
+
 def _ls_info(tag: str, msg: str) -> None:
     if _HAS_LOG_STREAM and _ls is not None:
         _ls.info(tag, msg)
@@ -422,7 +454,11 @@ class MQTTIntegration:
             return
 
         loop = self._loop or asyncio.get_event_loop()
-        asyncio.run_coroutine_threadsafe(self._ctx.send_text(target, text), loop)
+        fut = asyncio.run_coroutine_threadsafe(
+            self._ctx.send_text(target, text), loop
+        )
+        label = f"mqtt:{handle or chat_guid}"
+        fut.add_done_callback(lambda f: _log_send_future_error(f, label))
 
     @staticmethod
     def _payload_for(msg: Any) -> dict[str, Any]:

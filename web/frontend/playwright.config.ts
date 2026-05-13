@@ -33,8 +33,8 @@ export default defineConfig({
   // /api/* calls are intercepted by page.route in each test).
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5173/app/',
+    url: 'http://localhost:5173/',
     reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
+    timeout: 60_000,
   },
 })

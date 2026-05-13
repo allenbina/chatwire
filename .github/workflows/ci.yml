@@ -9,8 +9,6 @@ name: CI
 # All three jobs run in parallel; the workflow fails fast if any fails.
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
