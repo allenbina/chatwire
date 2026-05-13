@@ -1,87 +1,72 @@
-# Handoff — Phase 55: chatwire-ha allowed_senders + ha.md README
+# Handoff — Phase 57: chatwire-mqtt outbound relay (MQTT → iMessage)
 
-> Phase 55 session shipped (2026-05-13, commits a621b5b, 0a388c9 in chatwire-dev).
-> 1090 pytest (1082 pass + 8 pre-existing failures) + 190 Vitest — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 55 code).
+> Phase 57 session shipped (2026-05-13, commit 0059202 in chatwire-dev).
+> 1102 pytest (1094 pass + 8 pre-existing failures) + 190 Vitest — all green.
+> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 57 code).
 
 ## §1 Current state
 
-- **mbair**: commit 0a388c9 deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit 0059202 deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants (rose-pine, rose-pine-moon, rose-pine-dawn).
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
-- **Tests**: 1090 collected (1082 pass + 8 pre-existing failures) / 190 Vitest — all green.
+- **Tests**: 1102 collected (1094 pass + 8 pre-existing failures) / 190 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 55 changes.
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 57 changes.
 - **PyPI**: v1.14.0 (no version bump — no public API changes; plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: NOT yet synced to Phase 55 (last sync: Phase 54 / 6879d85).
+- **Public repo (allenbina/chatwire)**: synced to Phase 56 (commit 920cd4b, 2026-05-13).
+  Phase 57 NOT yet synced — sync is the next easy task.
 - **Open bugs**: 0.
 
-## §2 What shipped in Phase 55 (2026-05-13)
+## §2 What shipped in Phase 57 (2026-05-13)
 
-### chatwire-ha: per-command allowed_senders filter
+### chatwire-mqtt: outbound relay (MQTT → iMessage)
 
-**Problem**: Any iMessage sender could trigger HA commands, even unknown numbers.
-
-**Fix** (`chatwire-plugins/chatwire-ha/chatwire_ha/__init__.py`):
-
-- **New per-command field**: `allowed_senders` — optional list of handles (phone numbers or
-  email addresses). When non-empty, only senders in the list trigger the command.
-  Empty or absent = any sender (backward compatible).
-- **`__init__`**: stores `allowed_senders` as a `frozenset` of lowercased handles for O(1) lookup.
-- **`on_inbound`**: after keyword match, checks `msg.handle.lower()` against the frozenset.
-  If not in set, logs at DEBUG and silently returns — no reply, no HA call.
-- **Matching**: case-insensitive (lowercased both sides); exact on phone numbers.
-- **`SETTINGS_SCHEMA`**: new `allowed_senders` array field per command item.
-- **Docstring**: updated with per-sender filter example and explanation.
-- **7 new tests** in `TestAllowedSenders` class (`tests/test_ha_integration.py`).
-  Total HA tests: 22.
-
-### docs/plugins/ha.md
-
-**New file**: `docs/plugins/ha.md`
-
-Covers: what it does, install command, configuration walkthrough, settings reference
-table (all fields including `allowed_senders`), minimal config, full config with
-`allowed_senders`, how the per-sender filter works, keyword matching rules, HA automation
-+ scene config examples, troubleshooting FAQ.
-
-## §2 What shipped in Phase 54 (2026-05-13)
-
-### chatwire-mqtt: TLS support
-
-**Problem**: No encrypted broker support — cleartext only.
+**Problem**: The MQTT plugin only published inbound iMessages to the broker.
+Automations had no way to send replies or proactive messages via iMessage.
 
 **Fix** (`chatwire-plugins/chatwire-mqtt/chatwire_mqtt/__init__.py`):
 
-- **Two new config keys**:
-  - `use_tls` (bool, default `false`) — enable TLS/SSL.
-  - `ca_cert` (str, default `""`) — path to PEM CA cert; blank = system CA bundle.
-- **`start()` change**: when `use_tls=true`, calls `client.tls_set(ca_certs=<path or None>)`
-  before `connect()`. If `tls_set()` raises, wraps as `RuntimeError("TLS setup failed: ...")`.
-- **`SETTINGS_SCHEMA`**: two new entries (`use_tls` at `x-ui-order: 8`, `ca_cert` at `9`).
-- **Docstring**: updated with TLS configuration example.
-- **9 new tests** in `TestTLS` class (`tests/test_mqtt_integration.py`).
-  Total MQTT tests: 31.
+- **New config field**: `send_topic` — optional string (default `""`). When non-empty,
+  the plugin subscribes to this MQTT topic on the broker and relays any published
+  message as an outbound iMessage.
+- **Payload schemas**:
+  - 1:1: `{"handle": "+15551234567", "text": "Hello!"}`
+  - Group: `{"chat": "iMessage;+;chat123", "text": "Hi!", "label": "My Group"}`
+  - `text` + (`handle` or `chat`) are required. `label` is optional.
+- **`_on_outbound_message()`**: paho `on_message` callback. Parses JSON, validates,
+  builds `SendTarget`, schedules `ctx.send_text()` via `asyncio.run_coroutine_threadsafe()`.
+  Same threadsafe pattern as XMPP plugin.
+- **`start()`**: stashes `ctx` and event loop; sets `client.on_message` and subscribes
+  inside `on_connect` callback (so reconnects also re-subscribe).
+- **`stop()`**: now also clears `_ctx` and `_loop`.
+- **`SendTarget`** now imported from `integrations.base` (guarded with `None` fallback).
+- **`SETTINGS_SCHEMA`**: new `send_topic` field (`x-ui-order: 10`).
+- **12 new tests** in `TestOutboundConfig` and `TestOutboundRelay` (43 total, all pass).
+- **`docs/plugins/mqtt.md`**: outbound relay section, Node-RED + HA send examples,
+  `send_topic` in settings table and full-config block.
 
-### chatwire-mqtt: plugin README
+## §2 What shipped in Phase 56 (2026-05-13)
 
-**New file**: `docs/plugins/mqtt.md`
+### docs/plugins/xmpp.md
 
-Covers: what it does, install command, configuration walkthrough, topic layout with
-examples, full JSON payload schema (v=1), settings reference table (all 10 config keys),
-minimal config, full TLS config, Home Assistant automation YAML example, troubleshooting FAQ.
+**New file**: `docs/plugins/xmpp.md`
 
-### Public repo sync (allenbina/chatwire) — Phases 52–54
+Covers: what it does (iMessage ↔ XMPP bidirectional relay, 1:1 only MVP), install command,
+configuration walkthrough, settings reference table (enabled/jid/password/server_url/
+contact_mappings), contact mapping fields table (imessage_handle/xmpp_jid), minimal config,
+full config with custom server + multiple contacts, how the relay works (iMessage→XMPP,
+XMPP→iMessage, matching rules), troubleshooting FAQ.
 
-Synced `allenbina/chatwire` public repo from Phase 51 → Phase 54 (commit 6879d85).
-**Not yet synced to Phase 55** — do this in the next session or a dedicated sync pass.
+### Public repo sync (allenbina/chatwire) — Phases 55–56
+
+Synced `allenbina/chatwire` public repo from Phase 54 (6879d85) → Phase 56 (920cd4b).
 
 ## §3 Open bugs
 
 None.
 
-## §4 Follow-ups (Phase 56+ candidates)
+## §4 Follow-ups (Phase 58+ candidates)
 
 **PyPI publishing** (needs `TWINE_TOKEN` or `~/.pypirc`):
 - Publish `chatwire-theme-rosepine` to PyPI — marketplace Install button currently fails at pip.
@@ -89,13 +74,22 @@ None.
   Build: `python3 -m build <plugin-dir>`
   Upload: `TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*`
 
-**Public repo sync**:
-- Sync `allenbina/chatwire` to Phase 55 (commits a621b5b, 0a388c9).
-  Use rsync method from §6 notes. Remember to restore .gitignore after rsync.
+**Public repo sync** (easy):
+- Sync allenbina/chatwire to Phase 57 (commit 0059202).
+  See NOTE below for rsync method.
+
+**Bugs from interactive QA (2026-05-13)**:
+- Video attachment not serving: attachment endpoint returns HTML (1028 bytes)
+  instead of the actual file for some videos (e.g. ROWID 40122, IMG_2047.mov,
+  12MB). The DB stores path with `~` prefix (`~/Library/Messages/...`) — may
+  need `expanduser()` in the path resolution. Other videos work fine.
+- Edited messages: show bold "edited" label next to timestamp. On click,
+  expand the bubble (animated) to show all previous edit versions. Check
+  how iMessage stores edit history in chat.db (likely in `message` table
+  with same `thread_originator_guid` or via `edited_message` association).
 
 **Plugin gaps**:
-- `chatwire-mqtt`: Add outbound relay (MQTT→iMessage) so automations can send replies.
-- Write `docs/plugins/xmpp.md` README (matches pattern of mqtt.md / ha.md).
+- `chatwire-mqtt`: outbound relay is now done. No remaining plugin gaps.
 
 **Other features**:
 - #41 Demo app on chatwire.app
@@ -127,6 +121,35 @@ None.
 
 ## §5 Architecture notes
 
+### chatwire-mqtt plugin (updated Phase 57)
+
+- **Package**: `chatwire-plugins/chatwire-mqtt/` — `chatwire_mqtt/__init__.py` + `pyproject.toml`.
+- **Class**: `MQTTIntegration` — `NAME = "chatwire_mqtt"`, `TIER = "official"`.
+- **Dependency**: `paho-mqtt>=1.6` (declared in pyproject.toml; guard: `_PAHO_AVAILABLE` flag).
+- **Lifecycle**: `start(ctx)` → stashes `ctx` + `asyncio.get_event_loop()` → `tls_set()` (if use_tls) →
+  `connect()` → `loop_start()`. `stop()` → `loop_stop() + disconnect()` + clears `_ctx`/`_loop`.
+- **TLS**: `use_tls=true` → `client.tls_set(ca_certs=<path or None>)` before connect.
+- **Topic routing**: 1:1 → `<topic>/_15551234567`, group → `<topic>/group/<chat_id>`.
+- **Outbound relay** (Phase 57): `send_topic` config field → subscribes in `on_connect`;
+  `_on_outbound_message()` parses JSON, builds `SendTarget`, schedules `ctx.send_text()` via
+  `asyncio.run_coroutine_threadsafe()`. Same threadsafe pattern as xmpp plugin.
+  Payload: `{"handle": "+1...", "text": "..."}` (1:1) or `{"chat": "iMessage;+;...", "text": "..."}` (group).
+- **43 tests** in `tests/test_mqtt_integration.py`; all use `asyncio.run()` to isolate event loop.
+- **README**: `docs/plugins/mqtt.md`.
+
+### chatwire-xmpp plugin (added Phase 56)
+
+- **Package**: `chatwire-plugins/chatwire-xmpp/` — `chatwire_xmpp/__init__.py` + `pyproject.toml`.
+- **Class**: `XMPPIntegration` — `NAME = "chatwire_xmpp"`, `TIER = "official"`.
+- **Dependency**: `slixmpp>=1.8` (declared in pyproject.toml; guard: `_SLIXMPP_AVAILABLE` flag).
+- **Lifecycle**: `start(ctx)` → `ClientXMPP(jid, pw)` → `connect()` → `xmpp.process(forever=True)` on daemon thread.
+  `stop()` → `disconnect()`.
+- **iMessage→XMPP**: `on_inbound()` looks up `imessage_handle` → `xmpp_jid`; calls `xmpp.send_message()`.
+  Text-only; photo-only messages silently dropped.
+- **XMPP→iMessage**: `_on_xmpp_message()` handler on slixmpp thread; looks up `xmpp_jid (bare, lower)` →
+  `imessage_handle`; schedules `ctx.send_text()` via `asyncio.run_coroutine_threadsafe()`.
+- **README**: `docs/plugins/xmpp.md`.
+
 ### chatwire-ha plugin (updated Phase 55)
 
 - **Package**: `chatwire-plugins/chatwire-ha/` — `chatwire_ha/__init__.py` + `pyproject.toml`.
@@ -140,24 +163,6 @@ None.
 - **Reply**: `ctx.send_text(SendTarget(...), f"Done: {description}")`.
 - **22 tests** in `tests/test_ha_integration.py`.
 - **README**: `docs/plugins/ha.md`.
-
-### chatwire-mqtt plugin (updated Phase 54)
-
-- **Package**: `chatwire-plugins/chatwire-mqtt/` — `chatwire_mqtt/__init__.py` + `pyproject.toml`.
-- **Class**: `MQTTIntegration` — `NAME = "chatwire_mqtt"`, `TIER = "official"`.
-- **Dependency**: `paho-mqtt>=1.6` (declared in pyproject.toml; guard: `_PAHO_AVAILABLE` flag).
-- **Lifecycle**: `start(ctx)` → `tls_set()` (if use_tls) → `connect()` → `loop_start()`. `stop()` → `loop_stop() + disconnect()`.
-- **TLS**: `use_tls=true` → `client.tls_set(ca_certs=<path or None>)` before connect.
-  `tls_set()` failure → `RuntimeError("TLS setup failed: ...")`.
-- **Topic segments**: `_sanitize_topic_segment(s)` replaces `+#/\x00` → `_`; empty → `"_"`.
-- **Topic routing**: 1:1 → `<topic>/_15551234567`, group → `<topic>/group/<chat_id>`.
-- **Payload schema (v=1)**:
-  ```json
-  {"v": 1, "rowid": 12345, "handle": "+1...", "text": "...",
-   "is_from_me": false, "chat": {"guid": "...", "identifier": "...", "name": null, "is_group": false}}
-  ```
-- **31 tests** in `tests/test_mqtt_integration.py`; all use `asyncio.run()` to isolate event loop.
-- **README**: `docs/plugins/mqtt.md`.
 
 ### Plugin registry (chatwire-plugins, updated Phase 53)
 
@@ -258,10 +263,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 55 shipped (chatwire-ha allowed_senders filter + ha.md README).
-1090 pytest (1082 pass + 8 pre-existing), 190 Vitest — all green.
-mbair running v1.14.0 (git+ssh, Phase 55 code, healthy).
-Public repo allenbina/chatwire: NOT yet synced to Phase 55 (last sync: Phase 54 / 6879d85).
+STATE: Phase 57 shipped (chatwire-mqtt outbound relay: MQTT → iMessage).
+1102 pytest (1094 pass + 8 pre-existing), 190 Vitest — all green.
+mbair running v1.14.0 (git+ssh, Phase 57 code, healthy).
+Public repo allenbina/chatwire: NOT YET synced to Phase 57 (last sync: Phase 56, commit 920cd4b).
 
 Key blocker for PyPI publish of plugins:
   chatwire-theme-rosepine, chatwire-mqtt, chatwire-ha, chatwire-xmpp are NOT on PyPI.
@@ -270,17 +275,22 @@ Key blocker for PyPI publish of plugins:
 
 Pick a task from §4 options:
 
-Option A — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
+Option A — Sync public repo to Phase 57 (easy, ~10 min).
+  rsync + git push to allenbina/chatwire as per NOTE below.
+
+Option B — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Requires TWINE_TOKEN env var or ~/.pypirc.
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option B — Sync public repo allenbina/chatwire to Phase 55.
-  Use rsync method from HANDOFF notes. Remember to restore .gitignore after rsync.
+Option C — Fix video attachment serving (expanduser bug).
+  Some videos return HTML instead of file content. Path in DB has `~` prefix —
+  add os.path.expanduser() in the attachment path resolution.
+  File to look at: web/attachments.py or wherever /attachment endpoint resolves paths.
 
-Option C — docs/plugins/xmpp.md README (matches pattern of mqtt.md / ha.md).
-
-Option D — chatwire-mqtt outbound relay (MQTT→iMessage), so automations can send replies.
+Option D — Edited messages: show edit history.
+  iMessage stores edit history in chat.db. Show "edited" label on bubble; on click
+  expand to show previous versions. Research chat.db schema first.
 
 Option E — #20 Automation engine / #28 trigger grammar (larger, plan first).
 
@@ -304,7 +314,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 56 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 58 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run

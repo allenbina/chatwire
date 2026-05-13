@@ -1,4 +1,5 @@
-"""chatwire-mqtt — Publish every inbound iMessage to an MQTT broker.
+"""chatwire-mqtt — Publish every inbound iMessage to an MQTT broker,
+and optionally send iMessages via an outbound MQTT topic.
 
 Useful for home-automation pipelines (Home Assistant, Node-RED, OpenHAB)
 and any subscriber that can speak MQTT.
@@ -19,7 +20,8 @@ Then add to config.json:
           "password": "s3cr3t",
           "qos": 0,
           "use_tls": false,
-          "ca_cert": ""
+          "ca_cert": "",
+          "send_topic": "chatwire/send"
         }
       }
     }
@@ -53,6 +55,23 @@ The JSON payload (v=1) schema:
       "is_group": false
     }
   }
+
+Outbound relay (MQTT → iMessage)
+---------------------------------
+Set ``send_topic`` to a topic string (e.g. ``chatwire/send``) to subscribe
+for outbound sends.  Publish a JSON payload to that topic and chatwire will
+send an iMessage on your behalf::
+
+  # 1:1 message
+  {"handle": "+15551234567", "text": "Hello from Node-RED!"}
+
+  # Group chat (use the chat GUID from the inbound payload's chat.guid)
+  {"chat": "iMessage;+;chat629...", "text": "Hi group!", "label": "My Group"}
+
+Both ``handle`` and ``text`` (or ``chat`` and ``text``) are required.
+``label`` is optional and used only for logging.
+
+Leave ``send_topic`` blank (the default) to disable inbound subscriptions.
 """
 from __future__ import annotations
 
@@ -68,10 +87,11 @@ log = logging.getLogger(__name__)
 # Lazy imports: integrations.base is only available inside the chatwire bridge.
 # ---------------------------------------------------------------------------
 try:
-    from integrations.base import BridgeContext, InboundMessage  # type: ignore[import]
+    from integrations.base import BridgeContext, InboundMessage, SendTarget  # type: ignore[import]
 except ImportError:  # pragma: no cover
     BridgeContext = object  # type: ignore[misc,assignment]
     InboundMessage = object  # type: ignore[misc,assignment]
+    SendTarget = None  # type: ignore[assignment]
 
 # paho-mqtt is optional at import time so unit tests can import this module
 # without the library installed.
@@ -214,6 +234,19 @@ class MQTTIntegration:
                 "x-ui-placeholder": "/etc/ssl/certs/broker-ca.pem",
                 "x-ui-order": 9,
             },
+            "send_topic": {
+                "type": "string",
+                "default": "",
+                "title": "Outbound send topic (optional)",
+                "description": (
+                    "Subscribe to this topic to send iMessages from automations. "
+                    "Payload: {\"handle\": \"+1...\", \"text\": \"...\"} for 1:1, "
+                    "or {\"chat\": \"iMessage;+;...\", \"text\": \"...\"} for groups. "
+                    "Leave blank to disable."
+                ),
+                "x-ui-placeholder": "chatwire/send",
+                "x-ui-order": 10,
+            },
         },
         "required": ["host"],
     }
@@ -228,7 +261,10 @@ class MQTTIntegration:
         self._client_id: str = config.get("client_id") or "chatwire"
         self._use_tls: bool = bool(config.get("use_tls", False))
         self._ca_cert: str = config.get("ca_cert") or ""
+        self._send_topic: str = config.get("send_topic") or ""
         self._client: Any = None  # paho.mqtt.client.Client instance
+        self._ctx: Any = None  # BridgeContext stashed in start()
+        self._loop: asyncio.AbstractEventLoop | None = None  # bridge event loop
 
     async def start(self, ctx: Any) -> None:
         if not self._host:
@@ -251,11 +287,18 @@ class MQTTIntegration:
                     f"chatwire_mqtt: TLS setup failed: {exc}"
                 ) from exc
 
+        self._ctx = ctx
+        self._loop = asyncio.get_event_loop()
+
         # on_connect / on_disconnect for logging.
         def _on_connect(c: Any, userdata: Any, flags: Any, rc: int) -> None:
             if rc == 0:
                 log.info("mqtt: connected to %s:%d", self._host, self._port)
                 _ls_info("mqtt", f"connected to {self._host}:{self._port}")
+                if self._send_topic:
+                    c.subscribe(self._send_topic)
+                    log.info("mqtt: subscribed to send_topic=%s", self._send_topic)
+                    _ls_info("mqtt", f"subscribed to send_topic={self._send_topic}")
             else:
                 log.warning("mqtt: connect failed rc=%d", rc)
                 _ls_warn("mqtt", f"connect failed rc={rc}")
@@ -266,6 +309,8 @@ class MQTTIntegration:
 
         client.on_connect = _on_connect
         client.on_disconnect = _on_disconnect
+        if self._send_topic:
+            client.on_message = self._on_outbound_message
 
         try:
             client.connect(self._host, self._port, keepalive=60)
@@ -277,8 +322,8 @@ class MQTTIntegration:
         client.loop_start()
         self._client = client
         log.info(
-            "mqtt integration started; broker=%s:%d topic=%s qos=%d tls=%s",
-            self._host, self._port, self._topic, self._qos, self._use_tls,
+            "mqtt integration started; broker=%s:%d topic=%s qos=%d tls=%s send_topic=%r",
+            self._host, self._port, self._topic, self._qos, self._use_tls, self._send_topic,
         )
 
     async def stop(self) -> None:
@@ -289,6 +334,8 @@ class MQTTIntegration:
             except Exception:
                 pass
             self._client = None
+        self._ctx = None
+        self._loop = None
         log.info("mqtt integration stopped")
 
     async def on_inbound(self, msg: Any) -> None:
@@ -321,6 +368,61 @@ class MQTTIntegration:
         except Exception as exc:
             log.warning("mqtt: publish failed: %s: %s", type(exc).__name__, exc)
             _ls_error("mqtt", f"publish failed: {type(exc).__name__}: {exc}")
+
+    def _on_outbound_message(self, client: Any, userdata: Any, message: Any) -> None:
+        """Handle an MQTT message on send_topic and relay it as an iMessage.
+
+        Called by paho on its network thread.  Parses the JSON payload,
+        builds a SendTarget, and schedules ctx.send_text() on the bridge loop.
+
+        Payload (1:1):  {"handle": "+15551234567", "text": "Hello!"}
+        Payload (group): {"chat": "iMessage;+;chat123", "text": "Hi!", "label": "My Group"}
+
+        ``text`` and either ``handle`` or ``chat`` are required.
+        ``label`` is optional (used for logging only).
+        """
+        if self._ctx is None or SendTarget is None:
+            return  # pragma: no cover
+
+        try:
+            payload = json.loads(message.payload)
+        except (json.JSONDecodeError, Exception) as exc:
+            log.warning("mqtt: bad outbound payload: %s", exc)
+            _ls_warn("mqtt", f"bad outbound payload: {exc}")
+            return
+
+        text = (payload.get("text") or "").strip()
+        if not text:
+            log.debug("mqtt: outbound message has no text; ignored")
+            return
+
+        handle = (payload.get("handle") or "").strip()
+        chat_guid = (payload.get("chat") or "").strip()
+        label = (payload.get("label") or "").strip()
+
+        if handle:
+            target = SendTarget(
+                kind="handle",
+                value=handle,
+                label=label or (self._ctx.name_for(handle) if hasattr(self._ctx, "name_for") else None) or handle,
+            )
+            log.debug("mqtt: outbound → handle=%s text=%r", handle, text[:80])
+            _ls_info("mqtt", f"outbound → handle={handle}")
+        elif chat_guid:
+            target = SendTarget(
+                kind="chat",
+                value=chat_guid,
+                label=label or chat_guid,
+            )
+            log.debug("mqtt: outbound → chat=%s text=%r", chat_guid, text[:80])
+            _ls_info("mqtt", f"outbound → chat={chat_guid}")
+        else:
+            log.warning("mqtt: outbound payload missing 'handle' or 'chat'; ignored")
+            _ls_warn("mqtt", "outbound payload missing 'handle' or 'chat'")
+            return
+
+        loop = self._loop or asyncio.get_event_loop()
+        asyncio.run_coroutine_threadsafe(self._ctx.send_text(target, text), loop)
 
     @staticmethod
     def _payload_for(msg: Any) -> dict[str, Any]:

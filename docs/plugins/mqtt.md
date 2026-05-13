@@ -1,10 +1,14 @@
-# MQTT Output
+# MQTT
 
 ## What it does
 
-The MQTT plugin publishes every inbound iMessage to an MQTT broker as a JSON event. This lets home-automation systems (Home Assistant, Node-RED, OpenHAB, etc.) react to your messages — trigger lights, log conversations, forward to other channels — without polling or screen-scraping.
+The MQTT plugin has two directions:
 
-Every message is published to a topic derived from the sender's handle or group chat identifier. The JSON payload includes the sender handle, message text, direction (`is_from_me`), and structured chat metadata.
+**Inbound → MQTT**: publishes every inbound iMessage to an MQTT broker as a JSON event. Home-automation systems (Home Assistant, Node-RED, OpenHAB, etc.) can react to your messages — trigger lights, log conversations, forward to other channels — without polling or screen-scraping.
+
+**MQTT → iMessage (outbound relay)**: subscribe to a designated send topic and chatwire will send an iMessage on your behalf when a message arrives. This lets automations send replies, notifications, or proactive messages via iMessage from any MQTT-capable system.
+
+Every inbound message is published to a topic derived from the sender's handle or group chat identifier. The JSON payload includes the sender handle, message text, direction (`is_from_me`), and structured chat metadata.
 
 ## Install command
 
@@ -73,13 +77,14 @@ The default base topic is `chatwire/messages`. MQTT wildcard characters (`+`, `#
 | `enabled` | boolean | `false` | Master switch. |
 | `host` | string | *(required)* | Hostname or IP of the MQTT broker. |
 | `port` | integer | `1883` | Broker port. Use `8883` for TLS. |
-| `topic` | string | `"chatwire/messages"` | Base topic prefix. |
+| `topic` | string | `"chatwire/messages"` | Base topic prefix for inbound publishes. |
 | `username` | string | `""` | Broker username (optional). |
 | `password` | string | `""` | Broker password (optional). |
 | `qos` | integer | `0` | Quality of Service: `0` at-most-once, `1` at-least-once, `2` exactly-once. |
 | `client_id` | string | `"chatwire"` | MQTT client identifier. Must be unique on the broker. |
 | `use_tls` | boolean | `false` | Enable TLS/SSL encryption. |
 | `ca_cert` | string | `""` | Path to a PEM CA certificate. Blank = system CA bundle. |
+| `send_topic` | string | `""` | Subscribe to this topic to relay outbound iMessages. Blank = disabled. |
 
 Config file path: `~/.chatwire/config.json` under `integrations.chatwire_mqtt`.
 
@@ -96,7 +101,7 @@ Config file path: `~/.chatwire/config.json` under `integrations.chatwire_mqtt`.
 }
 ```
 
-### Full config with TLS
+### Full config with TLS and outbound relay
 
 ```json
 {
@@ -111,13 +116,52 @@ Config file path: `~/.chatwire/config.json` under `integrations.chatwire_mqtt`.
       "qos": 1,
       "client_id": "chatwire-bridge",
       "use_tls": true,
-      "ca_cert": "/etc/ssl/certs/mosquitto-ca.pem"
+      "ca_cert": "/etc/ssl/certs/mosquitto-ca.pem",
+      "send_topic": "chatwire/send"
     }
   }
 }
 ```
 
-## Home Assistant example
+## Outbound relay (MQTT → iMessage)
+
+Set `send_topic` to any topic string (e.g. `chatwire/send`) and chatwire will subscribe to it on the broker. Publish a JSON payload to that topic to send an iMessage:
+
+**1:1 message:**
+```json
+{"handle": "+15551234567", "text": "Hello from Node-RED!"}
+```
+
+**Group chat** (use the `chat.guid` from an inbound payload):
+```json
+{"chat": "iMessage;+;chat629...", "text": "Hi team!", "label": "My Group"}
+```
+
+Both `handle` (or `chat`) and `text` are required. `label` is optional and only used for log lines.
+
+### Node-RED example
+
+Use an **MQTT Out** node targeting `chatwire/send`:
+
+```json
+{
+  "handle": "{{contact_handle}}",
+  "text": "Your alert: {{msg.payload}}"
+}
+```
+
+### Home Assistant send example
+
+```yaml
+action:
+  - service: mqtt.publish
+    data:
+      topic: "chatwire/send"
+      payload: >
+        {"handle": "+15551234567", "text": "Motion detected in {{ trigger.entity_id }}!"}
+```
+
+## Home Assistant receive example
 
 Add an MQTT trigger to an automation:
 

@@ -98,22 +98,30 @@ export default defineConfig({
               },
             },
           },
-          // Avatars / attachments — StaleWhileRevalidate
+          // Avatars / attachments — StaleWhileRevalidate.
+          // Use a callback so we match on pathname only (no trailing-slash
+          // requirement that would miss /attachment?path=… queries).
           {
-            urlPattern: /\/(avatar|attachment)/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'media-cache',
-              expiration: {
-                maxEntries: 200,
-                maxAgeSeconds: 7 * 24 * 60 * 60,
-              },
-            },
+            urlPattern: ({ url }: { url: URL }) =>
+              url.pathname.startsWith('/attachment') ||
+              url.pathname.startsWith('/avatar'),
+            handler: 'NetworkOnly',
           },
         ],
-        // Offline fallback: serve the SPA shell when a navigation fails
+        // Offline fallback: serve the SPA shell when a navigation fails.
+        // Exclude API / media endpoints so the SW never intercepts them.
         navigateFallback: '/index.html',
         navigateFallbackAllowlist: [/^\//],
+        navigateFallbackDenylist: [
+          /^\/attachment(\?|\/|$)/,
+          /^\/avatar(\?|\/|$)/,
+          /^\/api\//,
+          /^\/send(\?|$)/,
+          /^\/events(\?|$)/,
+          /^\/healthz(\?|$)/,
+          /^\/login(\?|$)/,
+          /^\/logout(\?|$)/,
+        ],
       },
     }),
   ],

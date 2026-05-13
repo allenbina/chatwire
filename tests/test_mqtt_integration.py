@@ -438,3 +438,222 @@ class TestTLS:
         """ca_cert path is stored correctly."""
         integ = MQTTIntegration({**BASE_CONFIG, "ca_cert": "/tmp/ca.pem"})
         assert integ._ca_cert == "/tmp/ca.pem"
+
+
+# ---------------------------------------------------------------------------
+# Outbound relay (MQTT → iMessage) — send_topic
+# ---------------------------------------------------------------------------
+
+class FakeSendTarget:
+    """Minimal SendTarget stand-in for outbound relay tests."""
+    def __init__(self, kind: str, value: str, label: str) -> None:
+        self.kind = kind
+        self.value = value
+        self.label = label
+
+
+def _make_outbound_msg(payload: Any) -> MagicMock:
+    """Build a fake paho MQTTMessage with the given payload (dict or bytes)."""
+    m = MagicMock()
+    if isinstance(payload, dict):
+        m.payload = json.dumps(payload).encode()
+    elif isinstance(payload, bytes):
+        m.payload = payload
+    else:
+        m.payload = payload
+    m.topic = "chatwire/send"
+    return m
+
+
+class TestOutboundConfig:
+    def test_send_topic_defaults_to_empty(self) -> None:
+        """send_topic defaults to '' when absent from config."""
+        integ = _make()
+        assert integ._send_topic == ""
+
+    def test_send_topic_stored_from_config(self) -> None:
+        """send_topic is read from config."""
+        integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+        assert integ._send_topic == "chatwire/send"
+
+    def test_send_topic_on_message_set_when_configured(self) -> None:
+        """When send_topic is configured, on_message is set on the paho client."""
+        async def _go() -> None:
+            integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+            mock_client = _make_mock_client()
+            mock_client.connect.return_value = None
+
+            with patch.object(_mod, "_PAHO_AVAILABLE", True), \
+                 patch.object(_mod, "_paho") as mock_paho:
+                mock_paho.Client.return_value = mock_client
+                await integ.start(MagicMock())
+
+            # Bound methods create new objects each access; compare underlying function.
+            assert mock_client.on_message.__func__ is MQTTIntegration._on_outbound_message
+            await integ.stop()
+
+        _run(_go())
+
+    def test_no_send_topic_skips_on_message(self) -> None:
+        """When send_topic is empty, on_message is not set on the paho client."""
+        async def _go() -> None:
+            integ = _make()  # no send_topic
+            mock_client = _make_mock_client()
+            mock_client.connect.return_value = None
+            mock_client.on_message = None  # ensure clean state
+
+            with patch.object(_mod, "_PAHO_AVAILABLE", True), \
+                 patch.object(_mod, "_paho") as mock_paho:
+                mock_paho.Client.return_value = mock_client
+                await integ.start(MagicMock())
+
+            assert mock_client.on_message is None
+            await integ.stop()
+
+        _run(_go())
+
+
+class TestOutboundRelay:
+    def test_handle_payload_calls_run_coroutine_threadsafe(self) -> None:
+        """Valid 1:1 handle payload → asyncio.run_coroutine_threadsafe called once."""
+        integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+        ctx = MagicMock()
+        ctx.name_for.return_value = None
+        integ._ctx = ctx
+        integ._loop = asyncio.new_event_loop()
+
+        msg = _make_outbound_msg({"handle": "+15551234567", "text": "Hello!"})
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_rcts, \
+             patch.object(_mod, "SendTarget", FakeSendTarget):
+            integ._on_outbound_message(None, None, msg)
+
+        mock_rcts.assert_called_once()
+
+    def test_handle_payload_builds_handle_target(self) -> None:
+        """1:1 payload → SendTarget with kind='handle' and correct value."""
+        integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+        ctx = MagicMock()
+        ctx.name_for.return_value = None
+        integ._ctx = ctx
+        integ._loop = asyncio.new_event_loop()
+
+        msg = _make_outbound_msg({"handle": "+15551234567", "text": "Hi!"})
+
+        targets_seen: list[FakeSendTarget] = []
+
+        def fake_rcts(coro, loop):
+            # Inspect the coroutine arguments indirectly via the target captured in closure.
+            return MagicMock()
+
+        # Patch SendTarget to capture construction args.
+        constructed: list[FakeSendTarget] = []
+
+        class CaptureSendTarget(FakeSendTarget):
+            def __init__(self, kind: str, value: str, label: str) -> None:
+                super().__init__(kind, value, label)
+                constructed.append(self)
+
+        with patch("asyncio.run_coroutine_threadsafe", side_effect=fake_rcts), \
+             patch.object(_mod, "SendTarget", CaptureSendTarget):
+            integ._on_outbound_message(None, None, msg)
+
+        assert len(constructed) == 1
+        assert constructed[0].kind == "handle"
+        assert constructed[0].value == "+15551234567"
+
+    def test_chat_payload_builds_chat_target(self) -> None:
+        """Group chat payload → SendTarget with kind='chat'."""
+        integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+        integ._ctx = MagicMock()
+        integ._loop = asyncio.new_event_loop()
+
+        msg = _make_outbound_msg({
+            "chat": "iMessage;+;chat123",
+            "text": "Hello group!",
+            "label": "My Group",
+        })
+
+        constructed: list[FakeSendTarget] = []
+
+        class CaptureSendTarget(FakeSendTarget):
+            def __init__(self, kind: str, value: str, label: str) -> None:
+                super().__init__(kind, value, label)
+                constructed.append(self)
+
+        with patch("asyncio.run_coroutine_threadsafe"), \
+             patch.object(_mod, "SendTarget", CaptureSendTarget):
+            integ._on_outbound_message(None, None, msg)
+
+        assert len(constructed) == 1
+        assert constructed[0].kind == "chat"
+        assert constructed[0].value == "iMessage;+;chat123"
+        assert constructed[0].label == "My Group"
+
+    def test_missing_text_no_send(self) -> None:
+        """Payload without text → run_coroutine_threadsafe not called."""
+        integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+        integ._ctx = MagicMock()
+        integ._loop = asyncio.new_event_loop()
+
+        msg = _make_outbound_msg({"handle": "+15551234567"})
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_rcts:
+            integ._on_outbound_message(None, None, msg)
+
+        mock_rcts.assert_not_called()
+
+    def test_missing_handle_and_chat_no_send(self) -> None:
+        """Payload with text but no handle or chat → not sent."""
+        integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+        integ._ctx = MagicMock()
+        integ._loop = asyncio.new_event_loop()
+
+        msg = _make_outbound_msg({"text": "Hello!"})
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_rcts:
+            integ._on_outbound_message(None, None, msg)
+
+        mock_rcts.assert_not_called()
+
+    def test_invalid_json_no_crash(self) -> None:
+        """Malformed JSON payload → silent no-op, no exception."""
+        integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+        integ._ctx = MagicMock()
+        integ._loop = asyncio.new_event_loop()
+
+        msg = MagicMock()
+        msg.payload = b"not json at all {"
+        msg.topic = "chatwire/send"
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_rcts:
+            integ._on_outbound_message(None, None, msg)  # must not raise
+
+        mock_rcts.assert_not_called()
+
+    def test_ctx_none_no_crash(self) -> None:
+        """_on_outbound_message with _ctx=None → returns immediately, no crash."""
+        integ = MQTTIntegration({**BASE_CONFIG, "send_topic": "chatwire/send"})
+        # _ctx defaults to None
+
+        msg = _make_outbound_msg({"handle": "+1", "text": "hi"})
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_rcts, \
+             patch.object(_mod, "SendTarget", FakeSendTarget):
+            integ._on_outbound_message(None, None, msg)  # must not raise
+
+        mock_rcts.assert_not_called()
+
+    def test_stop_clears_ctx_and_loop(self) -> None:
+        """stop() clears _ctx and _loop."""
+        async def _go() -> None:
+            integ = _make()
+            mock_client = _make_mock_client()
+            integ._client = mock_client
+            integ._ctx = MagicMock()
+            integ._loop = asyncio.get_event_loop()
+            await integ.stop()
+            assert integ._ctx is None
+            assert integ._loop is None
+
+        _run(_go())

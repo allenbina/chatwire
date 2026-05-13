@@ -11,7 +11,7 @@
  *   - clicking a row closes the mobile sidebar (setSidebarOpen(false))
  *   - active conversation row has aria-current="page"
  *   - group conversation renders [G] prefix
- *   - unread badge renders when n > 0
+ *   - unseen dot renders based on Chatwire read state (not iMessage is_read)
  *   - favourite star renders when is_favorite is true
  *   - "Mark all read" CheckCheck icon is in Layout footer (not ConversationList)
  *   - Shift+Escape triggers markAllSeen
@@ -249,18 +249,18 @@ describe('ConversationList', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/chat/team-chat')
   })
 
-  it('renders unread badge when n > 0 and unseen', async () => {
+  it('renders unseen dot when unseen is true', async () => {
     mockedFetch.mockResolvedValue([makeHandleConvo({ name: 'Alice', n: 5, unseen: true })])
     renderList()
     await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
-    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(screen.getByLabelText('New messages')).toBeInTheDocument()
   })
 
-  it('truncates unread badge to "99+" when n > 99 and unseen', async () => {
-    mockedFetch.mockResolvedValue([makeHandleConvo({ name: 'Alice', n: 150, unseen: true })])
+  it('does not render unseen dot when unseen is false', async () => {
+    mockedFetch.mockResolvedValue([makeHandleConvo({ name: 'Alice', n: 5, unseen: false })])
     renderList()
     await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
-    expect(screen.getByText('99+')).toBeInTheDocument()
+    expect(screen.queryByLabelText('New messages')).not.toBeInTheDocument()
   })
 
   it('renders favourite star when is_favorite is true', async () => {
