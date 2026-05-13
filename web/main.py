@@ -2784,6 +2784,68 @@ async def api_settings_api_key_revoke():
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# Automation rules CRUD — used by the Settings UI (session-cookie auth)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/settings/automations")
+async def api_settings_automations_list():
+    """Return the automation rules list from config."""
+    cfg = _bridge_config.load_config()
+    rules = cfg.get("integrations", {}).get("chatwire_rules", {}).get("rules", [])
+    return {"rules": rules}
+
+
+@app.post("/api/settings/automations")
+async def api_settings_automations_create(request: Request):
+    """Append a new automation rule and return its index."""
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body must be an object")
+    if not body.get("name"):
+        raise HTTPException(400, "name is required")
+    trigger = body.get("trigger")
+    if not isinstance(trigger, dict) or not trigger.get("type"):
+        raise HTTPException(400, "trigger.type is required")
+    if not isinstance(body.get("actions"), list):
+        raise HTTPException(400, "actions must be a list")
+    cfg = _bridge_config.load_config()
+    rules: list = (
+        cfg.setdefault("integrations", {})
+        .setdefault("chatwire_rules", {})
+        .setdefault("rules", [])
+    )
+    rules.append(body)
+    _bridge_config.save_config(cfg)
+    return {"ok": True, "index": len(rules) - 1}
+
+
+@app.put("/api/settings/automations/{rule_index}")
+async def api_settings_automations_update(rule_index: int, request: Request):
+    """Replace the automation rule at *rule_index* (0-based)."""
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body must be an object")
+    cfg = _bridge_config.load_config()
+    rules: list = cfg.get("integrations", {}).get("chatwire_rules", {}).get("rules", [])
+    if rule_index < 0 or rule_index >= len(rules):
+        raise HTTPException(404, "Rule not found")
+    rules[rule_index] = body
+    _bridge_config.save_config(cfg)
+    return {"ok": True}
+
+
+@app.delete("/api/settings/automations/{rule_index}")
+async def api_settings_automations_delete(rule_index: int):
+    """Delete the automation rule at *rule_index* (0-based)."""
+    cfg = _bridge_config.load_config()
+    rules: list = cfg.get("integrations", {}).get("chatwire_rules", {}).get("rules", [])
+    if rule_index < 0 or rule_index >= len(rules):
+        raise HTTPException(404, "Rule not found")
+    rules.pop(rule_index)
+    _bridge_config.save_config(cfg)
+    return {"ok": True}
+
 
 @app.get("/api/plugins/registry")
 async def api_plugins_registry():

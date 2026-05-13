@@ -3114,6 +3114,18 @@ export function SettingsPage() {
                 </AccordionContent>
               </AccordionItem>
 
+              <AccordionItem value="automations">
+                <AccordionTrigger className="px-5 py-4 font-medium text-sm text-foreground bg-muted hover:bg-accent hover:no-underline transition-colors">
+                  <span className="flex items-center gap-2">
+                    <ZapIcon />
+                    Automations
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-5 py-4 bg-background text-sm text-foreground">
+                  <AutomationsSection />
+                </AccordionContent>
+              </AccordionItem>
+
             </Accordion>
 
             {/* Plugin slot: extra sections injected by installed plugins */}
@@ -3140,6 +3152,515 @@ export function SettingsPage() {
         </div>
       </div>
     </Layout>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Automations section — rule builder UI
+// ---------------------------------------------------------------------------
+
+type TriggerType = 'text_exact' | 'text_contains' | 'text_regex' | 'always'
+type ActionType = 'reply' | 'webhook' | 'log'
+
+interface RuleActionForm {
+  type: ActionType
+  text: string
+  url: string
+  method: string
+  headers: string
+  level: string
+  message: string
+}
+
+interface AutomationRuleForm {
+  name: string
+  triggerType: TriggerType
+  pattern: string
+  fromHandles: string
+  notFromHandles: string
+  inGroup: 'any' | 'group_only' | 'one_to_one'
+  groupGuid: string
+  actions: RuleActionForm[]
+  stopOnMatch: boolean
+}
+
+const _EMPTY_ACTION: RuleActionForm = {
+  type: 'reply', text: '', url: '', method: 'POST', headers: '', level: 'info', message: '',
+}
+const _EMPTY_RULE_FORM: AutomationRuleForm = {
+  name: '', triggerType: 'text_contains', pattern: '',
+  fromHandles: '', notFromHandles: '', inGroup: 'any', groupGuid: '',
+  actions: [{ ..._EMPTY_ACTION }], stopOnMatch: false,
+}
+
+function _formToApiRule(f: AutomationRuleForm): Record<string, unknown> {
+  const trigger: Record<string, unknown> = { type: f.triggerType }
+  if (f.triggerType !== 'always') trigger.pattern = f.pattern
+
+  const conditions: Record<string, unknown> = {}
+  const from = f.fromHandles.split(',').map(s => s.trim()).filter(Boolean)
+  if (from.length) conditions.from_handles = from
+  const notFrom = f.notFromHandles.split(',').map(s => s.trim()).filter(Boolean)
+  if (notFrom.length) conditions.not_from_handles = notFrom
+  if (f.inGroup === 'group_only') conditions.in_group = true
+  if (f.inGroup === 'one_to_one') conditions.in_group = false
+  if (f.groupGuid.trim()) conditions.group_guid = f.groupGuid.trim()
+
+  const actions = f.actions.map((a): Record<string, unknown> => {
+    if (a.type === 'reply') return { type: 'reply', text: a.text }
+    if (a.type === 'webhook') {
+      const act: Record<string, unknown> = { type: 'webhook', url: a.url }
+      if (a.method && a.method !== 'POST') act.method = a.method
+      if (a.headers.trim()) {
+        try { act.headers = JSON.parse(a.headers) } catch { /* skip invalid JSON */ }
+      }
+      return act
+    }
+    const act: Record<string, unknown> = { type: 'log', message: a.message }
+    if (a.level && a.level !== 'info') act.level = a.level
+    return act
+  })
+
+  const rule: Record<string, unknown> = { name: f.name, trigger, actions }
+  if (Object.keys(conditions).length) rule.conditions = conditions
+  if (f.stopOnMatch) rule.stop_on_match = true
+  return rule
+}
+
+function _apiRuleToForm(r: Record<string, unknown>): AutomationRuleForm {
+  const trigger = (r.trigger as Record<string, unknown>) ?? {}
+  const conds = (r.conditions as Record<string, unknown>) ?? {}
+  const inGroupRaw = conds.in_group
+  let inGroup: AutomationRuleForm['inGroup'] = 'any'
+  if (inGroupRaw === true) inGroup = 'group_only'
+  else if (inGroupRaw === false) inGroup = 'one_to_one'
+
+  const rawActions = (r.actions as Record<string, unknown>[]) ?? []
+  const actions: RuleActionForm[] = rawActions.map(a => ({
+    type: (a.type as ActionType) ?? 'reply',
+    text: (a.text as string) ?? '',
+    url: (a.url as string) ?? '',
+    method: (a.method as string) ?? 'POST',
+    headers: a.headers ? JSON.stringify(a.headers, null, 2) : '',
+    level: (a.level as string) ?? 'info',
+    message: (a.message as string) ?? '',
+  }))
+
+  return {
+    name: (r.name as string) ?? '',
+    triggerType: (trigger.type as TriggerType) ?? 'text_contains',
+    pattern: (trigger.pattern as string) ?? '',
+    fromHandles: ((conds.from_handles as string[]) ?? []).join(', '),
+    notFromHandles: ((conds.not_from_handles as string[]) ?? []).join(', '),
+    inGroup,
+    groupGuid: (conds.group_guid as string) ?? '',
+    actions: actions.length ? actions : [{ ..._EMPTY_ACTION }],
+    stopOnMatch: Boolean(r.stop_on_match),
+  }
+}
+
+const _TRIGGER_LABELS: Record<TriggerType, string> = {
+  text_contains: 'Contains',
+  text_exact: 'Exact match',
+  text_regex: 'Regex',
+  always: 'Always',
+}
+
+function AutomationsSection() {
+  const qc = useQueryClient()
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [form, setForm] = useState<AutomationRuleForm>({ ..._EMPTY_RULE_FORM, actions: [{ ..._EMPTY_ACTION }] })
+  const [saving, setSaving] = useState(false)
+
+  const { data, isLoading } = useQuery<{ rules: Record<string, unknown>[] }>({
+    queryKey: ['settings-automations'],
+    queryFn: () =>
+      fetch('/api/settings/automations', { credentials: 'same-origin' }).then(r => r.json()),
+    staleTime: 30_000,
+  })
+  const rules = data?.rules ?? []
+
+  function openAdd() {
+    setEditingIndex(null)
+    setForm({ ..._EMPTY_RULE_FORM, actions: [{ ..._EMPTY_ACTION }] })
+    setDialogOpen(true)
+  }
+
+  function openEdit(idx: number) {
+    setEditingIndex(idx)
+    setForm(_apiRuleToForm(rules[idx]))
+    setDialogOpen(true)
+  }
+
+  async function handleSave() {
+    if (!form.name.trim()) { toast.error('Rule name is required'); return }
+    if (form.triggerType !== 'always' && !form.pattern.trim()) {
+      toast.error('Pattern is required for this trigger type'); return
+    }
+    setSaving(true)
+    try {
+      const rule = _formToApiRule(form)
+      const url = editingIndex === null
+        ? '/api/settings/automations'
+        : `/api/settings/automations/${editingIndex}`
+      const method = editingIndex === null ? 'POST' : 'PUT'
+      const r = await fetch(url, {
+        method,
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rule),
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      qc.invalidateQueries({ queryKey: ['settings-automations'] })
+      setDialogOpen(false)
+      toast.success(editingIndex === null ? 'Rule added' : 'Rule updated')
+    } catch {
+      toast.error('Failed to save rule')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(idx: number) {
+    try {
+      const r = await fetch(`/api/settings/automations/${idx}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      qc.invalidateQueries({ queryKey: ['settings-automations'] })
+      toast.success('Rule deleted')
+    } catch {
+      toast.error('Failed to delete rule')
+    }
+  }
+
+  function updateAction(idx: number, patch: Partial<RuleActionForm>) {
+    setForm(f => {
+      const actions = [...f.actions]
+      actions[idx] = { ...actions[idx], ...patch }
+      return { ...f, actions }
+    })
+  }
+
+  function addAction() {
+    setForm(f => ({ ...f, actions: [...f.actions, { ..._EMPTY_ACTION }] }))
+  }
+
+  function removeAction(idx: number) {
+    setForm(f => ({ ...f, actions: f.actions.filter((_, i) => i !== idx) }))
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Declarative trigger → action rules evaluated against every inbound iMessage.
+        Rules fire in order. Supports <code>reply</code>, <code>webhook</code>, and <code>log</code> actions.
+      </p>
+
+      {isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+
+      {!isLoading && rules.length === 0 && (
+        <p className="text-xs text-muted-foreground italic">No rules configured yet.</p>
+      )}
+
+      <div className="space-y-2">
+        {rules.map((rule, idx) => {
+          const ruleActions = (rule.actions as unknown[]) ?? []
+          const triggerType = (rule.trigger as Record<string, unknown>)?.type as TriggerType
+          const pattern = (rule.trigger as Record<string, unknown>)?.pattern as string | undefined
+          return (
+            <div key={idx} className="flex items-center justify-between rounded border border-border px-3 py-2 text-xs gap-2">
+              <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
+                <span className="font-medium">{(rule.name as string) || <em>unnamed</em>}</span>
+                <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-[10px]">
+                  {_TRIGGER_LABELS[triggerType] ?? triggerType}
+                </span>
+                {pattern && (
+                  <span className="text-muted-foreground font-mono truncate max-w-[140px]">
+                    &ldquo;{pattern}&rdquo;
+                  </span>
+                )}
+                <span className="text-muted-foreground">
+                  {ruleActions.length} action{ruleActions.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => openEdit(idx)}>
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-xs text-destructive hover:text-destructive"
+                  onClick={() => handleDelete(idx)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <Button size="sm" variant="outline" onClick={openAdd} className="text-xs">
+        + Add rule
+      </Button>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingIndex === null ? 'New automation rule' : 'Edit automation rule'}</DialogTitle>
+            <DialogDescription>
+              Configure a trigger, optional conditions, and one or more actions.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 text-sm">
+            {/* Name */}
+            <div>
+              <label className="block text-xs font-medium mb-1">Rule name</label>
+              <Input
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. greeting"
+                className="text-xs"
+              />
+            </div>
+
+            {/* Trigger */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium">Trigger</p>
+              <div className="flex gap-2">
+                <select
+                  value={form.triggerType}
+                  onChange={e => setForm(f => ({ ...f, triggerType: e.target.value as TriggerType }))}
+                  className="text-xs border border-border rounded px-2 py-1 bg-background flex-shrink-0"
+                >
+                  <option value="text_contains">Contains</option>
+                  <option value="text_exact">Exact match</option>
+                  <option value="text_regex">Regex</option>
+                  <option value="always">Always</option>
+                </select>
+                {form.triggerType !== 'always' && (
+                  <Input
+                    value={form.pattern}
+                    onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
+                    placeholder={form.triggerType === 'text_regex' ? 'e.g. hello|hi' : 'e.g. hello'}
+                    className="text-xs"
+                  />
+                )}
+              </div>
+              {form.triggerType === 'text_regex' && (
+                <p className="text-xs text-muted-foreground">
+                  Case-insensitive regex, searched against the full message text.
+                </p>
+              )}
+            </div>
+
+            {/* Conditions */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium">
+                Conditions{' '}
+                <span className="text-muted-foreground font-normal">(optional — absent = unrestricted)</span>
+              </p>
+              <div className="space-y-2 pl-2 border-l border-border">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">
+                    From handles (comma-separated)
+                  </label>
+                  <Input
+                    value={form.fromHandles}
+                    onChange={e => setForm(f => ({ ...f, fromHandles: e.target.value }))}
+                    placeholder="+15551234567, +15559876543"
+                    className="text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">
+                    Not from handles (comma-separated)
+                  </label>
+                  <Input
+                    value={form.notFromHandles}
+                    onChange={e => setForm(f => ({ ...f, notFromHandles: e.target.value }))}
+                    placeholder="+15551234567"
+                    className="text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Chat type</label>
+                  <select
+                    value={form.inGroup}
+                    onChange={e => setForm(f => ({ ...f, inGroup: e.target.value as AutomationRuleForm['inGroup'] }))}
+                    className="text-xs border border-border rounded px-2 py-1 bg-background"
+                  >
+                    <option value="any">Any (group or 1:1)</option>
+                    <option value="group_only">Group messages only</option>
+                    <option value="one_to_one">1:1 messages only</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">
+                    Group GUID (exact match)
+                  </label>
+                  <Input
+                    value={form.groupGuid}
+                    onChange={e => setForm(f => ({ ...f, groupGuid: e.target.value }))}
+                    placeholder="iMessage;+;chat..."
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium">Actions</p>
+              {form.actions.map((action, aIdx) => (
+                <div key={aIdx} className="space-y-2 p-2 border border-border rounded">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={action.type}
+                      onChange={e => updateAction(aIdx, { type: e.target.value as ActionType })}
+                      className="text-xs border border-border rounded px-2 py-1 bg-background"
+                    >
+                      <option value="reply">Reply</option>
+                      <option value="webhook">Webhook</option>
+                      <option value="log">Log</option>
+                    </select>
+                    {form.actions.length > 1 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs text-destructive hover:text-destructive ml-auto"
+                        onClick={() => removeAction(aIdx)}
+                        type="button"
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+
+                  {action.type === 'reply' && (
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        Reply text — supports{' '}
+                        <code>{'{handle}'}</code> <code>{'{name}'}</code> <code>{'{text}'}</code>
+                      </label>
+                      <Textarea
+                        value={action.text}
+                        onChange={e => updateAction(aIdx, { text: e.target.value })}
+                        placeholder="Hi {name}! You said: {text}"
+                        className="text-xs min-h-[60px]"
+                      />
+                    </div>
+                  )}
+
+                  {action.type === 'webhook' && (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">URL</label>
+                        <Input
+                          value={action.url}
+                          onChange={e => updateAction(aIdx, { url: e.target.value })}
+                          placeholder="https://example.com/webhook"
+                          className="text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Method</label>
+                        <select
+                          value={action.method}
+                          onChange={e => updateAction(aIdx, { method: e.target.value })}
+                          className="text-xs border border-border rounded px-2 py-1 bg-background"
+                        >
+                          <option value="POST">POST</option>
+                          <option value="GET">GET</option>
+                          <option value="PUT">PUT</option>
+                          <option value="PATCH">PATCH</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">
+                          Headers (JSON, optional)
+                        </label>
+                        <Textarea
+                          value={action.headers}
+                          onChange={e => updateAction(aIdx, { headers: e.target.value })}
+                          placeholder={'{"Authorization": "Bearer token"}'}
+                          className="text-xs min-h-[60px] font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {action.type === 'log' && (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Level</label>
+                        <select
+                          value={action.level}
+                          onChange={e => updateAction(aIdx, { level: e.target.value })}
+                          className="text-xs border border-border rounded px-2 py-1 bg-background"
+                        >
+                          <option value="debug">debug</option>
+                          <option value="info">info</option>
+                          <option value="warning">warning</option>
+                          <option value="error">error</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">
+                          Message — supports{' '}
+                          <code>{'{handle}'}</code> <code>{'{name}'}</code>{' '}
+                          <code>{'{text}'}</code> <code>{'{rule}'}</code>
+                        </label>
+                        <Input
+                          value={action.message}
+                          onChange={e => updateAction(aIdx, { message: e.target.value })}
+                          placeholder="Rule {rule} fired by {name}"
+                          className="text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={addAction}
+                type="button"
+                className="text-xs"
+              >
+                + Add action
+              </Button>
+            </div>
+
+            {/* Stop on match */}
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.stopOnMatch}
+                onChange={e => setForm(f => ({ ...f, stopOnMatch: e.target.checked }))}
+                className="rounded border border-border"
+              />
+              Stop on match — no subsequent rules fire after this one
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button size="sm" variant="ghost" onClick={() => setDialogOpen(false)} type="button">
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={saving} type="button">
+              {saving ? 'Saving…' : 'Save rule'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
 
@@ -3203,6 +3724,13 @@ function PuzzleIcon() {
   return (
     <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.445.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 2c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02z"/>
+    </svg>
+  )
+}
+function ZapIcon() {
+  return (
+    <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
     </svg>
   )
 }

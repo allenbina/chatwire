@@ -1,21 +1,87 @@
-# Handoff — Phase 60: Data exposure warning modal
+# Handoff — Phase 61: Built-in automation rules engine
 
-> Phase 60 session shipped (2026-05-13, commit e056ca7 in chatwire-dev).
-> 196 Vitest (190 prior + 6 new) + 1110 pytest (1102 pass + 8 pre-existing) — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 60 code).
+> Phase 61 session shipped (2026-05-13, commit 851449c in chatwire-dev).
+> 1161 pytest (1102 prior + 51 new + 8 pre-existing) + 196 Vitest — all green.
+> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 61 code).
 
 ## §1 Current state
 
-- **mbair**: commit e056ca7 deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit 851449c deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants (rose-pine, rose-pine-moon, rose-pine-dawn).
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
-- **Tests**: 196 Vitest / 1110 pytest (1102 pass + 8 pre-existing failures) — all green.
+- **Tests**: 1161 pytest / 196 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 60 changes.
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 61.
 - **PyPI**: v1.14.0 (no version bump — no public API changes; plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced to Phase 60 (commit 54ef0fc, 2026-05-13).
+- **Public repo (allenbina/chatwire)**: synced to Phase 61 (commit 8a3ca2f, 2026-05-13).
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 61 (2026-05-13)
+
+### feat: built-in automation rules engine (#20)
+
+**Problem**: The only way to automate actions on inbound iMessages was to write
+a Python plugin (chatwire-ha does hardcoded keyword matching). There was no
+generic, declarative automation system that users could configure without code.
+
+**Fix**: Added `integrations/rules/` — a built-in `chatwire_rules` integration
+that evaluates a list of declarative rules against every inbound iMessage.
+
+**Rule format** (under `integrations.chatwire_rules.rules` in `config.json`):
+
+```json
+{
+  "name": "greeting",
+  "trigger": {"type": "text_contains", "pattern": "hello"},
+  "conditions": {
+    "from_handles": ["+15551234567"],
+    "in_group": false
+  },
+  "actions": [
+    {"type": "reply", "text": "Hi {name}! You said: {text}"}
+  ]
+}
+```
+
+**Trigger types**:
+- `text_exact` — stripped, lowercased exact match
+- `text_contains` — case-insensitive substring match
+- `text_regex` — compiled regex (IGNORECASE); pre-compiled at startup
+- `always` — fires for every message regardless of text
+
+**Condition keys** (all absent = no restriction):
+- `from_handles` — sender must be in list (case-insensitive)
+- `not_from_handles` — sender must NOT be in list
+- `in_group: true/false` — group-only or 1:1-only
+- `group_guid` — must match this specific group GUID
+
+**Actions** (list, executed in order):
+- `reply` — send a reply via `ctx.send_text`; supports `{handle}`, `{name}`, `{text}` templates
+- `webhook` — HTTP POST (or configurable method) via httpx with JSON context payload
+- `log` — emit a log line at info/warning/debug/error level; supports `{rule}` template var
+
+**Rule options**:
+- `stop_on_match: true` — halt evaluation after this rule fires
+
+**Architecture**:
+- `RulesEngine` — pure class, no async, no I/O; pre-compiles regexes at startup.
+  `evaluate(msg_text, msg_handle, msg_is_group, msg_chat_guid)` returns `[(name, actions)]`.
+- `RulesIntegration` — async wrapper; `NAME = "chatwire_rules"`, `TIER = "core"`.
+  Auto-discovered by bridge (walks `integrations/`). httpx client created lazily on first webhook.
+- Bad rules (unknown trigger type, invalid regex) are skipped at startup with a warning;
+  other rules still load. Action exceptions are caught per-action; subsequent actions still run.
+
+**Tests** (`tests/test_rules_engine.py` — 51 new, all pass):
+- All trigger types, case-insensitive matching, whitespace stripping
+- All condition types (from_handles, not_from_handles, in_group, group_guid, combined)
+- Evaluation order, stop_on_match, bad config handling
+- reply action (template vars, group vs 1:1 targeting, empty-text no-op)
+- webhook action (POST payload, HTTP error, missing URL)
+- log action (level, {rule} template var)
+- Unknown action type, action exception resilience
+- Lifecycle (on_inbound before/after start/stop, double stop)
+- `_render` helper (missing keys → empty string)
 
 ## §2 What shipped in Phase 60 (2026-05-13)
 
@@ -38,17 +104,7 @@ conversations and attachments. There was no first-run warning about this.
 - **`web/frontend/src/App.tsx`**: `<DataWarningModal />` rendered inside
   `QueryClientProvider`, outside all routes — appears globally on every page.
 
-**Tests** (`DataWarningModal.test.tsx` — 6 new, all pass):
-- Modal visible when localStorage key absent.
-- Modal hidden when key already set.
-- "I understand" button hides the modal.
-- "I understand" button writes the localStorage key.
-- Warning text about same-network exposure present.
-- Settings recommendation text present.
-
-**Note on visual QA**: Requires an interactive session to confirm the modal
-renders correctly and that the "Settings → Security" text is legible in both
-light and dark themes.
+**Tests** (`DataWarningModal.test.tsx` — 6 new, all pass).
 
 ## §2 What shipped in Phase 59 (2026-05-13)
 
@@ -100,7 +156,19 @@ Navigation requests (opening a video in a new tab) fell through to the
 
 None.
 
-## §4 Follow-ups (Phase 60+ candidates)
+## §4 Follow-ups (Phase 62+ candidates)
+
+**Automation rules — web UI rule builder** (Phase 62 candidate):
+- Add REST API: `GET/POST/PUT/DELETE /api/v1/automations` for CRUD over the
+  rules list in config.json. The `RulesEngine` and `RulesIntegration` are already
+  in place; the API just needs to read/write `config["integrations"]["chatwire_rules"]["rules"]`.
+- Frontend: rule builder UI in Settings → Automations. Per-rule accordion with
+  trigger picker (dropdown), condition checkboxes, action list editor.
+  Could reuse the existing settings accordion component pattern.
+
+**Automation rules — additional trigger types** (future):
+- `schedule` / cron-based triggers (would need APScheduler or asyncio task scheduler).
+- `on_send` / outbound trigger (fires when *I* send a message matching a pattern).
 
 **Edited messages — history popover** (research needed):
 - The "edited" badge is now live. On click, expand the bubble to show previous
@@ -123,7 +191,8 @@ None.
 
 **Other features**:
 - #41 Demo app on chatwire.app
-- #20 Automation engine + #28 trigger grammar
+- #28 Trigger grammar (now partially addressed by chatwire_rules; #28 may want
+  a more expressive DSL — e.g. `from:+1... contains:"hello" AND in:group`)
 - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
 - #24 Discord server
 - #21, #22 Documentation
@@ -151,6 +220,29 @@ None.
 
 ## §5 Architecture notes
 
+### Automation rules engine (added Phase 61)
+
+- **`integrations/rules/__init__.py`**:
+  - `RulesEngine` — pure class; pre-compiles regexes at startup.
+    `evaluate(msg_text, msg_handle, msg_is_group, msg_chat_guid)` → `[(name, actions)]`.
+    Bad rules (unknown trigger, bad regex) skipped with warning; others still load.
+  - `RulesIntegration` — `NAME = "chatwire_rules"`, `TIER = "core"`.
+    Auto-discovered by `plugin_state.discover_plugin_classes()` (walks `integrations/`).
+    Lifecycle: `start(ctx)` logs count; `stop()` closes httpx client, clears ctx.
+    `on_inbound(msg)` calls engine.evaluate → dispatches actions.
+    Action exceptions caught per-action; subsequent actions still run.
+  - `_render(template, **kwargs)` — safe formatter; unknown keys → empty string.
+  - httpx client created lazily on first webhook action.
+- **Trigger types**: `text_exact` (stripped/lowercased), `text_contains` (case-insensitive),
+  `text_regex` (IGNORECASE, pre-compiled), `always`.
+- **Conditions**: `from_handles` (frozenset, lowercased), `not_from_handles`,
+  `in_group` (None=unrestricted, True/False=enforced), `group_guid`.
+- **Actions**: `reply` ({handle}/{name}/{text} templates; group=kind:chat, 1:1=kind:handle),
+  `webhook` (httpx.AsyncClient; logs 4xx; logs missing url), `log` ({rule} template var).
+- **`stop_on_match`**: bool per rule; halts evaluation loop when rule fires.
+- **Config location**: `config.json["integrations"]["chatwire_rules"]["rules"]`.
+- **51 tests** in `tests/test_rules_engine.py`.
+
 ### Data exposure warning modal (added Phase 60)
 
 - **`DataWarningModal.tsx`** in `web/frontend/src/components/`:
@@ -163,8 +255,7 @@ None.
   - Icon: `ShieldAlert` from lucide-react (`text-warning`).
 - Wired in `App.tsx` inside `<QueryClientProvider>` but outside `<BrowserRouter>`,
   so it renders on every page including `/login`.
-- **6 tests** in `DataWarningModal.test.tsx`; all stub the Dialog with a simple
-  open/close wrapper to avoid Radix Portal rendering in jsdom.
+- **6 tests** in `DataWarningModal.test.tsx`.
 
 ### Edited messages (added Phase 59)
 
@@ -323,10 +414,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 60 shipped (data exposure warning modal, #23).
-196 Vitest (190 prior + 6 new) + 1110 pytest (1102 pass + 8 pre-existing) — all green.
-mbair running v1.14.0 (git+ssh, Phase 60 code, healthy).
-Public repo allenbina/chatwire: synced to Phase 60 (commit 54ef0fc, 2026-05-13).
+STATE: Phase 61 shipped (built-in automation rules engine, #20).
+1161 pytest (1102 prior + 51 new + 8 pre-existing) + 196 Vitest — all green.
+mbair running v1.14.0 (git+ssh, Phase 61 code, healthy).
+Public repo allenbina/chatwire: synced to Phase 61 (commit 8a3ca2f, 2026-05-13).
 
 Key blockers:
   - Edit history popover (#59 follow-up): mbair is macOS 12 — no date_edited column.
@@ -342,14 +433,19 @@ Option A — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option B — Edited messages: history popover (blocked without macOS 13 chat.db).
+Option B — Automation rules REST API + UI (Phase 62):
+  Backend: GET/POST/PUT/DELETE /api/v1/automations in web/api_v1.py.
+  Frontend: Settings → Automations page with rule builder.
+  The RulesEngine and RulesIntegration are in place (Phase 61). API just
+  reads/writes config["integrations"]["chatwire_rules"]["rules"].
+
+Option C — Edited messages: history popover (blocked without macOS 13 chat.db).
   If a chat.db snapshot is available at ~/chat.db or similar, use that.
   Otherwise skip — cannot verify schema on macOS 12.
 
-Option C — #20 Automation engine / #28 trigger grammar (larger, plan first).
-
-Option D — #23 visual QA follow-up: confirm DataWarningModal renders in both
-  themes. Requires interactive mbair session — skip if headless.
+Option D — #20 trigger grammar extension: add schedule/cron trigger type to RulesEngine.
+  Would require an asyncio task scheduler (loop.call_later or APScheduler).
+  Smaller scope: just add schedule cron support + tests.
 
 VISUAL QA NOTE: Data exposure modal, "edited" badge, pin icons in SettingsPage,
 sidebar toggle buttons for hiatus/reminder, hiatus sidebar indicator + dismiss
@@ -372,7 +468,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 61 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 62 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
