@@ -1,7 +1,7 @@
-# Handoff — Phase 75: README feature list update
+# Handoff — Phase 76: UpdateBanner Vitest tests
 
-> Phase 75 session shipped (2026-05-13, commit 1a92ddf).
-> 1409 pytest / 234 Vitest — all green.
+> Phase 76 session shipped (2026-05-13, commit 1a36877).
+> 1409 pytest / 250 Vitest — all green.
 > mbair running v1.14.0 (git+ssh, Phase 73 code, healthy). No code change — no redeploy needed.
 
 ## §1 Current state
@@ -10,9 +10,37 @@
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants.
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
-- **Tests**: 1409 pytest / 234 Vitest — all green.
+- **Tests**: 1409 pytest / 250 Vitest — all green.
 - **PyPI**: v1.14.0 (plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced through Phase 75 (commit bf5de22, 2026-05-13).
+- **Public repo (allenbina/chatwire)**: synced through Phase 76 (commit b1ed9c8, 2026-05-13).
+
+## §2 What shipped in Phase 76 (2026-05-13)
+
+### test: UpdateBanner — 16 Vitest tests for release + SW update banners (#76)
+
+Adds `web/frontend/src/components/UpdateBanner.test.tsx` with 16 tests in two
+describe blocks:
+
+**GitHub release banner (10 tests)**
+- Returns null when health or release data is absent
+- Returns null when versions are equal or current is ahead of latest
+- Returns null when the latest version was previously dismissed
+- Shows banner with both current and latest version numbers when newer
+- Includes a "See release notes" link pointing to GitHub releases
+- Dismiss button hides the banner and persists the version to localStorage
+- Banner carries `role="status"` for screen-reader accessibility
+
+**Service-worker update banner (6 tests)**
+- Shows SW update text after a `controllerchange` event fires
+- Shows a Reload button in the SW banner
+- Reload button calls `window.location.reload`
+- SW banner has `role="status"`
+- SW banner takes priority over the GitHub release banner
+- `afterEach` restores `navigator.serviceWorker` to a no-op stub so the
+  component's cleanup listener doesn't throw during unmount teardown
+
+Vitest: 234 → 250 (+16). All 1409 pytest pass. No code change; no redeploy needed.
+Public repo (allenbina/chatwire) synced — commit b1ed9c8.
 
 ## §2 What shipped in Phase 75 (2026-05-13)
 
@@ -74,39 +102,15 @@
 
 Vitest: 228 → 234 (+6). All 1409 pytest pass.
 
-## §2 What shipped in Phase 72 (2026-05-13)
-
-### test: LockoutTopBanner — 5 Vitest tests (#72)
-
-Added a new `describe('Layout — LockoutTopBanner')` block to
-`web/frontend/src/components/Layout.test.tsx`. Vitest count: 223 → 228 (+5).
-
-## §2 What shipped in Phase 71 (2026-05-13)
-
-### feat: anti-spam UI polish (#71)
-
-**ComposeBox CooldownBanner (steps 1-3)**
-- Replaced the `⏸` pause symbol with a `TriangleAlert` lucide icon.
-
-**Layout — persistent LockoutTopBanner (steps 4+)**
-- New `LockoutTopBanner` component at the top of every `Layout` page.
-- Polls `fuse-status` every 30 s; shows a thin destructive-tinted bar.
-- Step 4-5: "Outbound messaging locked — cooling down. Check Settings for details."
-- Step 6: "Outbound messaging permanently locked — enter unlock code in Settings to restore."
-
-**fix: update unlock fallback URL**
-- `chatwireapp.com/unlock` → `chatwire.app/unlock` in `chat_send.py`,
-  `LockoutOverlay.tsx`, and `test_lockout_hardening.py`.
-
 ## §2 What shipped in earlier phases
 
-(See git history for Phases 62–70 details.)
+(See git history for Phases 62–72 details.)
 
 ## §3 Open bugs
 
 None.
 
-## §4 Follow-ups (Phase 74+ candidates)
+## §4 Follow-ups (Phase 77+ candidates)
 
 **Edited messages — history popover** (research needed):
 - Blocker: mbair is macOS 12 — no `date_edited` column. Needs macOS 13+ hardware
@@ -118,15 +122,26 @@ None.
   Build: `python3 -m build <plugin-dir>`
   Upload: `TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*`
 
+**Mobile app tests** (separate jest-expo suite, not part of main Vitest count):
+- `MessageListScreen.test.tsx` — missing (loads messages, loadOlder, live SSE update,
+  long-press action sheet on iOS vs. Alert on Android).
+- `SettingsScreen.test.tsx` — missing (renders server URL, disconnect alert,
+  haptics toggle, version/platform rows).
+
 **Other features**:
 - #41 Demo app on chatwire.app
 - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
 - #24 Discord server
-- #21, #22 Documentation
+- #21, #22 Documentation (CHANGELOG and README are current)
 - #1 Mac DMG, #2 Custom marketplaces
 
 **Infrastructure**:
 - Set up plinux-local test env (chat.db snapshot, separate port)
+
+**Shared libraries for plugins** (post-RC):
+- Expose Motion (Framer Motion) on `window.__chatwire` so plugins can use
+  animations without bundling their own copy. (Note: framer-motion is not
+  currently a dependency — would need to be added first.)
 
 **Visual QA** (requires interactive mbair session):
 - Schedule trigger: confirm "Schedule (cron)" option in dropdown + cron input
@@ -150,11 +165,16 @@ None.
 - ComposeBox LockoutFooterNote (Phase 73) — verify footer note renders at step 4+ in chat view.
 - ChatPage header visibility during lockout (Phase 73) — verify header stays visible.
 
-**Shared libraries for plugins** (post-RC):
-- Expose Motion (Framer Motion) on `window.__chatwire` so plugins can use
-  animations without bundling their own copy.
-
 ## §5 Architecture notes
+
+### UpdateBanner test setup (added Phase 76)
+
+Key pattern for testing `UpdateBanner`:
+- Wrap in `QueryClientProvider` with `retry: false`.
+- Mock `globalThis.fetch` to return controlled `/healthz` and GitHub API responses.
+- For SW update tests: `Object.defineProperty(navigator, 'serviceWorker', ...)` with
+  a manual event-listener Map; `afterEach` restores it to a no-op stub (not `undefined`)
+  so the component's `useEffect` cleanup function doesn't throw during unmount.
 
 ### ComposeBox lockout states (updated Phase 73)
 
@@ -200,10 +220,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 75 shipped (README feature list update).
-1409 pytest / 234 Vitest — all green.
+STATE: Phase 76 shipped (UpdateBanner Vitest tests, 234 → 250).
+1409 pytest / 250 Vitest — all green.
 mbair running v1.14.0 (git+ssh, Phase 73 code, healthy). No redeploy needed.
-Public repo allenbina/chatwire: synced through Phase 75 (commit bf5de22).
+Public repo allenbina/chatwire: synced through Phase 76 (commit b1ed9c8).
 
 Key blockers:
   - Edit history popover (#59 follow-up): mbair is macOS 12 — no date_edited column.
@@ -212,12 +232,12 @@ Key blockers:
     chatwire-theme-rosepine, chatwire-mqtt, chatwire-ha, chatwire-xmpp not on PyPI.
     Marketplace Install button will fail at pip until published.
 
-Documentation done (#21, #22, #75): CHANGELOG [Unreleased] and README are both current.
-Next candidates from §4:
-  - PyPI publishing (needs TWINE_TOKEN)
+Good next candidates (no blockers):
+  - Mobile app tests: MessageListScreen.test.tsx and SettingsScreen.test.tsx
+    (jest-expo, separate from main Vitest count but good coverage)
+  - Any other untested component — check web/frontend/src/ for .tsx files
+    that have no matching .test.tsx
   - #41 Demo app on chatwire.app
-  - #14 Theme plugin registration (registry done; PyPI publish is the remaining blocker)
-  - #24 Discord server
   - Any other §4 item that fits in one session.
 
 VISUAL QA NOTE: LockoutTopBanner, CooldownBanner icon, LockoutFooterNote,
@@ -235,7 +255,7 @@ DEPLOY (only needed if code changed):
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy (if code changed), sync public repo, and notify:
-  curl -s -d "Phase 75 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 76 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 Public repo sync (after future code phases):
   rsync -a --checksum --exclude='dist/' --exclude='node_modules/' --exclude='__pycache__/' --exclude='.git/' --exclude='*.pyc' --exclude='*.egg-info/' /home/mediafront/git/chatwire-dev/ /tmp/chatwire-public/
@@ -244,7 +264,7 @@ Public repo sync (after future code phases):
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
-NOTE: All 1409 pytest tests pass. 234 Vitest tests pass.
+NOTE: All 1409 pytest tests pass. 250 Vitest tests pass.
 NOTE: Tests mirror web/main.py helpers locally (never import web.main directly —
   module-level side-effects and Python-3.10+ annotation syntax breaks on Python 3.8).
 NOTE: mbair is macOS 12.7.6 — date_edited column does not exist in chat.db there.
@@ -252,4 +272,6 @@ NOTE: mbair is macOS 12.7.6 — date_edited column does not exist in chat.db the
 NOTE: Python 3.8 on plinux — use nested with statements (not parenthesized form)
   in test files. No walrus operator (:=), no match statements.
 NOTE: Use asyncio.run() in new test files (not asyncio.get_event_loop().run_until_complete).
+NOTE: When testing components that mock navigator.serviceWorker, set afterEach to
+  restore it to a no-op stub (not undefined) so component cleanup doesn't throw.
 ```
