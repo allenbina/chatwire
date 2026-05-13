@@ -314,6 +314,8 @@ templates/launchd/    plist templates rendered by install-agents
 scripts/              install.sh, chatwire-loop.sh (dev automation)
 docs/                 OPEN_SOURCE_PLAN.md, REFERENCE_INSTALL.md, HANDOFF.md,
                       PLUGIN_DEVELOPMENT.md, master-migration-plan.md
+docs/wiki/            Developer reference: architecture, disk layout, permissions,
+                      plugin development, install/uninstall
 ```
 
 ## Trademarks
@@ -337,6 +339,11 @@ if you want to build an integration, or browse the
 [open issues](https://github.com/allenbina/chatwire/issues) to find something
 to pick up.
 
+The [developer wiki](docs/wiki/) covers architecture, disk layout, macOS
+permissions, plugin development, and install/uninstall in detail.
+See the [macOS compatibility matrix](docs/wiki/compatibility.md) for a
+feature-by-feature breakdown across macOS 12–15 and hardware configurations.
+
 **Looking for beta testers.** If you have a Mac with iMessage and want to
 try chatwire, [open an issue](https://github.com/allenbina/chatwire/issues)
 with your setup details and we'll get you running.
@@ -345,19 +352,3 @@ with your setup details and we'll get you running.
 
 If chatwire is useful to you, consider
 [sponsoring the project](https://github.com/sponsors/allenbina).
-
----
-
-## Contributing
-
-We welcome contributors at all levels.  See [CONTRIBUTING.md](./CONTRIBUTING.md) to
-get started.
-
-Issues labeled [`good-first-issue`](../../issues?q=label%3Agood-first-issue) are a
-great starting point.
-
-[![GitHub issues](https://img.shields.io/github/issues/allenbina/chatwire)](../../issues)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/allenbina/chatwire)](../../pulls)
-
-> **Privacy:** Never include real phone numbers, contact names, or message content
-> in issues, PRs, or screenshots. Use fake data. See CONTRIBUTING.md for details.

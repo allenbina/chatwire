@@ -16,9 +16,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { fetchConversations, markSeen, markAllSeen, convRouteKey, type Conversation } from '../api'
 import { useChatStore } from '../store'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { SlidingHighlight } from './SlidingHighlight'
 
 function avatarLabel(convo: Conversation): string {
   if (convo.kind === 'group') return '##'
@@ -51,28 +52,40 @@ function ConversationRow({ convo }: { convo: Conversation }) {
   }
 
   return (
-    <li role="listitem">
+    <li role="listitem" data-slide-item className="border-b-[var(--sidebar-divider)] border-border">
       <button
         onClick={handleClick}
         aria-current={isActive ? 'page' : undefined}
         className={cn(
-          'w-full text-left flex items-center gap-3 px-[var(--spacing-sidebar)] py-[var(--spacing-sidebar)]',
-          'hover:bg-accent transition-colors',
+          'w-full text-left flex items-center gap-3 px-4',
+          'transition-colors',
           isActive && 'bg-accent',
         )}
+        style={{
+          paddingTop: 'var(--spacing-sidebar)',
+          paddingBottom: 'var(--spacing-sidebar)',
+          borderRadius: 'var(--sidebar-active-radius)',
+        }}
       >
-        {/* Avatar — round for 1:1, rounded-lg for groups */}
+        {/* Avatar — groups use rounded-lg; 1:1 uses --avatar-shape variable */}
         <Avatar
           className={cn(
-            'flex-shrink-0 h-9 w-9 bg-card',
-            convo.kind === 'group' ? 'rounded-lg' : 'rounded-full',
+            'flex-shrink-0 bg-card',
+            'h-[var(--avatar-size)] w-[var(--avatar-size)]',
+            convo.kind === 'group' ? 'rounded-lg' : 'rounded-[var(--avatar-shape)]',
           )}
           aria-hidden="true"
         >
+          {convo.kind === 'handle' && (
+            <AvatarImage
+              src={`/avatar?handle=${encodeURIComponent(convo.handle)}`}
+              alt={displayName}
+            />
+          )}
           <AvatarFallback
             className={cn(
               'bg-card text-primary font-semibold text-sm',
-              convo.kind === 'group' ? 'rounded-lg' : 'rounded-full',
+              convo.kind === 'group' ? 'rounded-lg' : 'rounded-[var(--avatar-shape)]',
             )}
           >
             {avatarLabel(convo)}
@@ -84,9 +97,9 @@ function ConversationRow({ convo }: { convo: Conversation }) {
           <div className="flex items-center justify-between gap-1">
             <span
               className={cn(
-                'text-[length:var(--font-size-sidebar)] font-medium truncate',
+                'text-base font-semibold truncate',
                 convo.is_favorite
-                  ? 'text-[--warning]'
+                  ? 'text-warning'
                   : 'text-foreground',
               )}
             >
@@ -101,7 +114,7 @@ function ConversationRow({ convo }: { convo: Conversation }) {
             </span>
           </div>
           <div className="flex items-center justify-between gap-1 mt-0.5">
-            <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+            <p className="text-muted-foreground truncate flex items-center gap-1" style={{ fontSize: 'var(--font-size-sidebar)' }}>
               {convo.has_media && !convo.preview ? (
                 <>
                   <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}
@@ -162,8 +175,6 @@ export function ConversationList() {
     },
   })
 
-  const hasUnseen = data?.some((c) => c.unseen) ?? false
-
   // Shift+Escape — mark all read from anywhere in the app
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -201,23 +212,13 @@ export function ConversationList() {
 
   return (
     <nav aria-label="Conversations">
-      {hasUnseen && (
-        <div className="flex justify-end px-3 py-1 border-b border-border">
-          <button
-            type="button"
-            onClick={() => markAllMutation.mutate()}
-            disabled={markAllMutation.isPending}
-            className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
-          >
-            Mark all read
-          </button>
-        </div>
-      )}
-      <ul role="list" className="py-1">
-        {data.map((c) => (
-          <ConversationRow key={convRouteKey(c)} convo={c} />
-        ))}
-      </ul>
+      <SlidingHighlight highlightClass="bg-accent rounded-[var(--sidebar-active-radius)]">
+        <ul role="list" className="py-1">
+          {data.map((c) => (
+            <ConversationRow key={convRouteKey(c)} convo={c} />
+          ))}
+        </ul>
+      </SlidingHighlight>
     </nav>
   )
 }

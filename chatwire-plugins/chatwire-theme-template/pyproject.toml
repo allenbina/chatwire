@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chatwire-theme-template"
+version = "1.0.0"
+description = "Community template for building Chatwire color-scheme plugins."
+requires-python = ">=3.11"
+
+# Register this package as a Chatwire theme plugin.
+# The entry-point group is "chatwire.themes".
+# The value "chatwire_theme_template" is the Python module name to import.
+# Chatwire reads SCHEMES and CSS from the loaded module.
+[project.entry-points."chatwire.themes"]
+chatwire_theme_template = "chatwire_theme_template"
+
+[tool.chatwire.plugin]
+TIER = "ui"

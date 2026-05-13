@@ -25,7 +25,7 @@ import type { Attachment } from '../api'
 // Lightbox
 // ---------------------------------------------------------------------------
 
-function Lightbox({
+export function Lightbox({
   images,
   startIndex,
   onClose,

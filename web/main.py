@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import subprocess
@@ -71,6 +72,9 @@ _VERSION_CACHE_FILE = STATE_DIR / "plugin_version_cache.json"
 
 # Plugin audit log
 from web.plugin_audit import log_event as _audit_log  # noqa: E402
+
+# Structured JSONL logger (writes ~/.chatwire/chatwire.jsonl for LogsPage)
+from web import log_stream as _ls  # noqa: E402
 
 
 def _fetch_registry_blocking() -> list[dict]:
@@ -380,6 +384,7 @@ ORDER BY last_dt DESC
 HISTORY_SQL_TEMPLATE = """
 SELECT
     m.ROWID AS rowid,
+    m.guid AS guid,
     m.is_from_me AS is_from_me,
     m.date AS date,
     COALESCE(m.text, '') AS text,
@@ -387,13 +392,19 @@ SELECT
     h.service AS service,
     m.is_sent AS is_sent,
     m.is_delivered AS is_delivered,
-    COALESCE(m.error, 0) AS error
+    COALESCE(m.error, 0) AS error,
+    m.payload_data AS payload_data,
+    m.is_read AS is_read,
+    m.date_read AS date_read,
+    m.thread_originator_guid AS reply_to_guid,
+    COALESCE(m.balloon_bundle_id, '') AS balloon_bundle_id
 FROM message m
 LEFT JOIN handle h ON m.handle_id = h.ROWID
 JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
 JOIN chat c ON c.ROWID = cmj.chat_id
 WHERE h.id IN ({placeholders}) AND c.style = 45
   {cursor_clause}
+GROUP BY m.ROWID
 ORDER BY m.date DESC, m.ROWID DESC
 LIMIT ?
 """
@@ -403,6 +414,67 @@ SELECT a.filename, a.mime_type, a.transfer_state, a.transfer_name, a.total_bytes
 FROM message_attachment_join maj
 JOIN attachment a ON a.ROWID = maj.attachment_id
 WHERE maj.message_id = ?
+"""
+
+# Tapback (reaction) type → emoji. Types 2000-2006 are additions; 3000+ are removals.
+TAPBACK_EMOJI: dict[int, str] = {
+    2000: "❤️",
+    2001: "👍",
+    2002: "👎",
+    2003: "😂",
+    2004: "‼️",
+    2005: "❓",
+    2006: "🎉",
+}
+
+# Fetches active tapbacks for a batch of messages identified by their GUIDs.
+# For each (message_guid, sender), the most-recent reaction wins — if a sender
+# last sent a removal (≥3000) that tapback is excluded.
+TAPBACK_SQL = """
+SELECT
+    tb.associated_message_guid,
+    tb.associated_message_type,
+    tb.is_from_me,
+    tb.date,
+    h.id AS sender_handle
+FROM (
+    SELECT
+        associated_message_guid,
+        handle_id,
+        is_from_me,
+        associated_message_type,
+        date,
+        ROW_NUMBER() OVER (
+            PARTITION BY associated_message_guid, COALESCE(handle_id, -1), is_from_me
+            ORDER BY date DESC
+        ) AS rn
+    FROM message
+    WHERE associated_message_guid IN ({placeholders})
+      AND associated_message_type >= 2000
+) tb
+LEFT JOIN handle h ON h.ROWID = tb.handle_id
+WHERE tb.rn = 1 AND tb.associated_message_type < 3000
+ORDER BY tb.associated_message_guid, tb.date
+"""
+
+# Fetches parent message data for inline-reply context. Keyed by guid so
+# replies can be resolved in a single round-trip for the whole page.
+REPLY_PARENT_SQL = """
+SELECT
+    m.ROWID AS rowid,
+    m.guid AS guid,
+    COALESCE(m.text, '') AS text,
+    COALESCE(h.id, '') AS sender_handle,
+    m.is_from_me AS is_from_me,
+    (SELECT a.filename
+     FROM message_attachment_join maj
+     JOIN attachment a ON a.ROWID = maj.attachment_id
+     WHERE maj.message_id = m.ROWID
+       AND a.mime_type LIKE 'image/%'
+     LIMIT 1) AS image_filename
+FROM message m
+LEFT JOIN handle h ON m.handle_id = h.ROWID
+WHERE m.guid IN ({placeholders})
 """
 
 # ---------------------------------------------------------------------------
@@ -487,12 +559,45 @@ def _domain_from_url(url: str) -> str:
         return ""
 
 
-def _build_link_preview(text: str, attachments: list[dict]) -> dict | None:
+def _extract_rich_link_meta(payload_data: bytes | None) -> dict:
+    """Extract title and summary from NSKeyedArchiver payload_data blob.
+
+    Returns dict with 'title' and 'description' keys (may be empty strings).
+    """
+    if not payload_data:
+        return {"title": "", "description": ""}
+    try:
+        import plistlib
+        data = plistlib.loads(payload_data)
+        objects = data.get("$objects", [])
+
+        def _resolve_uid(uid) -> str:
+            """Resolve a plistlib.UID or int to the string at that index."""
+            idx = getattr(uid, "data", uid) if uid is not None else None
+            if idx is not None and isinstance(idx, int) and 0 < idx < len(objects):
+                val = objects[idx]
+                return val if isinstance(val, str) else ""
+            return ""
+
+        # The richLinkMetadata object is at index 2; title and summary are UIDs
+        if len(objects) > 2 and isinstance(objects[2], dict):
+            meta = objects[2]
+            title = _resolve_uid(meta.get("title"))
+            description = _resolve_uid(meta.get("summary"))
+            return {"title": title, "description": description}
+    except Exception:
+        pass
+    return {"title": "", "description": ""}
+
+
+def _build_link_preview(text: str, attachments: list[dict],
+                        payload_data: bytes | None = None) -> dict | None:
     """If a message has URL text + pluginPayloadAttachment images, return a
     link preview dict; otherwise None.
 
     Picks the largest plugin attachment as the preview image (the smaller one
-    is usually a favicon). Returns dict with keys: url, domain, image_path.
+    is usually a favicon). Returns dict with keys: url, domain, image_path,
+    title, description.
     """
     plugin_atts = [a for a in attachments if a.get("is_plugin")]
     if not plugin_atts:
@@ -503,11 +608,73 @@ def _build_link_preview(text: str, attachments: list[dict]) -> dict | None:
     # Pick the largest plugin attachment as the preview image.
     best = max(plugin_atts, key=lambda a: a.get("total_bytes", 0))
     url = urls[0]
+    meta = _extract_rich_link_meta(payload_data)
     return {
         "url": url,
         "domain": _domain_from_url(url),
         "image_path": best["path"],
+        "title": meta.get("title", ""),
+        "description": meta.get("description", ""),
     }
+
+
+import re as _re_mod
+_APPLE_MAPS_LL_RE = _re_mod.compile(
+    r"https?://(?:maps|beta\.maps)\.apple\.com/[^\s]*[?&]ll=([-\d.]+),([-\d.]+)",
+    _re_mod.IGNORECASE,
+)
+_MAP_BALLOON_BUNDLE = "com.apple.messages.MapBalloonProvider"
+
+
+def _parse_location(text: str, balloon_bundle_id: str) -> dict | None:
+    """Return a location dict {lat, lon, maps_url} if the message is a location share.
+
+    Detects via Apple Maps ?ll= URL in text, or via balloon_bundle_id for
+    MapBalloon messages where coords may be in the URL embedded in text.
+    Returns None if no location is found.
+    """
+    m = _APPLE_MAPS_LL_RE.search(text or "")
+    if m:
+        lat, lon = float(m.group(1)), float(m.group(2))
+        return {
+            "lat": lat,
+            "lon": lon,
+            "maps_url": f"https://www.google.com/maps?q={lat},{lon}",
+        }
+    # If balloon_bundle_id is the map provider but we couldn't extract coords
+    # from text, return a generic indicator without coordinates.
+    if balloon_bundle_id == _MAP_BALLOON_BUNDLE:
+        return {"lat": None, "lon": None, "maps_url": None}
+    return None
+
+
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".heic", ".heif", ".webp", ".bmp", ".tiff", ".tif"}
+_VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+_AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".caf"}
+
+
+def _attachment_kind(mime_type: str, suffix: str) -> str:
+    """Derive attachment kind from MIME type, with filename extension as fallback.
+
+    Stickers and Memoji sometimes arrive with empty MIME types but have image
+    file extensions (.heic, .png). Without this fallback they'd be classified
+    as 'file' and rendered as download links instead of inline images.
+    """
+    if mime_type.startswith("image/"):
+        return "image"
+    if mime_type.startswith("video/"):
+        return "video"
+    if mime_type.startswith("audio/"):
+        return "audio"
+    # MIME type absent — fall back to extension
+    ext = suffix.lower()
+    if ext in _IMAGE_EXTS:
+        return "image"
+    if ext in _VIDEO_EXTS:
+        return "video"
+    if ext in _AUDIO_EXTS:
+        return "audio"
+    return "file"
 
 
 def _sniff_image_type(p: Path) -> str:
@@ -537,6 +704,7 @@ def _sniff_image_type(p: Path) -> str:
 HISTORY_GROUP_SQL_TEMPLATE = """
 SELECT
     m.ROWID AS rowid,
+    m.guid AS guid,
     m.is_from_me AS is_from_me,
     m.date AS date,
     COALESCE(m.text, '') AS text,
@@ -545,7 +713,12 @@ SELECT
     COALESCE(h.service, '') AS service,
     m.is_sent AS is_sent,
     m.is_delivered AS is_delivered,
-    COALESCE(m.error, 0) AS error
+    COALESCE(m.error, 0) AS error,
+    m.payload_data AS payload_data,
+    m.is_read AS is_read,
+    m.date_read AS date_read,
+    m.thread_originator_guid AS reply_to_guid,
+    COALESCE(m.balloon_bundle_id, '') AS balloon_bundle_id
 FROM message m
 LEFT JOIN handle h ON m.handle_id = h.ROWID
 JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
@@ -564,6 +737,17 @@ ATTACHMENTS_BASE = (Path.home() / "Library" / "Messages" / "Attachments").resolv
 THUMB_CACHE_DIR = (STATE_DIR / "thumb_cache").resolve()
 THUMB_MAX_EDGE = 720  # px; covers retina at the chat's ~280–360 displayed size
 THUMB_TTL_DAYS = 180
+
+# Full-size converted image cache (e.g. HEIC→JPEG). Keeps converted files
+# out of ~/Library/Messages/Attachments so Messages.app never sees extras.
+FULL_IMG_CACHE_DIR = (STATE_DIR / "img_cache").resolve()
+FULL_IMG_TTL_DAYS = 90
+
+# Startup img_cache warmup: look back this many days and convert at most this many files.
+_WARMUP_DAYS = 30
+_WARMUP_MAX = 200
+
+_ATTACHMENT_CACHE_CONTROL = "public, max-age=2592000"  # 30 days
 
 
 def _thumb_for(orig: Path) -> Path | None:
@@ -593,18 +777,52 @@ def _thumb_for(orig: Path) -> Path | None:
     return cached if cached.exists() else None
 
 
-async def _thumb_cache_evictor():
-    """Daily sweep: drop thumbs whose files are older than THUMB_TTL_DAYS.
+def _full_img_for(orig: Path) -> Path | None:
+    """Return a cached full-size JPEG for HEIC/HEIF originals.
 
-    Re-viewing an old chat regenerates the thumb on demand; this just bounds
-    disk use. Originals in ~/Library/Messages/Attachments are never touched.
+    Stores the converted file in FULL_IMG_CACHE_DIR instead of alongside
+    the original in ~/Library/Messages/Attachments (Messages.app never sees
+    the extra file). Returns None on failure — caller serves the raw original.
+    Keyed by (path, mtime) so a replacement file invalidates the cache entry.
+    """
+    try:
+        st = orig.stat()
+    except OSError:
+        return None
+    import hashlib
+    key = hashlib.sha1(f"{orig}:{int(st.st_mtime)}".encode()).hexdigest()[:16]
+    FULL_IMG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached = FULL_IMG_CACHE_DIR / f"{key}.jpg"
+    if cached.exists() and cached.stat().st_mtime >= st.st_mtime:
+        return cached
+    try:
+        subprocess.run(
+            ["sips", "-s", "format", "jpeg", str(orig), "--out", str(cached)],
+            check=True, capture_output=True, timeout=30,
+        )
+    except Exception:
+        return None
+    return cached if cached.exists() else None
+
+
+async def _attachment_cache_evictor():
+    """Daily sweep: evict thumb_cache and img_cache entries beyond their TTL.
+
+    Re-viewing an old attachment regenerates the cached version on demand;
+    this just bounds disk use. Originals in ~/Library/Messages/Attachments
+    are never touched.
     """
     while True:
         try:
-            if THUMB_CACHE_DIR.exists():
-                cutoff = time.time() - THUMB_TTL_DAYS * 86400
+            for cache_dir, ttl_days, label in [
+                (THUMB_CACHE_DIR, THUMB_TTL_DAYS, "thumb cache"),
+                (FULL_IMG_CACHE_DIR, FULL_IMG_TTL_DAYS, "img cache"),
+            ]:
+                if not cache_dir.exists():
+                    continue
+                cutoff = time.time() - ttl_days * 86400
                 pruned = 0
-                for f in THUMB_CACHE_DIR.iterdir():
+                for f in cache_dir.iterdir():
                     try:
                         if f.is_file() and f.stat().st_mtime < cutoff:
                             f.unlink()
@@ -612,11 +830,71 @@ async def _thumb_cache_evictor():
                     except OSError:
                         continue
                 if pruned:
-                    log.info("thumb cache: evicted %d files older than %dd",
-                             pruned, THUMB_TTL_DAYS)
+                    log.info("%s: evicted %d files older than %dd",
+                             label, pruned, ttl_days)
         except Exception as e:
-            log.warning("thumb cache evictor: %s", e)
+            log.warning("attachment cache evictor: %s", e)
         await asyncio.sleep(86400)
+
+
+_WARMUP_HEIC_SQL = """
+SELECT DISTINCT a.filename
+FROM message m
+JOIN message_attachment_join maj ON maj.message_id = m.ROWID
+JOIN attachment a ON a.ROWID = maj.attachment_id
+WHERE m.date > ?
+  AND a.transfer_state = 5
+  AND (
+    LOWER(a.filename) LIKE '%.heic'
+    OR LOWER(a.filename) LIKE '%.heif'
+    OR LOWER(a.mime_type) LIKE 'image/heic%'
+    OR LOWER(a.mime_type) LIKE 'image/heif%'
+  )
+ORDER BY m.date DESC
+LIMIT ?
+"""
+
+
+async def _img_cache_warmer():
+    """On startup, pre-convert recent HEIC attachments into img_cache.
+
+    Runs once after a short delay (lets the app become responsive first).
+    Best-effort: any failure is logged and skipped. Already-cached files
+    return instantly from _full_img_for so re-running is harmless.
+    """
+    await asyncio.sleep(10)  # let the server finish binding before we start sips
+    try:
+        cutoff_apple_ns = int(
+            (time.time() - _WARMUP_DAYS * 86400 - APPLE_EPOCH_OFFSET) * 1_000_000_000
+        )
+        db = await asyncio.to_thread(_snapshot)
+        rows = db.execute(_WARMUP_HEIC_SQL, (cutoff_apple_ns, _WARMUP_MAX)).fetchall()
+        db.close()
+    except Exception as e:
+        log.warning("img_cache warmer: db query failed: %s", e)
+        return
+
+    total = len(rows)
+    warmed = skipped = 0
+    for row in rows:
+        raw = row["filename"] if hasattr(row, "keys") else row[0]
+        p = Path(raw).expanduser() if raw else None
+        if not p or p.suffix.lower() not in (".heic", ".heif"):
+            skipped += 1
+            continue
+        try:
+            result = await asyncio.to_thread(_full_img_for, p)
+            if result is not None:
+                warmed += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            log.debug("img_cache warmer: skipping %s: %s", p.name, e)
+            skipped += 1
+        await asyncio.sleep(0.05)  # gentle — don't monopolise sips on startup
+
+    log.info("img_cache warmer: %d/%d HEIC files warmed (%d skipped)",
+             warmed, total, skipped)
 
 
 def _selected_time_format() -> str:
@@ -683,6 +961,15 @@ def _short_ts(apple_date: int) -> str:
     if msg.tm_year == now.tm_year:
         return time.strftime("%b %d", msg)
     return time.strftime("%Y-%m-%d", msg)
+
+
+def _read_ts(apple_date: int) -> str:
+    """Format a date_read Apple timestamp as a short time string (e.g. '3:45 PM')."""
+    if not apple_date:
+        return ""
+    epoch = apple_date / 1_000_000_000 + 978307200
+    fmt = "%I:%M %p" if _selected_time_format() == "12h" else "%H:%M"
+    return time.strftime(fmt, time.localtime(epoch)).lstrip("0") or "12:00 AM"
 
 
 def _name(handle: str) -> str:
@@ -977,9 +1264,12 @@ def history_for(
                 mt = a["mime_type"] or ""
                 tn = a["transfer_name"] or ""
                 is_plugin = tn.endswith(".pluginPayloadAttachment")
-                kind = "image" if mt.startswith("image/") else \
-                       "video" if mt.startswith("video/") else \
-                       "audio" if mt.startswith("audio/") else "file"
+                kind = _attachment_kind(mt, p.suffix)
+                exists = p.exists()
+                # Use the actual on-disk size when available — total_bytes in
+                # chat.db can be stale (e.g. 1 KB stub recorded before iCloud
+                # download completed, even though the full file is now local).
+                size = p.stat().st_size if exists else (a["total_bytes"] or 0)
                 atts_by_msg[r["rowid"]].append({
                     "path": str(p),
                     "name": p.name,
@@ -987,23 +1277,31 @@ def history_for(
                     "kind": kind,
                     # Trust the filesystem: if the file is there, render it,
                     # regardless of what transfer_state thinks. The flag lags.
-                    "ready": p.exists(),
+                    "ready": exists,
                     "is_plugin": is_plugin,
-                    "total_bytes": a["total_bytes"] or 0,
+                    "total_bytes": size,
                 })
+        guids = [r["guid"] for r in rows if r["guid"]]
+        tapbacks_by_guid = _fetch_tapbacks(conn, guids)
+        reply_guids = [r["reply_to_guid"] for r in rows if r["reply_to_guid"]]
+        reply_parents = _fetch_reply_parents(conn, list(set(reply_guids)))
     finally:
         conn.close()
+    # thread_originator_guid is only set on real user-initiated replies
+    # (not thread chaining), so no filtering needed.
+    ordered = list(reversed(rows))
     out = []
-    for r in reversed(rows):
+    for i, r in enumerate(ordered):
         body = (r["text"] or "").replace("\ufffc", "").replace("\ufffd", "").strip()
         atts = atts_by_msg.get(r["rowid"], [])
-        preview = _build_link_preview(body, atts)
+        preview = _build_link_preview(body, atts, r["payload_data"] if "payload_data" in r.keys() else None)
         # Hide plugin attachments from the normal attachment list when
         # they've been folded into a link preview card.
         if preview:
             atts = [a for a in atts if not a.get("is_plugin")]
         entry = {
             "rowid": r["rowid"],
+            "guid": r["guid"] or "",
             "date": int(r["date"] or 0),
             "from_me": bool(r["is_from_me"]),
             "ts": _ts(r["date"]),
@@ -1013,7 +1311,21 @@ def history_for(
         }
         if entry["from_me"]:
             entry.update(_delivery_status(r))
+            svc = r["service"] or ""
+            if svc == "iMessage" and r["is_read"] and r["date_read"]:
+                entry["read"] = True
+                entry["read_at"] = _read_ts(r["date_read"])
+        tapbacks = tapbacks_by_guid.get(r["guid"] or "", [])
+        if tapbacks:
+            entry["tapbacks"] = tapbacks
+        reply_to_guid = r["reply_to_guid"] or ""
+        if reply_to_guid and reply_to_guid in reply_parents:
+            entry["reply_to"] = reply_parents[reply_to_guid]
+        location = _parse_location(body, r["balloon_bundle_id"] or "")
+        if location:
+            entry["location"] = location
         out.append(entry)
+    out = _apply_sms_reactions(out)
     return _bundle_galleries(out), has_more
 
 
@@ -1057,30 +1369,36 @@ def history_for_group(
                 mt = a["mime_type"] or ""
                 tn = a["transfer_name"] or ""
                 is_plugin = tn.endswith(".pluginPayloadAttachment")
-                kind = "image" if mt.startswith("image/") else \
-                       "video" if mt.startswith("video/") else \
-                       "audio" if mt.startswith("audio/") else "file"
+                kind = _attachment_kind(mt, p.suffix)
+                exists = p.exists()
+                size = p.stat().st_size if exists else (a["total_bytes"] or 0)
                 atts_by_msg[r["rowid"]].append({
                     "path": str(p),
                     "name": p.name,
                     "mime": mt,
                     "kind": kind,
-                    "ready": p.exists(),
+                    "ready": exists,
                     "is_plugin": is_plugin,
-                    "total_bytes": a["total_bytes"] or 0,
+                    "total_bytes": size,
                 })
+        guids = [r["guid"] for r in rows if r["guid"]]
+        tapbacks_by_guid = _fetch_tapbacks(conn, guids)
+        reply_guids = [r["reply_to_guid"] for r in rows if r["reply_to_guid"]]
+        reply_parents = _fetch_reply_parents(conn, list(set(reply_guids)))
     finally:
         conn.close()
+    ordered = list(reversed(rows))
     out: list[dict] = []
-    for r in reversed(rows):
+    for i, r in enumerate(ordered):
         body = (r["text"] or "").replace("￼", "").replace("\ufffd", "").strip()
         sender = r["sender_handle"] or ""
         atts = atts_by_msg.get(r["rowid"], [])
-        preview = _build_link_preview(body, atts)
+        preview = _build_link_preview(body, atts, r["payload_data"] if "payload_data" in r.keys() else None)
         if preview:
             atts = [a for a in atts if not a.get("is_plugin")]
         entry = {
             "rowid": r["rowid"],
+            "guid": r["guid"] or "",
             "date": int(r["date"] or 0),
             "from_me": bool(r["is_from_me"]),
             "ts": _ts(r["date"]),
@@ -1092,7 +1410,21 @@ def history_for_group(
         }
         if entry["from_me"]:
             entry.update(_delivery_status(r))
+            svc = r["service"] or ""
+            if svc == "iMessage" and r["is_read"] and r["date_read"]:
+                entry["read"] = True
+                entry["read_at"] = _read_ts(r["date_read"])
+        tapbacks = tapbacks_by_guid.get(r["guid"] or "", [])
+        if tapbacks:
+            entry["tapbacks"] = tapbacks
+        reply_to_guid = r["reply_to_guid"] or ""
+        if reply_to_guid and reply_to_guid in reply_parents:
+            entry["reply_to"] = reply_parents[reply_to_guid]
+        location = _parse_location(body, r["balloon_bundle_id"] or "")
+        if location:
+            entry["location"] = location
         out.append(entry)
+    out = _apply_sms_reactions(out)
     return _bundle_galleries(out), has_more
 
 
@@ -1251,6 +1583,75 @@ def contact_for_group(guid: str) -> dict:
     }
 
 
+def _fetch_reply_parents(conn, reply_guids: list[str]) -> dict[str, dict]:
+    """Return a mapping of parent_guid → {text, sender, rowid} for inline reply context.
+
+    Empty dict if no reply_guids. 'sender' is '' when is_from_me, otherwise the
+    handle id (caller should run through _name() for display).
+    """
+    if not reply_guids:
+        return {}
+    placeholders = ",".join("?" * len(reply_guids))
+    sql = REPLY_PARENT_SQL.format(placeholders=placeholders)
+    rows = conn.execute(sql, reply_guids).fetchall()
+    result: dict[str, dict] = {}
+    for row in rows:
+        text = (row["text"] or "").replace("\ufffc", "").replace("\ufffd", "").strip()
+        sender_handle = row["sender_handle"] or ""
+        entry: dict = {
+            "rowid": int(row["rowid"]),
+            "text": text,
+            "sender": "" if row["is_from_me"] else (
+                _name(sender_handle) if sender_handle else sender_handle
+            ),
+        }
+        raw_fn = row["image_filename"] if "image_filename" in row.keys() else None
+        if raw_fn:
+            p = Path(raw_fn).expanduser()
+            if p.exists():
+                entry["image_path"] = str(p)
+        result[row["guid"]] = entry
+    return result
+
+
+from web.sms_reactions import apply_sms_reactions as _apply_sms_reactions  # noqa: E402
+
+
+def _fetch_tapbacks(conn, guids: list[str]) -> dict[str, list[dict]]:
+    """Return a mapping of message_guid → list of {type, senders} tapback dicts.
+
+    Each entry is {type: <emoji>, senders: [{name: <str>, time: <str>}]}.
+    Only includes active tapbacks (additions, not removals). Empty if no guids.
+    """
+    if not guids:
+        return {}
+    placeholders = ",".join("?" * len(guids))
+    sql = TAPBACK_SQL.format(placeholders=placeholders)
+    rows = conn.execute(sql, guids).fetchall()
+
+    # Collect senders per (guid, emoji) preserving insertion order
+    type_senders: dict[tuple, list[dict]] = {}
+    for row in rows:
+        guid = row["associated_message_guid"]
+        ttype = int(row["associated_message_type"])
+        emoji = TAPBACK_EMOJI.get(ttype)
+        if emoji is None:
+            continue
+        key = (guid, emoji)
+        if row["is_from_me"]:
+            name = "You"
+        else:
+            handle_str = row["sender_handle"] or ""
+            name = _name(handle_str) if handle_str else "Unknown"
+        time_str = _read_ts(int(row["date"] or 0))
+        type_senders.setdefault(key, []).append({"name": name, "time": time_str})
+
+    result: dict[str, list[dict]] = {}
+    for (guid, emoji), senders in type_senders.items():
+        result.setdefault(guid, []).append({"type": emoji, "senders": senders})
+    return result
+
+
 def _delivery_status(r) -> dict:
     """Derive UI-facing delivery status from a message row.
 
@@ -1388,8 +1789,14 @@ async def send(request: Request,
     # Worst-case status wins: failed > pending > sent > delivered.
     rank = {"delivered": 0, "sent": 1, "pending": 2, "failed": 3}
     worst = max(results, key=lambda x: rank.get(x["status"], 0)) if results else None
+    dest = chat or handle
+    final_status = worst["status"] if worst else "delivered"
+    if final_status == "failed":
+        _ls.error("core", f"outbound send failed to {dest}")
+    else:
+        _ls.info("core", f"outbound send to {dest} ({final_status})")
     return {"ok": worst is None or worst["status"] != "failed",
-            "status": worst["status"] if worst else "delivered",
+            "status": final_status,
             "hint": worst["hint"] if worst else "",
             "fell_back_to_sms": any(r.get("fell_back_to_sms") for r in results),
             "results": results}
@@ -1423,6 +1830,10 @@ async def events():
                         if h and "name" not in evt:
                             evt["name"] = _name(h)
                             out = json.dumps(evt)
+                        # Log inbound messages (sender name only, no message text)
+                        if evt.get("type") == "message" and h:
+                            sender = evt.get("name") or h
+                            _ls.info("core", f"inbound message from {sender}")
                     except Exception:
                         pass
                     yield f"data: {out}\n\n"
@@ -1462,28 +1873,44 @@ async def attachment(path: str, size: str = "", dl: str = ""):
             if thumb is not None:
                 return FileResponse(
                     thumb, media_type="image/jpeg",
-                    headers={"Cache-Control": "public, max-age=2592000"},
+                    headers={"Cache-Control": _ATTACHMENT_CACHE_CONTROL},
                 )
         # fall through to full-size on unknown ext or sips failure
     # Convert HEIC to JPEG on the fly so browsers can render it.
+    # Cached in FULL_IMG_CACHE_DIR (not alongside the original) so
+    # Messages.app never sees the extra file.
     if p.suffix.lower() in (".heic", ".heif"):
-        cached = p.with_suffix(".jpg")
-        if not (cached.exists() and cached.stat().st_mtime >= p.stat().st_mtime):
-            try:
-                subprocess.run(["sips", "-s", "format", "jpeg", str(p),
-                                "--out", str(cached)],
-                               check=True, capture_output=True, timeout=30)
-            except Exception:
-                return FileResponse(p)
+        cached = await asyncio.to_thread(_full_img_for, p)
+        if cached is None:
+            # sips unavailable or failed — serve raw HEIC; most browsers will
+            # show a broken image but the file is still downloadable.
+            return FileResponse(
+                p, filename=(dl or p.name),
+                headers={"Cache-Control": _ATTACHMENT_CACHE_CONTROL},
+            )
         fname = (Path(dl).stem + ".jpg") if dl else cached.name
-        return FileResponse(cached, media_type="image/jpeg", filename=fname)
+        return FileResponse(
+            cached, media_type="image/jpeg", filename=fname,
+            headers={"Cache-Control": _ATTACHMENT_CACHE_CONTROL},
+        )
     # iPhone .mov: relabel as video/mp4 so Chrome/Safari will play inline.
     # Firefox often still rejects (HEVC / QT container), falls back to the
     # download link in the template. See README "Firefox-compatible video
     # playback" for the transcode path if it's ever needed.
     if p.suffix.lower() == ".mov":
-        fname = (Path(dl).stem + ".mp4") if dl else p.stem + ".mp4"
-        return FileResponse(p, media_type="video/mp4", filename=fname)
+        if dl:
+            # Explicit download requested — set Content-Disposition: attachment
+            fname = Path(dl).stem + ".mp4"
+            return FileResponse(
+                p, media_type="video/mp4", filename=fname,
+                headers={"Cache-Control": _ATTACHMENT_CACHE_CONTROL},
+            )
+        # Inline playback — no filename so browser plays instead of downloading
+        return FileResponse(
+            p, media_type="video/mp4",
+            headers={"Content-Disposition": "inline",
+                     "Cache-Control": _ATTACHMENT_CACHE_CONTROL},
+        )
     # pluginPayloadAttachment files have no extension — sniff magic bytes.
     if "pluginPayloadAttachment" in p.name:
         mt = _sniff_image_type(p)
@@ -1493,9 +1920,12 @@ async def attachment(path: str, size: str = "", dl: str = ""):
             fname = (dl + ext) if dl else p.name
             return FileResponse(
                 p, media_type=mt, filename=fname,
-                headers={"Cache-Control": "public, max-age=2592000"},
+                headers={"Cache-Control": _ATTACHMENT_CACHE_CONTROL},
             )
-    return FileResponse(p, filename=dl or p.name)
+    return FileResponse(
+        p, filename=dl or p.name,
+        headers={"Cache-Control": _ATTACHMENT_CACHE_CONTROL},
+    )
 
 
 @app.get("/avatar")
@@ -1711,9 +2141,16 @@ async def _fire_reminder_pushes(reminder: dict) -> None:
 
 @app.on_event("startup")
 async def _start_push_tailer():
+    _ls.info("core", f"chatwire web started v{RELEASE_VERSION}")
     asyncio.create_task(_push_tailer())
     asyncio.create_task(_reminder_checker())
-    asyncio.create_task(_thumb_cache_evictor())
+    asyncio.create_task(_attachment_cache_evictor())
+    asyncio.create_task(_img_cache_warmer())
+
+
+@app.on_event("shutdown")
+async def _log_shutdown():
+    _ls.info("core", "chatwire web shutting down")
 
 
 @app.post("/refresh_contacts")
@@ -2036,19 +2473,6 @@ def _installed_plugins() -> list[dict]:
 
 
 
-def _spam_whitelist_text() -> str:
-    """Return spam_whitelist as newline-separated text for the settings textarea."""
-    names = _bridge_config.load_config().get("web", {}).get("spam_whitelist", [])
-    if isinstance(names, list):
-        return "\n".join(n for n in names if n.strip())
-    return ""
-
-
-def _ntfy_topic() -> str:
-    """Return the configured ntfy topic (empty string if not set)."""
-    return str(_bridge_config.load_config().get("web", {}).get("ntfy_topic", "") or "")
-
-
 _VALID_NOTIFICATION_DETAILS = ("rich", "sender_only", "private")
 
 
@@ -2126,37 +2550,41 @@ def _api_key_hint() -> str:
 
 @app.post("/api/settings/custom_css")
 async def api_settings_custom_css(request: Request):
-    """Persist user-defined CSS to web.custom_css in config."""
+    """Persist user-defined CSS, scoped per theme.
+
+    When ``theme`` is present in the JSON body, writes the CSS to
+    ``~/.chatwire/custom-css/<slug>.css`` (per-theme storage).  An empty
+    ``custom_css`` value deletes the file.  When ``theme`` is absent,
+    falls back to the legacy ``web.custom_css`` config key so old clients
+    keep working.
+    """
+    from pathlib import Path as _Path  # noqa: PLC0415
+    from web.theme_loader import _safe_name  # noqa: PLC0415
+
     body = await request.json()
     css = body.get("custom_css", "")
+    theme = body.get("theme")
     if not isinstance(css, str):
         raise HTTPException(400, "custom_css must be a string")
+    if len(css) > 64 * 1024:
+        raise HTTPException(400, "custom_css too large (max 64 KB)")
+
+    if theme is not None:
+        # Per-theme storage: ~/.chatwire/custom-css/<slug>.css
+        if not isinstance(theme, str) or not _safe_name(theme):
+            raise HTTPException(400, "invalid theme name")
+        custom_css_dir = _Path.home() / ".chatwire" / "custom-css"
+        custom_css_dir.mkdir(parents=True, exist_ok=True)
+        path = custom_css_dir / f"{theme}.css"
+        if css.strip():
+            path.write_text(css, encoding="utf-8")
+        else:
+            path.unlink(missing_ok=True)
+        return {"ok": True, "theme": theme}
+
+    # Legacy fallback: save to config file
     cfg = _bridge_config.load_config()
     cfg.setdefault("web", {})["custom_css"] = css
-    _bridge_config.save_config(cfg)
-    return {"ok": True}
-
-
-@app.post("/api/settings/spam_whitelist")
-async def api_settings_spam_whitelist(
-    request: Request, spam_whitelist: str = Form(""),
-):
-    """Persist the broadcast-detection name whitelist to web.spam_whitelist."""
-    names = [n.strip() for n in spam_whitelist.splitlines() if n.strip()]
-    cfg = _bridge_config.load_config()
-    cfg.setdefault("web", {})["spam_whitelist"] = names
-    _bridge_config.save_config(cfg)
-    return {"ok": True, "count": len(names)}
-
-
-@app.post("/api/settings/ntfy_topic")
-async def api_settings_ntfy_topic(
-    request: Request, ntfy_topic: str = Form(""),
-):
-    """Persist the ntfy topic for spam-alert notifications to web.ntfy_topic."""
-    topic = ntfy_topic.strip()
-    cfg = _bridge_config.load_config()
-    cfg.setdefault("web", {})["ntfy_topic"] = topic
     _bridge_config.save_config(cfg)
     return {"ok": True}
 
@@ -2255,6 +2683,10 @@ async def api_settings_hiatus_settings(
     web = cfg.setdefault("web", {})
     web["hiatus_enabled"] = enabled
     web["hiatus_duration_minutes"] = mins
+    if enabled:
+        web["hiatus_started_at"] = time.time()  # always reset — saving restarts the timer
+    else:
+        web["hiatus_started_at"] = 0
     _bridge_config.save_config(cfg)
     return {"ok": True}
 
@@ -2264,8 +2696,14 @@ async def api_settings_reminder_settings(
     request: Request,
     reminder_enabled: str = Form("false"),
     reminder_days: str = Form("7"),
+    reminder_contacts: str = Form("[]"),
 ):
-    """Persist reminder timer settings."""
+    """Persist reminder timer settings.
+
+    ``reminder_contacts`` is a JSON-encoded list of handle strings.
+    An empty list (the default) means "watch all contacts".
+    """
+    import json as _json  # noqa: PLC0415
     enabled = reminder_enabled.lower() in ("true", "1", "on", "yes")
     try:
         days = int(reminder_days)
@@ -2273,10 +2711,18 @@ async def api_settings_reminder_settings(
             raise ValueError
     except (ValueError, TypeError):
         raise HTTPException(400, "reminder_days must be 1–365")
+    try:
+        contacts_raw = _json.loads(reminder_contacts)
+        if not isinstance(contacts_raw, list):
+            raise ValueError
+        contacts = [str(h).strip() for h in contacts_raw if str(h).strip()]
+    except (ValueError, TypeError):
+        raise HTTPException(400, "reminder_contacts must be a JSON array of handle strings")
     cfg = _bridge_config.load_config()
     web = cfg.setdefault("web", {})
     web["reminder_enabled"] = enabled
     web["reminder_days"] = days
+    web["reminder_contacts"] = contacts
     _bridge_config.save_config(cfg)
     return {"ok": True}
 
@@ -2525,6 +2971,8 @@ async def api_plugins_configure(request: Request):
     # Audit log for official/core plugin state changes (always write all tiers).
     event = "plugin_enable" if enabled else "plugin_disable"
     _audit_log(event, plugin=name, was_enabled=was_enabled)
+    action = "enabled" if enabled else "disabled"
+    _ls.info("core", f"plugin {name} {action}")
 
     return {"ok": True, "name": name, "enabled": enabled}
 

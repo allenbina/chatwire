@@ -27,6 +27,12 @@ const SettingsPage = lazy(() =>
 const PopoutPage = lazy(() =>
   import('./pages/PopoutPage').then((m) => ({ default: m.PopoutPage }))
 )
+const PluginsPage = lazy(() =>
+  import('./pages/PluginsPage').then((m) => ({ default: m.PluginsPage }))
+)
+const LogsPage = lazy(() =>
+  import('./pages/LogsPage').then((m) => ({ default: m.LogsPage }))
+)
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -68,6 +74,22 @@ export default function App() {
             element={
               <Suspense fallback={<PageLoading />}>
                 <PopoutPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/plugins"
+            element={
+              <Suspense fallback={<PageLoading />}>
+                <PluginsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/logs"
+            element={
+              <Suspense fallback={<PageLoading />}>
+                <LogsPage />
               </Suspense>
             }
           />

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -116,19 +117,28 @@ class SandboxedContext:
     """Wraps BridgeContextImpl; enforces tier data restrictions.
 
     For ``official`` tier: exposes only ``send_text`` and ``send_file``
-    (via opaque conversation ID) and ``mirror``.
+    (via opaque conversation ID), ``mirror``, and ``plugin_config``.
 
-    For ``notify`` and ``ui`` tiers: no methods are exposed.
+    For ``notify`` and ``ui`` tiers: only ``plugin_config`` is exposed.
 
     ``core`` tier bypasses this wrapper entirely — the real BridgeContextImpl
     is passed directly.
     """
 
-    def __init__(self, real_ctx, tier: str, conv_map: ConversationMap) -> None:
+    def __init__(
+        self,
+        real_ctx,
+        tier: str,
+        conv_map: ConversationMap,
+        plugin_name: str = "",
+        logs_visible: bool = True,
+    ) -> None:
         # Store on object __dict__ directly to avoid __getattr__ recursion.
         object.__setattr__(self, "_ctx", real_ctx)
         object.__setattr__(self, "_tier", tier)
         object.__setattr__(self, "_conv_map", conv_map)
+        object.__setattr__(self, "_plugin_name", plugin_name)
+        object.__setattr__(self, "_logs_visible", logs_visible)
 
     async def send_text(self, conversation_id: str, body: str):
         """Send text via an opaque conversation ID. Core resolves internally."""
@@ -183,11 +193,67 @@ class SandboxedContext:
         ctx = object.__getattribute__(self, "_ctx")
         return ctx.mirror(event, **fields)
 
+    @property
+    def plugin_config(self) -> dict:
+        """Return this plugin's isolated config dict (read-only snapshot).
+
+        Plugins call ``self._ctx.plugin_config`` to read settings that the
+        user configured via the web UI.  The dict is freshly loaded from
+        disk each call so plugins always see the latest values without
+        needing a restart.
+        """
+        from plugin_state import load_plugin_config  # noqa: PLC0415
+        name = object.__getattribute__(self, "_plugin_name")
+        if not name:
+            return {}
+        return load_plugin_config(name)
+
+    def _write_plugin_log(self, level: str, msg: str) -> None:
+        """Write to ~/.chatwire/plugins/<name>/plugin.log (private mode)."""
+        import time
+        name = object.__getattribute__(self, "_plugin_name")
+        log_dir = Path.home() / ".chatwire" / "plugins" / name
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / "plugin.log"
+            ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(f"{ts} [{level.upper()}] {msg}\n")
+        except Exception:
+            pass
+
+    def log_info(self, msg: str) -> None:
+        """Log an info message. Appears in the Log Viewer when logs_visible=True."""
+        name = object.__getattribute__(self, "_plugin_name")
+        if object.__getattribute__(self, "_logs_visible"):
+            from web import log_stream as _ls  # noqa: PLC0415
+            _ls.info(name, msg)
+        else:
+            self._write_plugin_log("info", msg)
+
+    def log_warn(self, msg: str) -> None:
+        """Log a warning. Appears in the Log Viewer when logs_visible=True."""
+        name = object.__getattribute__(self, "_plugin_name")
+        if object.__getattribute__(self, "_logs_visible"):
+            from web import log_stream as _ls  # noqa: PLC0415
+            _ls.warn(name, msg)
+        else:
+            self._write_plugin_log("warn", msg)
+
+    def log_error(self, msg: str) -> None:
+        """Log an error. Appears in the Log Viewer when logs_visible=True."""
+        name = object.__getattribute__(self, "_plugin_name")
+        if object.__getattribute__(self, "_logs_visible"):
+            from web import log_stream as _ls  # noqa: PLC0415
+            _ls.error(name, msg)
+        else:
+            self._write_plugin_log("error", msg)
+
     def __getattr__(self, name: str):
         """Block every other BridgeContext attribute."""
         tier = object.__getattribute__(self, "_tier")
         raise PermissionError(
             f"Plugin tier '{tier}' cannot access BridgeContext.{name}. "
             f"Blocked attributes: contacts, name_for, relay_scope, list_groups, "
-            f"services_for, outcomes_for, reload_contacts, spam_whitelist, chatdb."
+            f"services_for, outcomes_for, reload_contacts, chatdb."
         )

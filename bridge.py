@@ -34,12 +34,17 @@ import config as _bridge_config  # noqa: E402 — must run before env-consuming 
 CFG = _bridge_config.apply_to_environ()
 from config import STATE_DIR  # noqa: E402
 
+from web import log_stream as _ls
+
 from chat_db import ChatDBReader, InboundMessage
 from contacts import load_lookup as load_contacts
 from echo_log import register as echo_register, seen_recently as echo_seen
 from chat_send import (
-    SendResult, send_file_confirm, send_file_to_chat_confirm,
+    BroadcastBlockedError, RateLimitError,
+    SendResult, check_send_guard,
+    send_file_confirm, send_file_to_chat_confirm,
     send_text_confirm, send_text_to_chat_confirm,
+    register_trigger_notify_hook,
 )
 from whitelist import all_groups as wl_all_groups, all_handles as wl_all
 from integrations.base import BridgeContext, SendOutcome, SendTarget
@@ -361,6 +366,8 @@ class BridgeContextImpl:
 
     async def send_text(self, target: SendTarget, body: str) -> SendOutcome:
         body = _run_transform_outbound(self.integrations, body, target)
+        # Anti-spam guard — raises RateLimitError / BroadcastBlockedError if blocked.
+        await asyncio.to_thread(check_send_guard, target.value, body, "integration")
         if target.is_group:
             r = await asyncio.to_thread(send_text_to_chat_confirm, target.value, body)
         else:
@@ -375,6 +382,8 @@ class BridgeContextImpl:
         # an empty string so transforms that inspect target still fire. We
         # discard the return value — send_file carries no text.
         _run_transform_outbound(self.integrations, "", target)
+        # Anti-spam guard — file sends pass empty body; still subject to fuse.
+        await asyncio.to_thread(check_send_guard, target.value, "", "integration-file")
         if target.is_group:
             r = await asyncio.to_thread(send_file_to_chat_confirm, target.value, path)
         else:
@@ -400,23 +409,6 @@ class BridgeContextImpl:
             "handles": frozenset(relay_handles()),
             "groups": frozenset(relay_groups()),
         }
-
-    @property
-    def spam_whitelist(self) -> frozenset[str]:
-        """Read-only view of the spam-detection name whitelist.
-
-        Returns the names that are stripped from outbound text before
-        broadcast-detection hashing.  Plugins may read this but cannot
-        modify it — the whitelist lives in config.json and is only
-        writable via the web settings route.
-        """
-        try:
-            names = CFG.get("web", {}).get("spam_whitelist", [])
-            if isinstance(names, list):
-                return frozenset(n.strip() for n in names if n.strip())
-        except Exception:
-            pass
-        return frozenset()
 
     def list_groups(self) -> list[dict]:
         if self.chatdb is None:
@@ -680,6 +672,9 @@ async def _fan_out(
     for integ in integrations:
         tier = getattr(integ, "TIER", "official")
         name = getattr(integ, "NAME", "?")
+        _ran = False
+        _success = False
+        _error_msg: str | None = None
         try:
             if tier == "ui":
                 # UI plugins get no bridge hooks at all.
@@ -701,23 +696,40 @@ async def _fan_out(
                         )
                     depth = _notification_depth_for(name, cfg)
                     event = _build_sanitized_event(msg, display_name, depth)
+                    _ran = True
                     await fn(event)
+                    _success = True
             elif tier == "official":
                 fn = getattr(integ, "on_official_message", None)
+                _ran = True
                 if fn is not None:
                     official_msg = _build_official_message(msg, display_name, conv_map)
                     await fn(official_msg)
                 else:
                     # Backward-compat: official plugins that still use on_inbound().
                     await integ.on_inbound(msg)
+                _success = True
             else:
                 # "core" or anything unrecognised: full access, on_inbound().
+                _ran = True
                 await integ.on_inbound(msg)
+                _success = True
         except PermissionError as exc:
             log.warning("integration %s tier violation (tier=%s): %s", name, tier, exc)
             _audit_log("tier_violation", plugin=name, tier=tier, detail=str(exc))
-        except Exception:
+            _ls.warn("bridge", f"plugin {name}: tier violation — {exc}")
+            _error_msg = str(exc)
+        except Exception as exc:
             log.exception("integration %s fan-out failed (tier=%s)", name, tier)
+            _ls.error("bridge", f"plugin {name}: fan-out error — {exc}")
+            _error_msg = str(exc)
+        finally:
+            if _ran:
+                try:
+                    from plugin_state import record_plugin_run  # noqa: PLC0415
+                    record_plugin_run(name, _success, _error_msg)
+                except Exception:
+                    log.exception("health tracking failed for %s", name)
 
 
 async def poll_loop(reader: ChatDBReader, integrations: list, conv_map: ConversationMap) -> None:
@@ -754,6 +766,12 @@ async def poll_loop(reader: ChatDBReader, integrations: list, conv_map: Conversa
                         chat_name=head.chat_name,
                         is_group=head.is_group,
                     )
+                # Structured log: inbound message (sender name only, no content).
+                _sender_name = _contacts_ref.get(msg.handle.lower()) or msg.handle
+                if msg.is_group:
+                    _ls.info("bridge", f"inbound message — group: {msg.chat_name or msg.chat_guid}")
+                else:
+                    _ls.info("bridge", f"inbound message — from: {_sender_name}")
                 # Mirror inbound centrally: integrations only mirror their
                 # own outbound. Otherwise N integrations would each log the
                 # same inbound row N times.
@@ -785,6 +803,50 @@ async def poll_loop(reader: ChatDBReader, integrations: list, conv_map: Conversa
 _contacts_ref: dict[str, str] = {}
 
 
+def _register_anti_spam_notifier(
+    loop: asyncio.AbstractEventLoop, integrations: list
+) -> None:
+    """Register a trigger hook that fans out anti_spam_triggered to notify plugins.
+
+    The hook is called from a worker thread (inside asyncio.to_thread), so it
+    schedules the async notification coroutine on the bridge's event loop via
+    ``call_soon_threadsafe``.
+    """
+    import datetime as _dt  # noqa: PLC0415
+
+    async def _notify_coro() -> None:
+        from integrations.sandbox import SanitizedEvent  # noqa: PLC0415
+        event = SanitizedEvent(
+            event="anti_spam_triggered",
+            sender_display_name=None,
+            is_group=False,
+            group_name=None,
+            has_attachment=False,
+            timestamp=_dt.datetime.now(_dt.timezone.utc).isoformat(),
+        )
+        for integ in integrations:
+            if getattr(integ, "TIER", "") == "notify":
+                fn = getattr(integ, "on_notify", None)
+                if fn is not None:
+                    try:
+                        await fn(event)
+                    except Exception:
+                        log.exception(
+                            "notify plugin %s failed on anti_spam_triggered",
+                            getattr(integ, "NAME", "?"),
+                        )
+
+    def _sync_hook() -> None:
+        try:
+            loop.call_soon_threadsafe(
+                lambda: asyncio.ensure_future(_notify_coro(), loop=loop)
+            )
+        except Exception:
+            log.exception("failed to schedule anti_spam_triggered notification")
+
+    register_trigger_notify_hook(_sync_hook)
+
+
 # ---------- main ----------
 
 async def amain() -> None:
@@ -807,6 +869,7 @@ async def amain() -> None:
 
     integrations = _build_integrations(CFG)
     ctx.integrations = integrations
+    _register_anti_spam_notifier(asyncio.get_event_loop(), integrations)
     if not integrations:
         raise SystemExit(
             "No integrations enabled. Run `chatwire web` and walk the "
@@ -816,6 +879,7 @@ async def amain() -> None:
 
     log.info("starting; integrations=%s relay=%s",
              [i.NAME for i in integrations], sorted(relay_handles()))
+    _ls.info("bridge", f"bridge started — integrations: {[i.NAME for i in integrations]}")
 
     # Wire the contacts dict into the module-level reference so poll_loop's
     # _fan_out() can resolve display names without holding a ctx reference.
@@ -826,16 +890,20 @@ async def amain() -> None:
     try:
         for integ in integrations:
             tier = getattr(integ, "TIER", "official")
+            name = getattr(integ, "NAME", "")
             # core tier: pass real context unchanged.
-            # All other tiers: wrap in SandboxedContext.
+            # All other tiers: wrap in SandboxedContext so the plugin can
+            # access its own isolated config via ctx.plugin_config.
             if tier == "core":
                 start_ctx = ctx
             else:
-                start_ctx = SandboxedContext(ctx, tier, conv_map)
+                logs_visible = bool(getattr(integ, "LOGS_VISIBLE", True))
+                start_ctx = SandboxedContext(ctx, tier, conv_map, plugin_name=name, logs_visible=logs_visible)
             await integ.start(start_ctx)
             started.append(integ)
         await poll_loop(reader, integrations, conv_map)
     finally:
+        _ls.info("bridge", "bridge shutting down")
         for integ in reversed(started):
             try:
                 await integ.stop()

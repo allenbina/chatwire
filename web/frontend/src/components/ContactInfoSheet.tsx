@@ -23,6 +23,8 @@ import {
   removeFromWhitelist,
   type ContactInfo,
 } from '../api'
+import { Lightbox } from './MediaGallery'
+import type { Attachment } from '../api'
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -32,7 +34,12 @@ const MEDIA_PAGE = 30
 
 function MediaGrid({ media }: { media: ContactInfo['media'] }) {
   const [showAll, setShowAll] = useState(false)
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
   const visible = showAll ? media : media.slice(0, MEDIA_PAGE)
+
+  // Build image-only list for the lightbox (videos can't be lightboxed)
+  const imageMedia = media.filter((m) => m.kind === 'image')
+
   return (
     <section className="mb-6">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
@@ -40,10 +47,21 @@ function MediaGrid({ media }: { media: ContactInfo['media'] }) {
       </h3>
       <div className="grid grid-cols-3 gap-1">
         {visible.map((m, i) => (
-          <div
+          <button
             key={i}
-            className="aspect-square bg-card rounded overflow-hidden flex items-center justify-center"
+            type="button"
+            className="aspect-square bg-card rounded overflow-hidden flex items-center justify-center
+                       hover:opacity-80 transition-opacity cursor-pointer"
             title={m.name}
+            onClick={() => {
+              if (m.kind === 'image') {
+                const imgIdx = imageMedia.findIndex((im) => im.path === m.path)
+                if (imgIdx >= 0) setLightboxIdx(imgIdx)
+              } else {
+                // Open video/file in new tab
+                window.open(`/attachment?path=${encodeURIComponent(m.path)}`, '_blank')
+              }
+            }}
           >
             {m.kind === 'image' ? (
               <img
@@ -67,7 +85,7 @@ function MediaGrid({ media }: { media: ContactInfo['media'] }) {
                 <span className="text-[10px] text-muted-foreground">video</span>
               </div>
             )}
-          </div>
+          </button>
         ))}
       </div>
       {!showAll && media.length > MEDIA_PAGE && (
@@ -77,6 +95,15 @@ function MediaGrid({ media }: { media: ContactInfo['media'] }) {
         >
           Show all ({media.length})
         </button>
+      )}
+
+      {/* Lightbox for images */}
+      {lightboxIdx !== null && imageMedia.length > 0 && (
+        <Lightbox
+          images={imageMedia as Attachment[]}
+          startIndex={lightboxIdx}
+          onClose={() => setLightboxIdx(null)}
+        />
       )}
     </section>
   )

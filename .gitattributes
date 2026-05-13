@@ -1,0 +1,4 @@
+# Treat compiled frontend assets as binary — suppress line-level diffs
+web/frontend/dist/**/*.js    binary
+web/frontend/dist/**/*.css   binary
+web/frontend/dist/**/*.map   binary

@@ -5,6 +5,75 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-05-11
+
+### Added
+- **Read receipts** (#85 part 1): `is_read` and `date_read` from `chat.db`
+  are now included in the message history API. The web UI shows "Read at
+  H:MM AM/PM" below sent iMessage bubbles when a read receipt is available.
+- **Tapbacks / reactions** (#85 part 2): Reaction emoji badges (❤️ 👍 👎 😂
+  ‼️ ❓ 🎉) are queried from `chat.db` via `associated_message_guid` /
+  `associated_message_type` and displayed as small pills anchored to the
+  bottom-right of the relevant message bubble.
+- **Inline replies** (#85 part 3): `reply_to_guid` is resolved to the parent
+  message text + sender and included in the API response. A quoted-reply block
+  is rendered above the bubble; clicking it scrolls to the original message.
+- **Location share cards** (#84): Messages with `balloon_bundle_id =
+  com.apple.messages.MapBalloonProvider` or Apple Maps URLs are rendered as a
+  📍 card with a Google Maps link.
+- **Sticker / Memoji display** (#85 part 4): Stickers and Memoji attachments
+  already stored as image files now display correctly. The attachment `kind`
+  field normalises sticker MIME types so they render as inline images.
+- **chatwire-ntfy standalone plugin** (#78): ntfy notification support
+  extracted from core into `chatwire-plugins/chatwire-ntfy/`. Install with
+  `pipx inject chatwire chatwire-ntfy`. `TIER = "notify"`.
+- **chatwire-telegram standalone plugin** (#81): Telegram relay extracted
+  from core into `chatwire-plugins/chatwire-telegram/`. `TIER = "official"`.
+- **chatwire-webhook standalone plugin** (#80): Webhook output extracted from
+  core into `chatwire-plugins/chatwire-webhook/`. `TIER = "official"`.
+- **Theme ecosystem foundation** (#76): `sanitize_custom_css()` strips
+  `@import` rules and external `url()` references from user theme packages.
+  `parse_package()` sets `custom_css_sanitized` flag. Settings UI shows a
+  warning when the active theme pack includes custom CSS.
+  `docs/wiki/theme-format.md` documents the full JSON schema. Three example
+  themes added to `docs/examples/`.
+- **macOS compatibility matrix** (#86): `docs/wiki/compatibility.md` with
+  feature-by-feature breakdown across macOS 12–15, Python versions, and
+  hardware configurations. Linked from README.
+
+### Fixed
+- **Logout icon missing** (audit MEDIUM): `LogOut` icon from lucide-react
+  now appears on the sign-out link in SettingsPage.
+
+## [1.13.0] - 2026-05-11
+
+### Added
+- **Structured log viewer** (#60): `web.log_stream` is now wired into the web
+  process. Startup, inbound messages (sender name only), outbound sends, and
+  plugin enable/disable events are written to `~/.chatwire/chatwire.jsonl`.
+  The LogsPage `GET /api/ui/logs` and SSE `GET /api/ui/logs/stream` endpoints
+  now have data to display.
+- **Auto dark/light theme** (#62): New "Auto" option in the color scheme
+  picker. When selected, two sub-dropdowns appear (dark scheme + light scheme,
+  defaulting to Dracula / GitHub Light). `useTheme` listens to
+  `matchMedia('(prefers-color-scheme: dark)')` and switches `data-theme`
+  automatically on OS preference changes.
+- **API key inline edit/rescope** (#63): Edit button per row in the API Keys
+  settings section; click to rename a key and toggle its permission scopes
+  inline with a Save/Cancel form. Backed by the existing
+  `PATCH /api/ui/api-keys/{prefix}` endpoint.
+- **Offline indicator** (#65): `useOnline` hook tracks `navigator.onLine`.
+  When offline: sidebar shows a red dot + "Offline" pill; compose box shows
+  "No connection — messages will send when back online".
+- **Mark seen on scroll** (#64): `markSeen` now fires when the user scrolls
+  to the bottom of the message list, or immediately when new messages arrive
+  while already at the bottom. Removed the imprecise 3-second timer.
+
+### Fixed
+- **Group chats 403 on open** (#61): Removed the WHITELIST_HANDLES guard from
+  `GET /api/ui/messages`. Whitelist controls who can SEND; if a conversation
+  is in chat.db the user owns it and can read it.
+
 ## [1.12.0] - 2026-05-10
 
 ### Added

@@ -10,6 +10,7 @@
  * MessageList and ComposeBox so they route API calls correctly.
  */
 import { useParams, Navigate, useNavigate } from 'react-router-dom'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Layout } from '../components/Layout'
@@ -18,9 +19,11 @@ import { ComposeBox } from '../components/ComposeBox'
 import { ExportDropdown } from '../components/ExportDropdown'
 import { UpdateBanner } from '../components/UpdateBanner'
 import { ContactInfoSheet } from '../components/ContactInfoSheet'
+import { LockoutOverlay } from '../components/LockoutOverlay'
 import { useChatStore } from '../store'
 import { useSSE, type SSEEvent } from '../hooks/useSSE'
-import { fetchConversations, convRouteKey, resolveConvoHandle, type Conversation } from '../api'
+import { fetchConversations, convRouteKey, resolveConvoHandle, getFuseStatus, getMacosVersion, type Conversation, type Message } from '../api'
+import { playReceivedSound, configureSounds, type SoundsConfig } from '../hooks/useSounds'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,8 +94,8 @@ function ConversationHeader({ handle, isGroup, conversations, onInfoClick }: Hea
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-3 border-b border-border
-                 bg-background flex-shrink-0"
+      className="flex items-center gap-3 px-4 py-3 border-b-[var(--header-border)] border-border
+                 shadow-[var(--header-shadow)] bg-background flex-shrink-0"
     >
       {/* Clickable avatar + name → opens contact info sheet */}
       <button
@@ -102,34 +105,45 @@ function ConversationHeader({ handle, isGroup, conversations, onInfoClick }: Hea
                    hover:opacity-80 transition-opacity focus-visible:outline-none
                    focus-visible:ring-2 focus-visible:ring-primary rounded"
       >
-        <div
+        <Avatar
           className={[
-            'flex-shrink-0 w-9 h-9 flex items-center justify-center',
-            'bg-card text-primary font-semibold text-sm',
-            isGroup ? 'rounded-lg' : 'rounded-full',
+            'flex-shrink-0 h-9 w-9 bg-card',
+            isGroup ? 'rounded-lg' : 'rounded-[var(--avatar-shape)]',
           ].join(' ')}
           aria-hidden="true"
         >
-          {initials}
-        </div>
+          {!isGroup && (
+            <AvatarImage
+              src={`/avatar?handle=${encodeURIComponent(handle)}`}
+              alt={displayName}
+            />
+          )}
+          <AvatarFallback
+            className={[
+              'bg-card text-primary font-semibold text-sm',
+              isGroup ? 'rounded-lg' : 'rounded-[var(--avatar-shape)]',
+            ].join(' ')}
+          >
+            {initials}
+          </AvatarFallback>
+        </Avatar>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">
+          <p className="text-base font-semibold text-foreground truncate">
             {displayName}
           </p>
           {isGroup && (
-            <p className="text-[10px] text-muted-foreground">Group conversation</p>
+            <p className="text-xs text-muted-foreground">Group conversation</p>
           )}
         </div>
       </button>
 
-      {/* Popout button */}
-      <a
-        href={`/popout${popoutParam}`}
-        target="_blank"
-        rel="noopener"
+      {/* Popout button — opens a dedicated narrow window, not a tab */}
+      <button
+        onClick={() => window.open(`/popout${popoutParam}`, '_blank', 'width=480,height=720,noopener')}
         aria-label="Open in popout window"
         className="p-2 rounded-lg text-muted-foreground hover:bg-accent transition-colors"
         title="Popout window"
+        type="button"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
              strokeLinecap="round" strokeLinejoin="round">
@@ -137,7 +151,7 @@ function ConversationHeader({ handle, isGroup, conversations, onInfoClick }: Hea
           <polyline points="15 3 21 3 21 9"/>
           <line x1="10" y1="14" x2="21" y2="3"/>
         </svg>
-      </a>
+      </button>
 
       {/* Export dropdown */}
       <ExportDropdown handle={handle} isGroup={isGroup} />
@@ -163,12 +177,16 @@ function ActiveConversation({ slugParam }: { slugParam: string }) {
     staleTime: 30_000,
   })
 
-  // Resolve slug → real handle. Falls back to slugParam while conversations load.
-  const handle = useMemo(
-    () => resolveConvoHandle(slugParam, conversations) ?? slugParam,
+  // Resolve slug → real handle. Returns null while conversations are still loading
+  // to prevent fetching messages with an unresolved slug.
+  const resolved = useMemo(
+    () => resolveConvoHandle(slugParam, conversations),
     [slugParam, conversations],
   )
-  const isGroup = isGroupHandle(handle)
+  // If the slug looks like a raw handle already (contains +, @, or ;), use it directly.
+  // Otherwise wait for conversations to load so we can resolve the slug.
+  const handle = resolved ?? (/[+@;]/.test(slugParam) ? slugParam : null)
+  const isGroup = handle ? isGroupHandle(handle) : false
 
   /**
    * Called when "Remove from whitelist" succeeds. Closes the info sheet
@@ -209,6 +227,10 @@ function ActiveConversation({ slugParam }: { slugParam: string }) {
           clearOptimistic(handle, event.rowid)
         }
       }
+      // Play received sound for inbound messages (not our own sends)
+      if (!event.from_me) {
+        playReceivedSound()
+      }
       qc.invalidateQueries({ queryKey: ['conversations'] })
     },
   })
@@ -219,6 +241,41 @@ function ActiveConversation({ slugParam }: { slugParam: string }) {
     if (el) el.focus()
   }, [handle])
 
+  // macOS version — fetched once; used to gate Edit/Unsend (Ventura 13+)
+  const { data: macosVer } = useQuery({
+    queryKey: ['macos-version'],
+    queryFn: getMacosVersion,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
+  const ventura = (macosVer?.major ?? 0) >= 13
+
+  // Reply-to context — set from the hover action bar, cleared on send
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
+
+  // Check fuse status for full lockout (steps 4+)
+  const { data: fuseStatus } = useQuery({
+    queryKey: ['fuse-status'],
+    queryFn: getFuseStatus,
+    staleTime: 0,
+    refetchInterval: false,
+  })
+  const isLockedOut = !!(fuseStatus?.locked && fuseStatus.step >= 4)
+
+  // Still resolving slug → show loading state
+  if (!handle) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-muted-foreground text-sm animate-pulse">Loading...</p>
+      </div>
+    )
+  }
+
+  // Full lockout (step 4+): replace chat content with overlay
+  if (isLockedOut && fuseStatus) {
+    return <LockoutOverlay fuseStatus={fuseStatus} />
+  }
+
   return (
     <>
       <ConversationHeader
@@ -227,8 +284,20 @@ function ActiveConversation({ slugParam }: { slugParam: string }) {
         conversations={conversations}
         onInfoClick={() => setInfoOpen(true)}
       />
-      <MessageList handle={handle} isGroup={isGroup} lastSeenRowid={lastSeenRowid} />
-      <ComposeBox handle={handle} isGroup={isGroup} />
+      <MessageList
+        handle={handle}
+        isGroup={isGroup}
+        lastSeenRowid={lastSeenRowid}
+        ventura={ventura}
+        onReply={setReplyTo}
+      />
+      <ComposeBox
+        handle={handle}
+        isGroup={isGroup}
+        replyToGuid={replyTo?.guid ?? ''}
+        replyToText={replyTo?.text ?? ''}
+        onClearReply={() => setReplyTo(null)}
+      />
       <ContactInfoSheet
         open={infoOpen}
         onClose={() => setInfoOpen(false)}
@@ -246,6 +315,14 @@ function ActiveConversation({ slugParam }: { slugParam: string }) {
 
 export function ChatPage() {
   const { handle: encodedHandle } = useParams<{ handle: string }>()
+
+  // Load custom sound config once so useSounds respects user preferences.
+  useEffect(() => {
+    fetch('/api/ui/sounds/config', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg: SoundsConfig | null) => { if (cfg) configureSounds(cfg) })
+      .catch(() => {/* non-critical — falls back to defaults */})
+  }, [])
 
   // URL param may be a slug (sarah-chen) or a raw handle (+14695551234).
   // Resolution to the real handle happens inside ActiveConversation once

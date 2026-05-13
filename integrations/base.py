@@ -164,15 +164,6 @@ class BridgeContext(Protocol):
         chat.db is unavailable."""
         ...
 
-    @property
-    def spam_whitelist(self) -> frozenset[str]:
-        """Read-only set of names stripped from outbound text before broadcast
-        hashing.  Plugins may read this but cannot modify it — the list is
-        only writable via the web settings route.
-        """
-        ...
-
-
 def integration_ui_meta(cls: type) -> dict:
     """Extract UI metadata from an integration class with sensible defaults.
 

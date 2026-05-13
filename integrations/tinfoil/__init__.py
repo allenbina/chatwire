@@ -18,6 +18,8 @@ import logging
 import os
 from typing import Any
 
+from web import log_stream as _ls
+
 log = logging.getLogger("chatwire.tinfoil")
 
 _LOCK = "🔒"
@@ -202,7 +204,9 @@ class TinfoilIntegration:
                 "tinfoil: decryption failed for handle=%s (wrong key or corrupted)",
                 handle,
             )
+            _ls.warn("tinfoil", "decryption failed — wrong key or corrupted message")
             return _ERROR_PLACEHOLDER
+        _ls.info("tinfoil", "inbound message decrypted")
         return result
 
     def transform_outbound(self, text: str, target: Any) -> str:
@@ -220,4 +224,6 @@ class TinfoilIntegration:
             return text
 
         key = _derive_key(passphrase)
-        return _encrypt(key, text)
+        encrypted = _encrypt(key, text)
+        _ls.info("tinfoil", "outbound message encrypted")
+        return encrypted

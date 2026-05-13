@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chatwire-telegram"
+version = "1.0.0"
+description = "Two-way Telegram ↔ iMessage bridge for chatwire. Relay every iMessage to a Telegram bot and reply back."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Allen Bina" }]
+keywords = ["chatwire", "telegram", "imessage", "bridge", "plugin"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "python-telegram-bot>=20.0",
+]
+
+[project.entry-points."chatwire.integrations"]
+chatwire_telegram = "chatwire_telegram:TelegramIntegration"

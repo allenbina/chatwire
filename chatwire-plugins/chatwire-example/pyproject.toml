@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chatwire-example"
+version = "0.1.0"
+description = "Example plugin for testing install/uninstall. Does nothing."
+requires-python = ">=3.11"
+
+[project.entry-points."chatwire.plugins"]
+chatwire_example = "chatwire_example"
+
+[tool.chatwire.plugin]
+TIER = "ui"

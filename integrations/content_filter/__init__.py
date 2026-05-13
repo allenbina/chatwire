@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from integrations.base import BridgeContext, InboundMessage
+from web import log_stream as _ls
 
 log = logging.getLogger("chatwire.content_filter")
 
@@ -228,8 +229,12 @@ class ContentFilterIntegration:
             return text
 
         if self._mode == "loose":
-            return self._replace_loose(text, pattern)
-        return self._replace_exact(text, pattern)
+            result = self._replace_loose(text, pattern)
+        else:
+            result = self._replace_exact(text, pattern)
+        if result != text:
+            _ls.info("content_filter", "filter match — message content replaced")
+        return result
 
     # ------------------------------------------------------------------
     # Internal helpers

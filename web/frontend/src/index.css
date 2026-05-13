@@ -65,9 +65,33 @@
   /* Alias so bg-tertiary keeps working (maps to muted surface) */
   --color-tertiary:             hsl(var(--muted));
 
+  /* Chatwire-specific color utilities */
+  --color-msg-me:               hsl(var(--msg-me));
+  --color-msg-them:             hsl(var(--msg-them));
+  --color-msg-sms:              hsl(var(--msg-sms));
+  --color-msg-sms-text:         hsl(var(--msg-sms-text));
+  --color-sidebar-bg:           hsl(var(--sidebar-bg));
+  --color-info:                 hsl(var(--info));
+  --color-success:              hsl(var(--success));
+  --color-warning:              hsl(var(--warning));
+
   /* Radius utilities — driven by structural theme (themes.css) */
   --radius-sm:  calc(var(--radius) - 4px);
   --radius-md:  calc(var(--radius) - 2px);
   --radius-lg:  var(--radius);
   --radius-xl:  calc(var(--radius) + 4px);
+
+  /* Accordion height animations — Radix provides --radix-accordion-content-height */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up:   accordion-up   0.2s ease-out;
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to   { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to   { height: 0; }
 }

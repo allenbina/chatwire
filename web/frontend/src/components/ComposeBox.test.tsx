@@ -12,6 +12,7 @@
  *   - API error fires toast.error and restores original text
  *   - optimistic message is added to the zustand store on send
  *   - optimistic message is cleared from the store after send completes
+ *   - cooldown banner is shown when fuse is locked (steps 1-3)
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -19,7 +20,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ComposeBox } from './ComposeBox'
-import { sendMessage } from '../api'
+import { sendMessage, getFuseStatus } from '../api'
 import { useChatStore } from '../store'
 
 // ---------------------------------------------------------------------------
@@ -32,6 +33,7 @@ vi.mock('../api', async (importOriginal) => {
     ...actual,
     sendMessage: vi.fn(),
     sendFile: vi.fn(),
+    getFuseStatus: vi.fn(),
   }
 })
 
@@ -45,6 +47,7 @@ vi.mock('sonner', () => ({
 }))
 
 const mockedSendMessage = vi.mocked(sendMessage)
+const mockedGetFuseStatus = vi.mocked(getFuseStatus)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,6 +72,10 @@ function sendOk() {
   return Promise.resolve({ status: 'ok', hint: '', service: 'iMessage' })
 }
 
+const FUSE_INACTIVE = {
+  locked: false, step: 0, cooldown_remaining_s: null, unlock_code: null,
+}
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
@@ -76,6 +83,8 @@ function sendOk() {
 beforeEach(() => {
   vi.clearAllMocks()
   useChatStore.setState({ optimistic: {}, activeHandle: null, sidebarOpen: false })
+  // Default: fuse inactive
+  mockedGetFuseStatus.mockResolvedValue(FUSE_INACTIVE)
 })
 
 // ---------------------------------------------------------------------------
@@ -115,7 +124,7 @@ describe('ComposeBox', () => {
     await user.type(screen.getByRole('textbox', { name: /type a message/i }), 'hello{Enter}')
 
     expect(mockedSendMessage).toHaveBeenCalledOnce()
-    expect(mockedSendMessage).toHaveBeenCalledWith(HANDLE, 'hello', false)
+    expect(mockedSendMessage).toHaveBeenCalledWith(HANDLE, 'hello', false, '')
   })
 
   it('pressing Enter clears the textarea after send', async () => {
@@ -141,7 +150,7 @@ describe('ComposeBox', () => {
     await user.click(screen.getByRole('button', { name: /send message/i }))
 
     expect(mockedSendMessage).toHaveBeenCalledOnce()
-    expect(mockedSendMessage).toHaveBeenCalledWith(HANDLE, 'world', false)
+    expect(mockedSendMessage).toHaveBeenCalledWith(HANDLE, 'world', false, '')
     await waitFor(() => {
       expect(textarea).toHaveValue('')
     })
@@ -254,6 +263,86 @@ describe('ComposeBox', () => {
       'group message{Enter}',
     )
 
-    expect(mockedSendMessage).toHaveBeenCalledWith('group-guid-abc', 'group message', true)
+    expect(mockedSendMessage).toHaveBeenCalledWith('group-guid-abc', 'group message', true, '')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cooldown banner (fuse steps 1-3)
+// ---------------------------------------------------------------------------
+
+describe('ComposeBox — cooldown banner', () => {
+  it('shows cooldown banner when fuse is locked at step 1', async () => {
+    mockedGetFuseStatus.mockResolvedValue({
+      locked: true,
+      step: 1,
+      cooldown_remaining_s: 300,
+      unlock_code: null,
+    })
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Sends paused/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('textbox', { name: /type a message/i })).not.toBeInTheDocument()
+  })
+
+  it('shows cooldown banner for steps 2 and 3', async () => {
+    for (const step of [2, 3]) {
+      mockedGetFuseStatus.mockResolvedValue({
+        locked: true,
+        step,
+        cooldown_remaining_s: 1800,
+        unlock_code: null,
+      })
+      const qc = makeQC()
+      const { unmount } = render(
+        <QueryClientProvider client={qc}>
+          <ComposeBox handle={HANDLE} />
+        </QueryClientProvider>,
+      )
+      await waitFor(() => {
+        expect(screen.getByText(/Sends paused/i)).toBeInTheDocument()
+      })
+      unmount()
+    }
+  })
+
+  it('shows normal compose box when fuse is not locked', async () => {
+    mockedGetFuseStatus.mockResolvedValue(FUSE_INACTIVE)
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: /type a message/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/Sends paused/i)).not.toBeInTheDocument()
+  })
+
+  it('shows "broadcast pattern" text in the banner', async () => {
+    mockedGetFuseStatus.mockResolvedValue({
+      locked: true,
+      step: 2,
+      cooldown_remaining_s: 1800,
+      unlock_code: null,
+    })
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByText(/broadcast pattern/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows "Normal chatting resumes soon" in the banner', async () => {
+    mockedGetFuseStatus.mockResolvedValue({
+      locked: true,
+      step: 1,
+      cooldown_remaining_s: 60,
+      unlock_code: null,
+    })
+    renderComposeBox()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Normal chatting resumes soon/i)).toBeInTheDocument()
+    })
   })
 })

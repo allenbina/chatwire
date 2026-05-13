@@ -141,12 +141,49 @@ class TestUninstallPaths:
 # 3. Dry-run: lists paths, touches nothing
 # ---------------------------------------------------------------------------
 
+class TestUninstallNoPurge:
+    """cmd_uninstall without --purge prints simple instructions, touches nothing."""
+
+    def _run_no_purge(self, capsys) -> str:
+        from chatwire_cli import cmd_uninstall
+        args = argparse.Namespace(purge=False, dry_run=False, label_prefix="dev.chatwire")
+        rc = cmd_uninstall(args)
+        assert rc == 0
+        captured = capsys.readouterr()
+        return captured.out
+
+    def test_no_purge_exits_zero(self, capsys):
+        self._run_no_purge(capsys)
+
+    def test_no_purge_mentions_pipx(self, capsys):
+        out = self._run_no_purge(capsys)
+        assert "pipx" in out
+
+    def test_no_purge_mentions_brew(self, capsys):
+        out = self._run_no_purge(capsys)
+        assert "brew" in out
+
+    def test_no_purge_mentions_chatwire_dir(self, capsys):
+        out = self._run_no_purge(capsys)
+        assert ".chatwire" in out
+
+    def test_no_purge_mentions_purge_flag(self, capsys):
+        out = self._run_no_purge(capsys)
+        assert "--purge" in out
+
+    def test_no_purge_never_prompts(self, capsys, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda _: (_ for _ in ()).throw(
+            AssertionError("input() called without --purge — must not prompt")
+        ))
+        self._run_no_purge(capsys)
+
+
 class TestDryRun:
-    """cmd_uninstall --dry-run should print paths and not modify any files."""
+    """cmd_uninstall --purge --dry-run previews purge items without changing anything."""
 
     def _run_dry_run(self, capsys) -> str:
         from chatwire_cli import cmd_uninstall
-        args = argparse.Namespace(dry_run=True, label_prefix="dev.chatwire")
+        args = argparse.Namespace(purge=True, dry_run=True, label_prefix="dev.chatwire")
         rc = cmd_uninstall(args)
         assert rc == 0
         captured = capsys.readouterr()
@@ -161,7 +198,7 @@ class TestDryRun:
 
     def test_dry_run_mentions_logs_dir(self, capsys):
         out = self._run_dry_run(capsys)
-        assert "Logs" in out or "log" in out.lower()
+        assert "Logs" in out or "log" in out.lower() or ".jsonl" in out
 
     def test_dry_run_mentions_pipx(self, capsys):
         out = self._run_dry_run(capsys)
@@ -169,7 +206,7 @@ class TestDryRun:
 
     def test_dry_run_mentions_launchctl(self, capsys):
         out = self._run_dry_run(capsys)
-        assert "launchctl" in out
+        assert "LaunchAgent" in out or "launchctl" in out or "dev.chatwire" in out
 
     def test_dry_run_does_not_delete_files(self, capsys, tmp_path):
         """Dry-run must not touch any real files."""
@@ -177,7 +214,7 @@ class TestDryRun:
         sentinel.write_text("safe")
 
         from chatwire_cli import cmd_uninstall
-        args = argparse.Namespace(dry_run=True, label_prefix="dev.chatwire")
+        args = argparse.Namespace(purge=True, dry_run=True, label_prefix="dev.chatwire")
         cmd_uninstall(args)
         capsys.readouterr()
 

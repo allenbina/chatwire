@@ -13,8 +13,7 @@
  *   - group conversation renders [G] prefix
  *   - unread badge renders when n > 0
  *   - favourite star renders when is_favorite is true
- *   - "Mark all read" button appears when there are unseen conversations
- *   - "Mark all read" button calls markAllSeen on click
+ *   - "Mark all read" CheckCheck icon is in Layout footer (not ConversationList)
  *   - Shift+Escape triggers markAllSeen
  */
 import { render, screen, waitFor } from '@testing-library/react'
@@ -43,6 +42,21 @@ vi.mock('react-router-dom', async (importOriginal) => {
     ...actual,
     useNavigate: () => mockNavigate,
     useParams: mockUseParams,
+  }
+})
+
+// Radix-ui AvatarImage hides itself from the DOM when the image fails to load.
+// In jsdom there's no real network so images fail synchronously. Stub the
+// radix primitive so AvatarImage always renders an <img> for src-checking.
+vi.mock('@radix-ui/react-avatar', async () => {
+  const React = await import('react')
+  return {
+    Root: ({ children, className }: React.HTMLAttributes<HTMLDivElement>) =>
+      React.createElement('div', { className }, children),
+    Image: ({ src, alt, className }: React.ImgHTMLAttributes<HTMLImageElement>) =>
+      React.createElement('img', { src, alt, className }),
+    Fallback: ({ children, className }: React.HTMLAttributes<HTMLSpanElement>) =>
+      React.createElement('span', { className }, children),
   }
 })
 
@@ -257,28 +271,14 @@ describe('ConversationList', () => {
     expect(screen.getByText('Alice').closest('button')).toHaveTextContent('★')
   })
 
-  it('"Mark all read" button appears when there are unseen conversations', async () => {
-    mockedFetch.mockResolvedValue([makeHandleConvo({ name: 'Alice', unseen: true, n: 2 })])
-    renderList()
-    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: /mark all read/i })).toBeInTheDocument()
-  })
+  // NOTE: "Mark all read" CheckCheck icon lives in Layout.tsx sidebar footer (moved Phase 33 Chunk 3).
+  // ConversationList no longer renders it — Layout tests cover that behaviour.
 
-  it('"Mark all read" button is absent when no conversations are unseen', async () => {
+  it('"Mark all read" icon is absent from ConversationList regardless of unseen state', async () => {
     mockedFetch.mockResolvedValue([makeHandleConvo({ name: 'Alice', unseen: false, n: 0 })])
     renderList()
     await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /mark all read/i })).not.toBeInTheDocument()
-  })
-
-  it('"Mark all read" button calls markAllSeen on click', async () => {
-    const user = userEvent.setup()
-    mockedFetch.mockResolvedValue([makeHandleConvo({ name: 'Alice', unseen: true, n: 3 })])
-    renderList()
-    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
-    const btn = screen.getByRole('button', { name: /mark all read/i })
-    await user.click(btn)
-    await waitFor(() => expect(mockedMarkAllSeen).toHaveBeenCalledOnce())
   })
 
   it('Shift+Escape triggers markAllSeen', async () => {
@@ -288,5 +288,44 @@ describe('ConversationList', () => {
     await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
     await user.keyboard('{Shift>}{Escape}{/Shift}')
     await waitFor(() => expect(mockedMarkAllSeen).toHaveBeenCalledOnce())
+  })
+
+  it('renders an avatar img with /avatar?handle= src for 1:1 conversations (#34)', async () => {
+    mockedFetch.mockResolvedValue([makeHandleConvo({ handle: '+15550001111', name: 'Alice' })])
+    const { container } = renderList()
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
+    const img = container.querySelector('img[src*="/avatar?handle="]')
+    expect(img).not.toBeNull()
+    expect(img!.getAttribute('src')).toContain(encodeURIComponent('+15550001111'))
+  })
+
+  it('does not render an avatar img for group conversations (#34)', async () => {
+    mockedFetch.mockResolvedValue([makeGroupConvo({ name: 'Team Chat' })])
+    const { container } = renderList()
+    await waitFor(() => expect(screen.getByText('Team Chat')).toBeInTheDocument())
+    expect(container.querySelector('img[src*="/avatar"]')).toBeNull()
+  })
+
+  // ---------------------------------------------------------------------------
+  // Theme variable consumption — ensures sidebar uses CSS vars, not hardcoded
+  // ---------------------------------------------------------------------------
+
+  it('conversation row buttons use --spacing-sidebar CSS variable for padding', async () => {
+    mockedFetch.mockResolvedValue([makeHandleConvo({ name: 'Alice' })])
+    renderList()
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
+
+    const btn = screen.getByRole('button', { name: /alice/i })
+    const style = btn.getAttribute('style')
+    expect(style).toContain('--spacing-sidebar')
+  })
+
+  it('preview text uses --font-size-sidebar CSS variable for font size', async () => {
+    mockedFetch.mockResolvedValue([makeHandleConvo({ name: 'Alice', preview: 'Hello there' })])
+    const { container } = renderList()
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument())
+
+    const preview = container.querySelector('[style*="--font-size-sidebar"]')
+    expect(preview).not.toBeNull()
   })
 })

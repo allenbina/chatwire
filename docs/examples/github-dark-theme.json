@@ -1,0 +1,41 @@
+{
+  "name": "github-dark",
+  "author": "chatwire",
+  "version": "1.0.0",
+  "colors": {
+    "background": "#0d1117",
+    "foreground": "#c9d1d9",
+    "card": "#161b22",
+    "card-foreground": "#c9d1d9",
+    "popover": "#161b22",
+    "popover-foreground": "#c9d1d9",
+    "primary": "#58a6ff",
+    "primary-foreground": "#ffffff",
+    "secondary": "#21262d",
+    "secondary-foreground": "#c9d1d9",
+    "muted": "#21262d",
+    "muted-foreground": "#8b949e",
+    "accent": "#1f6feb",
+    "accent-foreground": "#ffffff",
+    "border": "#30363d",
+    "input": "#0d1117",
+    "ring": "#58a6ff",
+    "sidebar-bg": "#010409",
+    "msg-me": "#1f6feb",
+    "msg-me-text": "#ffffff",
+    "msg-them": "#21262d",
+    "msg-them-text": "#c9d1d9",
+    "msg-sms": "#238636",
+    "msg-sms-text": "#ffffff"
+  },
+  "structure": {
+    "radius": "6px",
+    "radius-bubble": "6px",
+    "radius-input": "6px"
+  },
+  "decorations": {
+    "avatar-shape": "50%",
+    "bubble-shadow": "none",
+    "header-border": "1px solid #30363d"
+  }
+}

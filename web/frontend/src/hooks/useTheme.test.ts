@@ -2,12 +2,12 @@
  * Vitest tests for the useTheme hook and CSS-native theme system.
  *
  * Covers:
- *   - allSchemes has 21 entries with required fields
+ *   - allSchemes has 17 entries with required fields (rose-pine family is a plugin)
  *   - allStyles has 3 entries (default / compact / flat)
  *   - applyTheme() sets data-theme attribute on <html>
  *   - applyStyle() sets data-style attribute on <html>
  *   - Switching schemes/styles changes the attribute
- *   - useTheme().setTheme() applies data-theme
+ *   - useTheme().setThemeMode() applies data-theme
  *   - useTheme().setStyle() applies data-style
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -19,8 +19,8 @@ import { applyTheme, applyStyle, applyAccentColor, applyCustomCss, allSchemes, a
 // ---------------------------------------------------------------------------
 
 describe('allSchemes', () => {
-  it('has 21 entries', () => {
-    expect(allSchemes).toHaveLength(21)
+  it('has 17 entries (rose-pine family moved to chatwire-theme-rosepine plugin)', () => {
+    expect(allSchemes).toHaveLength(17)
   })
 
   it('each entry has name, label, isLight, swatch', () => {
@@ -173,7 +173,7 @@ describe('applyCustomCss', () => {
 })
 
 // ---------------------------------------------------------------------------
-// useTheme hook — setTheme / setStyle / setAccentColor / setCustomCss
+// useTheme hook — setThemeMode / setStyle / setAccentColor / setCustomCss
 // ---------------------------------------------------------------------------
 
 describe('useTheme hook', () => {
@@ -181,9 +181,10 @@ describe('useTheme hook', () => {
     localStorage.clear()
     document.getElementById('chatwire-accent-override')?.remove()
     document.getElementById('chatwire-custom-css')?.remove()
+    document.getElementById('chatwire-plugin-themes')?.remove()
     vi.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
-      json: async () => ({ themes: [], current: 'dracula', accent_color: '', custom_css: '' }),
+      json: async () => ({ theme_mode: 'auto', accent_color: '', custom_css: '', css: '', themes: {} }),
     } as Response)
   })
 
@@ -191,12 +192,14 @@ describe('useTheme hook', () => {
     vi.restoreAllMocks()
     document.getElementById('chatwire-accent-override')?.remove()
     document.getElementById('chatwire-custom-css')?.remove()
+    document.getElementById('chatwire-plugin-themes')?.remove()
   })
 
-  it('setTheme applies data-theme attribute', async () => {
+  it('setThemeMode("dark") applies the autoDark scheme to data-theme', async () => {
+    localStorage.setItem('chatwire-auto-dark', 'github-dark')
     const { result } = renderHook(() => useTheme())
     await act(async () => {
-      await result.current.setTheme('github-dark')
+      await result.current.setThemeMode('dark')
     })
     expect(document.documentElement.getAttribute('data-theme')).toBe('github-dark')
   })
@@ -232,13 +235,17 @@ describe('useTheme hook', () => {
     expect(result.current.currentAccent).toBe('')
   })
 
-  it('setCustomCss injects a custom <style> element and updates state', async () => {
+  it('setCustomCss injects a scoped <style> element and updates state', async () => {
     const { result } = renderHook(() => useTheme())
     const css = '.test { color: pink; }'
     await act(async () => {
       await result.current.setCustomCss(css)
     })
-    expect(document.getElementById('chatwire-custom-css')?.textContent).toBe(css)
+    // The injected element contains the CSS wrapped in [data-theme="<activeScheme>"] { … }
+    const styleText = document.getElementById('chatwire-custom-css')?.textContent ?? ''
+    expect(styleText).toContain(css)
+    expect(styleText).toContain('[data-theme=')
+    // hook state exposes the raw (unwrapped) CSS for the editor
     expect(result.current.customCss).toBe(css)
   })
 
@@ -252,5 +259,48 @@ describe('useTheme hook', () => {
     })
     expect(document.getElementById('chatwire-custom-css')).toBeNull()
     expect(result.current.customCss).toBe('')
+  })
+
+  it('re-fetches plugin schemes when chatwire-plugin-themes-changed fires', async () => {
+    // Arrange: first call returns 1 plugin scheme; second returns 2.
+    let callCount = 0
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) => {
+      const urlStr = String(url)
+      if (urlStr.includes('/api/ui/plugin-themes')) {
+        callCount++
+        const schemes =
+          callCount === 1
+            ? [{ name: 'rose-pine', label: 'Rosé Pine', isLight: false, swatch: '#ebbcba' }]
+            : [
+                { name: 'rose-pine', label: 'Rosé Pine', isLight: false, swatch: '#ebbcba' },
+                { name: 'rose-pine-moon', label: 'Rosé Pine Moon', isLight: false, swatch: '#ea9a97' },
+              ]
+        return { ok: true, json: async () => ({ schemes, css: '' }) } as Response
+      }
+      return {
+        ok: true,
+        json: async () => ({ theme_mode: 'auto', accent_color: '', css: '', themes: {} }),
+      } as Response
+    })
+
+    const { result } = renderHook(() => useTheme())
+
+    // Wait for the init effect (pluginThemesP) to resolve.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    // After mount: 17 built-in + 1 plugin scheme
+    expect(result.current.allSchemes).toHaveLength(18)
+
+    // Act: simulate the user installing a second theme variant (e.g. rose-pine-moon).
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('chatwire-plugin-themes-changed'))
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    // Assert: theme picker now shows 17 built-in + 2 plugin schemes
+    expect(result.current.allSchemes).toHaveLength(19)
+    expect(result.current.allSchemes.map((s) => s.name)).toContain('rose-pine-moon')
   })
 })

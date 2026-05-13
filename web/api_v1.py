@@ -129,10 +129,12 @@ async def api_send(body: SendRequest, _auth: None = _AUTH):
     try:
         await asyncio.to_thread(check_send_guard, body.handle, body.text, "api")
     except RateLimitError as exc:
-        raise HTTPException(429, str(exc)) from exc
+        raise HTTPException(
+            429, {"message": str(exc), "cooldown_remaining": None, "step": 0}
+        ) from exc
     except BroadcastBlockedError as exc:
         raise HTTPException(
-            429, {"error": str(exc), "retry_after": exc.retry_after}
+            429, {"message": str(exc), "cooldown_remaining": exc.retry_after, "step": exc.step}
         ) from exc
     result = await asyncio.to_thread(send_text_confirm, body.handle, body.text)
     return {"status": result.status, "hint": result.hint, "service": result.service}

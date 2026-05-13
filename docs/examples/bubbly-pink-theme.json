@@ -1,0 +1,41 @@
+{
+  "name": "bubbly-pink",
+  "author": "chatwire",
+  "version": "1.0.0",
+  "colors": {
+    "background": "#fdf2f8",
+    "foreground": "#831843",
+    "card": "#fce7f3",
+    "card-foreground": "#831843",
+    "primary": "#db2777",
+    "primary-foreground": "#ffffff",
+    "secondary": "#fbcfe8",
+    "secondary-foreground": "#9d174d",
+    "muted": "#fce7f3",
+    "muted-foreground": "#9d174d",
+    "accent": "#f472b6",
+    "accent-foreground": "#ffffff",
+    "border": "#fbcfe8",
+    "input": "#fce7f3",
+    "ring": "#db2777",
+    "sidebar-bg": "#fce7f3",
+    "msg-me": "#db2777",
+    "msg-me-text": "#ffffff",
+    "msg-them": "#fce7f3",
+    "msg-them-text": "#831843",
+    "msg-sms": "#9d174d",
+    "msg-sms-text": "#ffffff"
+  },
+  "structure": {
+    "radius": "1rem",
+    "radius-bubble": "1.25rem",
+    "radius-input": "1rem",
+    "spacing-message": "6px"
+  },
+  "decorations": {
+    "avatar-shape": "50%",
+    "avatar-border": "2px solid #f9a8d4",
+    "bubble-shadow": "0 2px 8px rgba(219,39,119,0.15)",
+    "transition-speed": "200ms"
+  }
+}

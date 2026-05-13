@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom'
 import './index.css'
 import App from './App.tsx'
 import { registerSlot } from './plugins/registry.ts'
+import { applyDecorations, loadStoredDecorations, restoreThemePack, restorePluginThemes } from './hooks/useTheme.ts'
 
 // Apply persisted color scheme + structural style before first render to avoid FOUC.
 document.documentElement.setAttribute(
@@ -14,6 +15,15 @@ document.documentElement.setAttribute(
   'data-style',
   localStorage.getItem('chatwire-style') ?? 'default',
 )
+
+// Restore persisted decoration overrides (no FOUC risk — CSS vars resolve immediately).
+applyDecorations(loadStoredDecorations())
+
+// Restore persisted theme pack (async — fetches CSS from server).
+restoreThemePack()
+
+// Inject CSS contributed by installed theme plugins (async — avoids FOUC for plugin schemes).
+restorePluginThemes()
 
 // ---------------------------------------------------------------------------
 // Built-in plugin registrations (lazy — not in the main bundle)

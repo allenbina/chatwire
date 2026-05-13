@@ -114,6 +114,17 @@ class PluginManifest:
     The web settings page renders form controls from this schema.
     """
 
+    logs_visible: bool = True
+    """Whether this plugin's structured logs appear in the chatwire Log Viewer.
+
+    When ``True`` (default): calls to ``self._ctx.log_info/warn/error()`` write
+    to ``~/.chatwire/chatwire.jsonl`` and are visible in the web Log Viewer.
+
+    When ``False``: log calls write to ``~/.chatwire/plugins/<name>/plugin.log``
+    instead — useful for high-volume or sensitive diagnostic logs you don't
+    want cluttering the shared viewer.
+    """
+
 
 # ---------------------------------------------------------------------------
 # BaseIntegration
@@ -172,6 +183,14 @@ class BaseIntegration(abc.ABC):
     DISPLAY_NAME: str = ""
     DESCRIPTION: str = ""
     SETTINGS_SCHEMA: dict[str, Any] = {}
+    LOGS_VISIBLE: bool = True
+    """Whether structured logs appear in the chatwire Log Viewer (default: True).
+
+    Set to ``False`` to redirect ``self._ctx.log_*()`` calls to a private
+    per-plugin file (``~/.chatwire/plugins/<name>/plugin.log``) instead of
+    the shared ``chatwire.jsonl``. Useful for high-frequency or sensitive
+    diagnostic output you don't want in the main log viewer.
+    """
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self._config: dict[str, Any] = config or {}
@@ -241,6 +260,49 @@ class BaseIntegration(abc.ABC):
     # Compatibility shims for the existing Integration protocol
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Structured logging helpers — recommended over print()/logging
+    # ------------------------------------------------------------------
+
+    def log_info(self, msg: str) -> None:
+        """Log an info message via the structured log system.
+
+        When :attr:`LOGS_VISIBLE` is ``True`` (default) the message appears in
+        the chatwire Log Viewer at ``/logs``.  When ``False`` it is written to
+        ``~/.chatwire/plugins/<name>/plugin.log`` instead.
+
+        Prefer this over ``print()`` or ``logging.getLogger()`` for
+        user-visible operational events — it shows up in the UI without
+        needing to tail a log file.
+
+        Example::
+
+            async def on_startup(self) -> None:
+                self.log_info("plugin started")
+
+        You can also call it from your ``_ctx`` directly if you prefer::
+
+            self._ctx.log_info("message")
+        """
+        if hasattr(self, "_ctx") and hasattr(self._ctx, "log_info"):
+            self._ctx.log_info(msg)
+
+    def log_warn(self, msg: str) -> None:
+        """Log a warning via the structured log system.
+
+        Same routing logic as :meth:`log_info`.
+        """
+        if hasattr(self, "_ctx") and hasattr(self._ctx, "log_warn"):
+            self._ctx.log_warn(msg)
+
+    def log_error(self, msg: str) -> None:
+        """Log an error via the structured log system.
+
+        Same routing logic as :meth:`log_info`.
+        """
+        if hasattr(self, "_ctx") and hasattr(self._ctx, "log_error"):
+            self._ctx.log_error(msg)
+
     async def start(self, ctx: Any) -> None:
         """Bridge-facing lifecycle hook — delegates to ``on_startup``."""
         self._ctx = ctx
@@ -274,6 +336,7 @@ class BaseIntegration(abc.ABC):
             author=getattr(cls, "AUTHOR", ""),
             description=getattr(cls, "DESCRIPTION", display_name),
             settings_schema=getattr(cls, "SETTINGS_SCHEMA", {}),
+            logs_visible=bool(getattr(cls, "LOGS_VISIBLE", True)),
         )
 
 

@@ -9,12 +9,12 @@
  * - "Load older" button at the top when the backend signals has_more.
  * - For group chats, shows the sender name above incoming bubbles.
  *
- * Performance: the message list is virtualised with @tanstack/react-virtual
- * so only ~30 DOM nodes are rendered regardless of conversation length.
+ * Uses a simple flex layout (not virtualised). The initial page is 150
+ * messages — trivial for the DOM. Virtualisation was removed because it
+ * caused persistent overlap bugs with variable-height rows.
  */
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { fetchMessages, fetchOlderMessages, markSeen, type Message } from '../api'
 import { useChatStore } from '../store'
 import { MessageBubble } from './MessageBubble'
@@ -23,6 +23,8 @@ interface MessageListProps {
   handle: string
   isGroup?: boolean
   lastSeenRowid?: number
+  ventura?: boolean
+  onReply?: (msg: Message) => void
 }
 
 // Stable empty array — avoids returning a new [] on every render when there
@@ -30,12 +32,49 @@ interface MessageListProps {
 // useSyncExternalStore's getSnapshot cache check.
 const EMPTY_OPTIMISTIC: never[] = []
 
-export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: MessageListProps) {
+/**
+ * Collapse iMessage→SMS fallback pairs into a single SMS bubble.
+ *
+ * When iMessage fails and Messages.app retries via SMS, the database stores
+ * two consecutive rows: a failed iMessage (status="failed") immediately
+ * followed by the SMS send with identical text. We hide the failed row and
+ * annotate the SMS row with fell_back_to_sms=true so the bubble can show a
+ * small note.
+ */
+function collapseSmsFallback(messages: Message[]): Message[] {
+  const result: Message[] = []
+  let i = 0
+  while (i < messages.length) {
+    const curr = messages[i]
+    const next = messages[i + 1]
+    if (
+      curr.from_me &&
+      curr.status === 'failed' &&
+      next?.from_me &&
+      next.service === 'SMS' &&
+      curr.text === next.text
+    ) {
+      // Suppress the failed iMessage bubble; show only the SMS bubble with a note.
+      result.push({ ...next, fell_back_to_sms: true })
+      i += 2
+    } else {
+      result.push(curr)
+      i++
+    }
+  }
+  return result
+}
+
+export function MessageList({ handle, isGroup = false, lastSeenRowid = 0, ventura = false, onReply }: MessageListProps) {
   const queryClient = useQueryClient()
   const optimistic = useChatStore((s) => s.optimistic[handle] ?? EMPTY_OPTIMISTIC)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  // Ref so handleScroll can read the latest messages without stale closure
+  const allMsgsRef = useRef<Message[]>([])
   const [olderMsgs, setOlderMsgs] = useState<Message[]>([])
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -57,14 +96,22 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     if (data) setHasMore(data.has_more)
   }, [data])
 
-  // Reset older pages when the conversation changes
+  // Reset state when the conversation changes
   useEffect(() => {
     setOlderMsgs([])
     setHasMore(false)
+    atBottomRef.current = true
   }, [handle])
 
   const recentMessages: Message[] = data?.messages ?? []
-  const allMessages = [...olderMsgs, ...recentMessages, ...optimistic]
+  const allMessages = collapseSmsFallback([...olderMsgs, ...recentMessages, ...optimistic])
+  // Keep ref in sync so scroll handler can access latest messages without stale closures
+  allMsgsRef.current = allMessages
+
+  // Self-chat detection: every message is from_me (notes to yourself).
+  // Only treat as self-chat when there's at least one message to avoid
+  // false positives on first render.
+  const isSelfChat = allMessages.length > 0 && allMessages.every((m) => m.from_me)
 
   // ---------------------------------------------------------------------------
   // Unread pill — "N new messages ↓"
@@ -82,16 +129,14 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     [allMessages.length],
   )
 
-  // Show pill once when messages first load and there are unseen ones and user isn't at bottom.
+  // Show pill once when messages first load and there are unseen ones.
   const pillShownRef = useRef(false)
   useEffect(() => {
     if (!pillShownRef.current && newMessageCount > 0 && allMessages.length > 0) {
       pillShownRef.current = true
       setShowPill(true)
-      pillTimerRef.current = setTimeout(() => {
-        setShowPill(false)
-        markSeen(handle, allMessages[allMessages.length - 1]?.rowid ?? 0)
-      }, 3000)
+      // Auto-dismiss pill after 3s (markSeen happens on scroll, not here)
+      pillTimerRef.current = setTimeout(() => setShowPill(false), 3000)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMessages.length])
@@ -108,30 +153,40 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     setShowPill(false)
     if (pillTimerRef.current) clearTimeout(pillTimerRef.current)
     if (firstNewIndex >= 0) {
-      virtualizer.scrollToIndex(firstNewIndex, { align: 'start' })
+      const el = scrollRef.current?.querySelector(`[data-index="${firstNewIndex}"]`)
+      el?.scrollIntoView?.({ block: 'start' })
     } else {
       scrollToBottom()
     }
-    markSeen(handle, allMessages[allMessages.length - 1]?.rowid ?? 0)
   }
 
   // ---------------------------------------------------------------------------
-  // Virtualiser — renders only the visible slice of allMessages
+  // Scroll to bottom on new messages
   // ---------------------------------------------------------------------------
-  const virtualizer = useVirtualizer({
-    count: allMessages.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 64, // rough average row height (px)
-    overscan: 10, // extra rows to pre-render above/below viewport
-  })
-
-  // Scroll to bottom on new messages (only when already at bottom)
   useEffect(() => {
     if (atBottomRef.current && allMessages.length > 0) {
-      virtualizer.scrollToIndex(allMessages.length - 1, { align: 'end' })
+      bottomRef.current?.scrollIntoView?.({ block: 'end' })
+      const lastRowid = allMessages[allMessages.length - 1]?.rowid
+      if (lastRowid) markSeen(handle, lastRowid)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMessages.length])
+
+  // Re-scroll when images load and cause layout height changes. Images are
+  // fetched asynchronously so the first scrollIntoView fires before the
+  // container has reached its final height. A ResizeObserver on the inner
+  // content div catches those expansions and re-scrolls if atBottomRef is set.
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => {
+      if (atBottomRef.current) {
+        bottomRef.current?.scrollIntoView?.({ block: 'end' })
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -139,10 +194,15 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
     atBottomRef.current = nearBottom
     setShowScrollBtn(!nearBottom)
-  }, [])
+    // Mark seen when user scrolls to (or is already at) the bottom
+    if (nearBottom && allMsgsRef.current.length > 0) {
+      const lastRowid = allMsgsRef.current[allMsgsRef.current.length - 1]?.rowid
+      if (lastRowid) markSeen(handle, lastRowid)
+    }
+  }, [handle])
 
   function scrollToBottom() {
-    virtualizer.scrollToIndex(allMessages.length - 1, { align: 'end' })
+    bottomRef.current?.scrollIntoView?.({ block: 'end' })
     atBottomRef.current = true
     setShowScrollBtn(false)
   }
@@ -179,8 +239,6 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     )
   }
 
-  const virtualItems = virtualizer.getVirtualItems()
-
   return (
     <div className="relative flex-1 min-h-0">
       <div
@@ -213,39 +271,41 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
           </p>
         )}
 
-        {/* Virtual list container — height matches total row heights */}
-        <div
-          style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
-        >
-          {virtualItems.map((vItem) => {
-            const msg = allMessages[vItem.index]
-            return (
-              <div
-                key={msg.rowid}
-                data-index={vItem.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${vItem.start}px)`,
+        {/* Simple flex list — no virtualisation, no overlap */}
+        <div ref={contentRef} className="flex flex-col">
+          {allMessages.map((msg, i) => (
+            <div
+              key={msg.rowid}
+              data-index={i}
+              className="px-4 flex flex-col"
+              style={{
+                paddingTop: 'var(--spacing-message)',
+                paddingBottom: 'var(--spacing-message)',
+              }}
+            >
+              {/* Sender label for incoming group messages */}
+              {isGroup && !msg.from_me && msg.sender_name && (
+                <p className="text-[10px] text-muted-foreground mb-0.5 ml-1">
+                  {msg.sender_name}
+                </p>
+              )}
+              <MessageBubble
+                msg={msg}
+                pending={'pending' in msg && (msg as Message & { pending?: boolean }).pending === true}
+                selfChatAlt={isSelfChat && msg.rowid % 2 !== 0}
+                onScrollToRowid={(rowid) => {
+                  const el = scrollRef.current?.querySelector(
+                    `[data-index="${allMessages.findIndex((m) => m.rowid === rowid)}"]`,
+                  )
+                  el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
                 }}
-                className="px-4 py-1"
-              >
-                {/* Sender label for incoming group messages */}
-                {isGroup && !msg.from_me && msg.sender_name && (
-                  <p className="text-[10px] text-muted-foreground mb-0.5 ml-1">
-                    {msg.sender_name}
-                  </p>
-                )}
-                <MessageBubble
-                  msg={msg}
-                  pending={'pending' in msg && (msg as Message & { pending?: boolean }).pending === true}
-                />
-              </div>
-            )
-          })}
+                ventura={ventura}
+                onReply={onReply}
+              />
+            </div>
+          ))}
+          {/* Scroll anchor */}
+          <div ref={bottomRef} />
         </div>
       </div>
 

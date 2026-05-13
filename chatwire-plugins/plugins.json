@@ -1,12 +1,13 @@
 [
   {
-    "name": "chatwire-ntfy",
-    "pypi": "chatwire-ntfy",
-    "description": "Push notifications via ntfy.sh or a self-hosted ntfy server. Instant alerts on every inbound iMessage.",
+    "name": "chatwire-apprise",
+    "pypi": "chatwire-apprise",
+    "description": "Push notifications to ntfy, Slack, Discord, Pushover, and 80+ services via Apprise.",
     "author": "allenbina",
     "signed": true,
-    "homepage": "https://github.com/allenbina/chatwire-ntfy",
-    "icon": "🔔"
+    "homepage": "https://github.com/allenbina/chatwire-apprise",
+    "icon": "📣",
+    "tags": ["action"]
   },
   {
     "name": "chatwire-telegram",
@@ -15,6 +16,47 @@
     "author": "allenbina",
     "signed": true,
     "homepage": "https://github.com/allenbina/chatwire-telegram",
-    "icon": "💬"
+    "icon": "💬",
+    "tags": ["bridge"]
+  },
+  {
+    "name": "chatwire-webhook",
+    "pypi": "chatwire-webhook",
+    "description": "POST every inbound iMessage to a webhook URL. Build automations with Zapier, n8n, and anything that speaks HTTP.",
+    "author": "allenbina",
+    "signed": true,
+    "homepage": "https://github.com/allenbina/chatwire-webhook",
+    "icon": "🔗",
+    "tags": ["action"]
+  },
+  {
+    "name": "chatwire-stats",
+    "pypi": "chatwire-stats",
+    "description": "Message statistics dashboard — charts for message volume, response times, and top contacts.",
+    "author": "allenbina",
+    "signed": true,
+    "homepage": "https://github.com/allenbina/chatwire-stats",
+    "icon": "📊",
+    "tags": ["ui", "official"]
+  },
+  {
+    "name": "chatwire-theme-rosepine",
+    "pypi": "chatwire-theme-rosepine",
+    "description": "Rosé Pine color family — three variants: base (dark), Moon (dark), and Dawn (light).",
+    "author": "allenbina",
+    "signed": true,
+    "homepage": "https://github.com/allenbina/chatwire-theme-rosepine",
+    "icon": "🎨",
+    "tags": ["ui", "theme"]
+  },
+  {
+    "name": "chatwire-example",
+    "pypi": "chatwire-example",
+    "description": "Example plugin for testing install/uninstall. Does nothing.",
+    "author": "allenbina",
+    "signed": false,
+    "homepage": "https://github.com/allenbina/chatwire-example",
+    "icon": "🧪",
+    "tags": ["ui"]
   }
 ]

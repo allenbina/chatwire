@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from integrations.base import BridgeContext, InboundMessage
+from web import log_stream as _ls
 
 log = logging.getLogger("chatwire.mcp")
 
@@ -70,17 +71,21 @@ def tool_send_message(handle: str, text: str) -> dict:
     Returns {status, hint, service} on success, or an error dict on failure.
     """
     from chat_send import BroadcastBlockedError, RateLimitError  # noqa: PLC0415
+    _ls.info("mcp", f"tool: send_message to {handle} ({len(text)} chars)")
     try:
         _check_send_guard(handle, text, "mcp")
     except RateLimitError as exc:
+        _ls.warn("mcp", f"send_message rate limited: {exc}")
         return {"error": "rate_limited", "detail": str(exc)}
     except BroadcastBlockedError as exc:
+        _ls.error("mcp", f"send_message broadcast blocked: {exc}")
         return {
             "error": "broadcast_blocked",
             "detail": str(exc),
             "retry_after": exc.retry_after,
         }
     result = _send_text_confirm(handle, text)
+    _ls.info("mcp", f"send_message result: {result.status}")
     return {"status": result.status, "hint": result.hint, "service": result.service}
 
 
@@ -374,6 +379,7 @@ class McpIntegration:
         log.info(
             "mcp integration ready — run `chatwire mcp` to start the stdio server"
         )
+        _ls.info("mcp", "MCP integration ready — run `chatwire mcp` to start the stdio server")
 
     async def stop(self) -> None:
         pass

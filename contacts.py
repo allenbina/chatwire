@@ -12,6 +12,8 @@ import re
 import sqlite3
 from pathlib import Path
 
+from web import log_stream as _ls
+
 log = logging.getLogger("contacts")
 
 ADDRESSBOOK_GLOB = str(
@@ -42,6 +44,7 @@ def _label(first: str | None, last: str | None, org: str | None) -> str:
 
 def load_lookup() -> dict[str, str]:
     """Return {handle_lowercased: display_name}. Empty dict on failure."""
+    _ls.info("contacts", "contact sync starting")
     out: dict[str, str] = {}
     try:
         dbs = glob.glob(ADDRESSBOOK_GLOB)
@@ -80,6 +83,7 @@ def load_lookup() -> dict[str, str]:
             conn.close()
 
     log.info("contacts lookup loaded: %d handles", len(out))
+    _ls.info("contacts", f"contact sync complete — {len(out)} handles loaded")
     return out
 
 
