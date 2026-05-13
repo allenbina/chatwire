@@ -271,6 +271,85 @@ class TestAutomationsDelete:
             assert len(store) == 0
 
 
+SAMPLE_RULE_3 = {
+    "name": "ping",
+    "trigger": {"type": "text_exact", "pattern": "ping"},
+    "actions": [{"type": "reply", "text": "pong"}],
+}
+
+# ---------------------------------------------------------------------------
+# POST /automations/reorder
+# ---------------------------------------------------------------------------
+
+class TestAutomationsReorder:
+    def test_reorder_basic(self):
+        with _rule_store([SAMPLE_RULE, SAMPLE_RULE_2, SAMPLE_RULE_3]) as store:
+            r = client.post("/automations/reorder", json={"order": [2, 0, 1]}, headers=_AUTH)
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+        assert [s["name"] for s in store] == ["ping", "greeting", "farewell"]
+
+    def test_reorder_reverse(self):
+        with _rule_store([SAMPLE_RULE, SAMPLE_RULE_2, SAMPLE_RULE_3]) as store:
+            r = client.post("/automations/reorder", json={"order": [2, 1, 0]}, headers=_AUTH)
+        assert r.status_code == 200
+        assert [s["name"] for s in store] == ["ping", "farewell", "greeting"]
+
+    def test_reorder_identity(self):
+        with _rule_store([SAMPLE_RULE, SAMPLE_RULE_2]) as store:
+            r = client.post("/automations/reorder", json={"order": [0, 1]}, headers=_AUTH)
+        assert r.status_code == 200
+        assert [s["name"] for s in store] == ["greeting", "farewell"]
+
+    def test_reorder_single(self):
+        with _rule_store([SAMPLE_RULE]) as store:
+            r = client.post("/automations/reorder", json={"order": [0]}, headers=_AUTH)
+        assert r.status_code == 200
+        assert store[0]["name"] == "greeting"
+
+    def test_reorder_empty_list_ok(self):
+        with _rule_store([]) as store:
+            r = client.post("/automations/reorder", json={"order": []}, headers=_AUTH)
+        assert r.status_code == 200
+        assert store == []
+
+    def test_reorder_wrong_length(self):
+        with _rule_store([SAMPLE_RULE, SAMPLE_RULE_2]):
+            r = client.post("/automations/reorder", json={"order": [0]}, headers=_AUTH)
+        assert r.status_code == 400
+
+    def test_reorder_duplicate_index(self):
+        with _rule_store([SAMPLE_RULE, SAMPLE_RULE_2]):
+            r = client.post("/automations/reorder", json={"order": [0, 0]}, headers=_AUTH)
+        assert r.status_code == 400
+
+    def test_reorder_out_of_range(self):
+        with _rule_store([SAMPLE_RULE, SAMPLE_RULE_2]):
+            r = client.post("/automations/reorder", json={"order": [0, 5]}, headers=_AUTH)
+        assert r.status_code == 400
+
+    def test_reorder_non_list_order(self):
+        with _rule_store([SAMPLE_RULE]):
+            r = client.post("/automations/reorder", json={"order": "bad"}, headers=_AUTH)
+        assert r.status_code == 400
+
+    def test_reorder_non_object_body(self):
+        with _rule_store([SAMPLE_RULE]):
+            r = client.post("/automations/reorder", content=b'"string"',
+                            headers={**_AUTH, "Content-Type": "application/json"})
+        assert r.status_code == 400
+
+    def test_reorder_missing_order_key(self):
+        with _rule_store([SAMPLE_RULE]):
+            r = client.post("/automations/reorder", json={}, headers=_AUTH)
+        assert r.status_code == 400
+
+    def test_reorder_auth_required(self):
+        with _rule_store([SAMPLE_RULE, SAMPLE_RULE_2]):
+            r = client.post("/automations/reorder", json={"order": [1, 0]})
+        assert r.status_code == 401
+
+
 # ---------------------------------------------------------------------------
 # Full CRUD round-trip
 # ---------------------------------------------------------------------------

@@ -2847,6 +2847,31 @@ async def api_settings_automations_delete(rule_index: int):
     return {"ok": True}
 
 
+@app.post("/api/settings/automations/reorder")
+async def api_settings_automations_reorder(request: Request):
+    """Reorder automation rules.
+
+    Body: ``{"order": [2, 0, 1]}`` — a permutation of ``range(len(rules))``
+    that specifies the new position of each rule.  ``order[i]`` is the old
+    index of the rule that should end up at position *i*.
+    """
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body must be an object")
+    order = body.get("order")
+    if not isinstance(order, list):
+        raise HTTPException(400, "order must be a list")
+    cfg = _bridge_config.load_config()
+    rules: list = cfg.get("integrations", {}).get("chatwire_rules", {}).get("rules", [])
+    n = len(rules)
+    if sorted(order) != list(range(n)):
+        raise HTTPException(400, "order must be a permutation of rule indices")
+    reordered = [rules[i] for i in order]
+    cfg.setdefault("integrations", {}).setdefault("chatwire_rules", {})["rules"] = reordered
+    _bridge_config.save_config(cfg)
+    return {"ok": True}
+
+
 @app.get("/api/plugins/registry")
 async def api_plugins_registry():
     """Return the cached plugin registry JSON (24 h TTL)."""

@@ -317,3 +317,33 @@ async def api_automations_delete(rule_index: int, _auth: None = _AUTH):
     if not ok:
         raise HTTPException(404, "Rule not found")
     return {"ok": True}
+
+
+@router.post("/automations/reorder")
+async def api_automations_reorder(request: Request, _auth: None = _AUTH):
+    """Reorder automation rules.
+
+    Body: ``{"order": [2, 0, 1]}`` — a permutation of ``range(len(rules))``
+    that specifies the new position of each rule.  ``order[i]`` is the old
+    index of the rule that should end up at position *i*.
+    """
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body must be an object")
+    order = body.get("order")
+    if not isinstance(order, list):
+        raise HTTPException(400, "order must be a list")
+
+    def _reorder(new_order: list) -> str:
+        rules = _load_rules()
+        n = len(rules)
+        if sorted(new_order) != list(range(n)):
+            return "order must be a permutation of rule indices"
+        reordered = [rules[i] for i in new_order]
+        _save_rules(reordered)
+        return ""
+
+    err = await asyncio.to_thread(_reorder, order)
+    if err:
+        raise HTTPException(400, err)
+    return {"ok": True}

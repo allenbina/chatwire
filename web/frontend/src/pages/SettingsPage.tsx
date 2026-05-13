@@ -3336,6 +3336,25 @@ function AutomationsSection() {
     }
   }
 
+  async function handleMove(idx: number, dir: -1 | 1) {
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= rules.length) return
+    const order = rules.map((_, i) => i)
+    order.splice(newIdx, 0, order.splice(idx, 1)[0])
+    try {
+      const r = await fetch('/api/settings/automations/reorder', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      qc.invalidateQueries({ queryKey: ['settings-automations'] })
+    } catch {
+      toast.error('Failed to reorder rules')
+    }
+  }
+
   function updateAction(idx: number, patch: Partial<RuleActionForm>) {
     setForm(f => {
       const actions = [...f.actions]
@@ -3386,7 +3405,27 @@ function AutomationsSection() {
                   {ruleActions.length} action{ruleActions.length !== 1 ? 's' : ''}
                 </span>
               </div>
-              <div className="flex gap-1 shrink-0">
+              <div className="flex gap-1 shrink-0 items-center">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-xs"
+                  disabled={idx === 0}
+                  onClick={() => handleMove(idx, -1)}
+                  title="Move up"
+                >
+                  ↑
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-xs"
+                  disabled={idx === rules.length - 1}
+                  onClick={() => handleMove(idx, 1)}
+                  title="Move down"
+                >
+                  ↓
+                </Button>
                 <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => openEdit(idx)}>
                   Edit
                 </Button>
