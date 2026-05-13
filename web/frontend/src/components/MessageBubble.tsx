@@ -317,15 +317,20 @@ function LocationCard({ location }: { location: { lat: number | null; lon: numbe
 function ReplyQuote({
   reply,
   fromMe,
+  isGroup = false,
   onScrollTo,
 }: {
   reply: { rowid: number; text: string; sender: string; image_path?: string }
   fromMe: boolean
+  isGroup?: boolean
   onScrollTo?: (rowid: number) => void
 }) {
   // sender is '' when the parent message was from me; non-empty = other person's name
   const parentFromMe = reply.sender === ''
   const senderLabel = reply.sender || 'You'
+  // In 1:1 threads there are only two people — showing the sender name in the
+  // ghost bubble is redundant. Only show it in group chats.
+  const showSenderName = isGroup
 
   const ghostBg = parentFromMe
     ? 'bg-primary/15 border border-primary/25'
@@ -348,9 +353,11 @@ function ReplyQuote({
         ].join(' ')}
         style={{ fontSize: '0.8em' }}
       >
-        <p className={['font-semibold truncate mb-0.5 text-[0.75em]', senderColor].join(' ')}>
-          {senderLabel}
-        </p>
+        {showSenderName && (
+          <p className={['font-semibold truncate mb-0.5 text-[0.75em]', senderColor].join(' ')}>
+            {senderLabel}
+          </p>
+        )}
         {reply.image_path ? (
           <img
             src={`/attachment?path=${encodeURIComponent(reply.image_path)}&size=thumb`}
@@ -587,6 +594,8 @@ interface MessageBubbleProps {
   onReply?: (msg: Message) => void
   /** Whether the host is running macOS 13+ (enables Edit/Unsend). */
   ventura?: boolean
+  /** Whether this conversation is a group chat (affects reply ghost bubble sender label). */
+  isGroup?: boolean
 }
 
 export function MessageBubble({
@@ -596,6 +605,7 @@ export function MessageBubble({
   onScrollToRowid,
   onReply,
   ventura = false,
+  isGroup = false,
 }: MessageBubbleProps) {
   const [showBar, setShowBar] = useState(false)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -646,7 +656,7 @@ export function MessageBubble({
     >
       {/* Inline reply quote */}
       {msg.reply_to && (
-        <ReplyQuote reply={msg.reply_to} fromMe={isMine} onScrollTo={onScrollToRowid} />
+        <ReplyQuote reply={msg.reply_to} fromMe={isMine} isGroup={isGroup} onScrollTo={onScrollToRowid} />
       )}
 
       {/* Main content area — wrapped in relative so tapbacks can overlay the corner */}

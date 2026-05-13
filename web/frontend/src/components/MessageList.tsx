@@ -293,6 +293,7 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0, ventur
                 msg={msg}
                 pending={'pending' in msg && (msg as Message & { pending?: boolean }).pending === true}
                 selfChatAlt={isSelfChat && msg.rowid % 2 !== 0}
+                isGroup={isGroup}
                 onScrollToRowid={(rowid) => {
                   const el = scrollRef.current?.querySelector(
                     `[data-index="${allMessages.findIndex((m) => m.rowid === rowid)}"]`,

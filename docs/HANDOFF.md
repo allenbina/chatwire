@@ -1,21 +1,102 @@
-# Handoff — Phase 67: public repo sync to Phase 66
+# Handoff — Phase 68: schedule trigger type for automation rules
 
-> Phase 67 session shipped (2026-05-13, commit caf2a8c in allenbina/chatwire public repo).
-> 1326 pytest / 218 Vitest — all green (unchanged).
-> mbair running v1.14.0 (git+ssh, Phase 66 code, healthy).
+> Phase 68 session shipped (2026-05-13, commit 530386e).
+> 1384 pytest / 218 Vitest — all green (+58 new tests).
+> mbair running v1.14.0 (git+ssh, Phase 68 code, healthy).
 
 ## §1 Current state
 
-- **mbair**: commit b1b4275 (Phase 66) deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit 530386e (Phase 68) deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants.
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
-- **Tests**: 1326 pytest / 218 Vitest — all green.
+- **Tests**: 1384 pytest / 218 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 66/67.
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to this phase.
 - **PyPI**: v1.14.0 (plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: synced to Phase 66 (commit caf2a8c, 2026-05-13).
+- **Public repo (allenbina/chatwire)**: synced to Phase 68 (commit 795a595, 2026-05-13).
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 68 (2026-05-13)
+
+### feat: schedule trigger type for automation rules (#68)
+
+**What**: Added a new `schedule` trigger type to the automation rules engine.
+Schedule rules fire on a configurable cron schedule rather than in response
+to an inbound or outbound message.
+
+**New trigger type**: `"type": "schedule"` with `"cron": "<5-field expression>"`.
+
+**Cron format** (5 fields: minute hour dom month dow, dow 0=Sunday):
+```
+"0 9 * * 1-5"   — 09:00 Mon–Fri
+"*/15 * * * *"  — every 15 minutes
+"30 8,17 * * *" — 08:30 and 17:30 daily
+```
+Supports: `*`, literals, ranges (`1-5`), lists (`1,3`), step notation (`*/5`, `1-5/2`).
+
+**Actions**: `webhook` and `log` are supported. `reply` is skipped with a warning
+(no recipient handle available in a schedule context).
+
+**Webhook payload** for schedule rules: `{"rule": "<name>", "trigger": "schedule"}`.
+
+**Example rule**:
+```json
+{
+  "name": "morning-ping",
+  "trigger": {"type": "schedule", "cron": "0 9 * * 1-5"},
+  "actions": [{"type": "webhook", "url": "https://example.com/hook"}]
+}
+```
+
+**Files changed**:
+- `integrations/rules/cron.py` (new): `_parse_field()`, `compile_cron()`,
+  `match_cron()`. Pure Python, no dependencies. `CronError` on bad input.
+- `integrations/rules/__init__.py`:
+  - Module-level `compile_cron` / `match_cron` / `CronError` import (with
+    `ImportError` fallback like DSL module).
+  - `_compile()`: `"schedule"` branch — requires non-empty `cron`; stores
+    compiled tuple in `compiled_cron` field.
+  - `evaluate()`: skips `schedule` rules (`tt in ("on_send", "schedule")`).
+  - `evaluate_scheduled(dt)`: new method — evaluates only `schedule` rules
+    against `dt`; respects `stop_on_match`.
+  - `_ScheduleContext`: minimal context (empty handle/text) for action dispatch.
+  - `_do_reply()`: guards `not getattr(msg, "handle", "")` — logs warning and
+    returns for schedule-context calls.
+  - `RulesIntegration.__init__`: `self._schedule_task = None`.
+  - `RulesIntegration.start()`: calls `asyncio.ensure_future(_schedule_loop())`
+    when any schedule rules are loaded.
+  - `RulesIntegration.stop()`: cancels + awaits schedule task.
+  - `_schedule_loop()`: asyncio task — sleeps to next minute boundary (+0.1s
+    margin), calls `_fire_scheduled(now)`, loops.
+  - `_fire_scheduled(dt)`: evaluates schedule rules, dispatches via `_dispatch()`.
+  - `SETTINGS_SCHEMA`: `"schedule"` in trigger type enum; `"cron"` property.
+- `web/api_v1.py`: `"schedule"` in `valid_triggers`; requires non-empty
+  `trigger.cron`.
+- `web/frontend/src/pages/SettingsPage.tsx`:
+  - `TriggerType` gains `'schedule'`.
+  - `AutomationRuleForm` gains `cron: string`.
+  - `_EMPTY_RULE_FORM`: `cron: ''`.
+  - `_formToApiRule`: `schedule` → emits `{type:'schedule', cron}`, no conditions.
+  - `_apiRuleToForm`: detects `trigger.type === 'schedule'` → populates `cron`.
+  - `_TRIGGER_LABELS`: `schedule` → `'Schedule'`.
+  - `handleSave`: validates non-empty cron for schedule type.
+  - Trigger dropdown: "Schedule (cron)" option.
+  - Cron input (monospace) + syntax hint shown for schedule type.
+  - Conditions section hidden for schedule rules.
+  - Rule card: cron expression pill shown for schedule rules.
+- `web/frontend/src/pages/AutomationsDslMode.test.tsx`: `_BASE_FORM` gains
+  `cron: ''` for TypeScript compliance.
+- `tests/test_schedule_rules.py` (new) — **58 tests**:
+  - `compile_cron`: 19 tests — valid expressions, CronError cases.
+  - `match_cron`: 12 tests — all fields, dow cron/Python conversion.
+  - `RulesEngine._compile`: 4 tests — compiles, skips bad/missing cron.
+  - Direction isolation: 3 tests — evaluate/evaluate_outbound skip schedule.
+  - `evaluate_scheduled`: 7 tests — match, no-match, stop_on_match, mixed.
+  - `api_v1._validate_rule_body`: 4 tests — accepts/rejects schedule.
+  - `_ScheduleContext`: 1 test — field values.
+  - `_fire_scheduled`: 8 tests — log/webhook/reply dispatch, no-ctx, error
+    isolation, task start/no-start.
 
 ## §2 What shipped in Phase 67 (2026-05-13)
 
@@ -24,238 +105,31 @@
 **What**: Rsynced chatwire-dev source (excluding dist/, node_modules/, __pycache__/, .git/)
 to /tmp/chatwire-public and pushed to github.com/allenbina/chatwire.
 
-**Files synced**: bridge.py, integrations/base.py, integrations/rules/__init__.py,
-web/api_v1.py, web/main.py, web/frontend/src/pages/SettingsPage.tsx,
-web/frontend/src/pages/AutomationsDslMode.test.tsx, web/frontend/src/components/MediaGallery.tsx,
-tests/test_on_send_rules.py (new), tests/test_automations_api.py, docs/HANDOFF.md.
-
 **Public repo commit**: caf2a8c — "feat: on_send automation trigger for outbound iMessages (#66)"
 
 ## §2 What shipped in Phase 66 (2026-05-13)
 
 ### feat: on_send automation trigger for outbound iMessages
 
-**Problem**: The automation rules engine only evaluated inbound iMessages.
-There was no way to trigger actions (webhook calls, log lines, auto-replies)
-when the user or an integration sends an outbound iMessage.
-
-**Fix**: Added a new `on_send` trigger type to the rules engine.
-
-**New trigger type**: `"type": "on_send"` — fires for every outbound text
-message sent via the bridge (integration-initiated or web UI).
-
-**Direction isolation**:
-- `evaluate()` (inbound) silently skips `on_send` rules.
-- `evaluate_outbound()` (outbound) skips all non-`on_send` rules.
-- DSL-mode rules remain inbound-only.
-
-**Outbound-specific conditions** (in the `conditions` block):
-```json
-{
-  "to_handles":     ["+15551234567"],
-  "not_to_handles": ["+15550000001"],
-  "in_group":       false,
-  "group_guid":     "iMessage;+;chat..."
-}
-```
-`to_handles` / `not_to_handles` filter by recipient (lowercased frozensets).
-`in_group` / `group_guid` shared semantics with inbound rules.
-
-**Actions**: `reply`, `webhook`, `log` — same as inbound rules.
-`webhook` payload carries `handle` (recipient), `text`, `is_group`, `chat_guid`.
-
-**Example rule**:
-```json
-{
-  "name": "log-urgent-sends",
-  "trigger": {"type": "on_send"},
-  "conditions": {"to_handles": ["+15551234567"]},
-  "actions": [{"type": "log", "message": "sent to {handle}: {text}"}]
-}
-```
-
-**Files changed**:
-- `integrations/base.py`: `OutboundEvent` dataclass (`handle`, `text`,
-  `is_group`, `chat_guid`); exported in `__all__`.
-- `integrations/rules/__init__.py`:
-  - `_compile()`: handles `"on_send"`; compiles `to_handles` / `not_to_handles`.
-  - `evaluate()`: skips `on_send` rules.
-  - `evaluate_outbound()`: new method; evaluates only `on_send` rules;
-    checks `to_handles`, `not_to_handles`, `in_group`, `group_guid`,
-    `stop_on_match`.
-  - `RulesIntegration.on_outbound(event)`: new async hook; dispatches
-    matched rules through the existing action pipeline.
-  - `SETTINGS_SCHEMA`: `on_send` in trigger type enum; `to_handles` /
-    `not_to_handles` in conditions properties.
-- `bridge.py`: `_fan_out_outbound(integrations, target, body)` helper;
-  called after each successful `BridgeContextImpl.send_text()`.
-  Per-integration error catching — a failing hook never blocks the send.
-- `web/api_v1.py`: `on_send` added to `valid_triggers`; no `expr` required.
-- `web/frontend/src/pages/SettingsPage.tsx`:
-  - `TriggerType` union gains `'on_send'`.
-  - `AutomationRuleForm` gains `toHandles` / `notToHandles` string fields.
-  - Trigger dropdown: "On send (outbound)" option; pattern input hidden.
-  - Conditions: "To handles" / "Not to handles" shown for `on_send`;
-    "From handles" / "Not from handles" shown for all other trigger types.
-  - `_formToApiRule` / `_apiRuleToForm` handle `on_send` bidirectionally.
-  - `_TRIGGER_LABELS`: `on_send` → "On send".
-- `web/frontend/src/pages/AutomationsDslMode.test.tsx`: `_BASE_FORM` gains
-  `toHandles`/`notToHandles` for TypeScript compliance.
-- `tests/test_on_send_rules.py` (new) — **35 tests**:
-  - `_compile`: to_handles lowercased frozensets, no pattern/regex needed.
-  - `evaluate()`: skips on_send rules (direction isolation).
-  - `evaluate_outbound()`: fires on_send rules, conditions (to_handles,
-    not_to_handles, in_group, group_guid), stop_on_match, None inputs.
-  - `api_v1._validate_rule_body`: accepts `on_send`; no `expr` required.
-  - `OutboundEvent` dataclass: field values, group vs 1:1.
-  - `RulesIntegration.on_outbound`: log action dispatch, no-match silence,
-    no-ctx noop, webhook dispatch, action error isolation.
-- `tests/test_automations_api.py`: updated `test_invalid_trigger_type_returns_400`
-  to use `"bad_type"` (not `"on_send"`, which is now valid).
+(See Phase 66 notes in git history for full details.)
 
 ## §2 What shipped in Phase 65 (2026-05-13)
 
 ### feat: DSL mode toggle in AutomationsSection (#28 follow-up)
 
-**Problem**: The automation rule dialog only exposed the structured form (trigger
-type drop-down + pattern input + conditions block). Power users who know the DSL
-grammar had no way to type a raw expression directly in the UI.
-
-**Fix**: Added a "Switch to DSL mode" / "Switch to structured form" toggle button
-in the Trigger section header of the rule editor dialog.
-
-**DSL mode UI**:
-- Clicking "Switch to DSL mode" replaces the trigger type select, pattern input,
-  and the entire Conditions section with a single monospace `Textarea`
-  (80 px min-height) for the DSL expression.
-- A compact syntax reference is shown below the textarea:
-  `from:+1 not_from:+1 contains:word exact:hi regex:"…" in:group in:1to1 always`
-  with the operators `AND OR NOT ( )`.
-- Clicking "Switch to structured form" restores the original layout; the DSL
-  expression is discarded (reset to empty).
-- `handleSave` validates non-empty `dslExpr` when DSL mode is on.
-
-**Rule card display**:
-- A "DSL" badge replaces the trigger type pill for DSL rules.
-- The DSL expression (truncated, full text in `title`) is shown instead of the
-  `"pattern"` pill.
-
-**Files changed**:
-- `web/frontend/src/pages/SettingsPage.tsx`:
-  - `TriggerType` union gains `'dsl'`.
-  - `AutomationRuleForm` gains `dslMode: boolean` and `dslExpr: string`.
-  - `_EMPTY_RULE_FORM` updated with `dslMode: false, dslExpr: ''`.
-  - `_formToApiRule` (exported): when `dslMode`, emits
-    `trigger: { type: 'dsl', expr }` with no conditions block; actions and
-    `stop_on_match` pass through unchanged.
-  - `_apiRuleToForm` (exported): detects `trigger.type === 'dsl'` →
-    sets `dslMode: true`, populates `dslExpr`; all structured fields reset to
-    defaults.
-  - Dialog Trigger section: toggle button + conditional rendering of DSL or
-    structured inputs.
-  - Conditions section wrapped in `{!form.dslMode && …}`.
-  - Rule card: extracts `rTrigger.expr`; renders DSL badge + expression preview.
-- `web/frontend/src/pages/AutomationsDslMode.test.tsx` (new) — **22 tests**:
-  - `_formToApiRule` DSL mode: type=dsl, expr, no conditions, stop_on_match,
-    actions pass-through, name.
-  - `_formToApiRule` structured mode: regression tests for existing behaviour.
-  - `_apiRuleToForm` DSL detection: dslMode/dslExpr populated, stop_on_match,
-    actions parsed, defaults for empty fields.
-  - `_apiRuleToForm` structured: dslMode=false, dslExpr=''.
+(See Phase 65 notes in git history for full details.)
 
 ## §2 What shipped in Phase 64 (2026-05-13)
 
 ### feat: automation rules trigger grammar DSL (#28)
 
-**Problem**: Complex automation rules required nested JSON (trigger + separate
-conditions block), which was verbose and hard to read.  There was no way to
-express boolean combinations (OR across senders, NOT for exclusions) without
-multiple overlapping rules.
-
-**Fix**: Added a text-based expression language compiled to a callable at
-rule-load time (no runtime parsing overhead).
-
-**New trigger type**: `"type": "dsl"` with `"expr": "<expression>"`.
-A DSL rule's evaluator replaces **both** the trigger and conditions blocks —
-the DSL expression covers the entire matching logic.
-
-**Syntax** (see `integrations/rules/dsl.py` module docstring for full grammar):
-```
-always                                — always matches
-from:+15551234567                     — sender match
-not_from:+15551234567                 — sender exclusion
-contains:"hello world"                — case-insensitive substring
-exact:bye                             — exact match (stripped, lowercased)
-regex:"order\\s+#\\d+"                — case-insensitive regex search
-in:group                              — group-chat messages only
-in:1to1                               — 1:1 messages only (aliases: dm, direct)
-group:iMessage;chat-guid-here         — specific group GUID
-AND / OR / NOT / ( )                  — boolean operators + grouping
-```
-Adjacent predicates with no operator are treated as implicit AND.
-AND binds tighter than OR.  Example:
-```
-(from:+1 OR from:+2) AND contains:urgent AND NOT in:group
-```
-
-**Files changed**:
-- `integrations/rules/dsl.py` (new) — tokenizer + recursive descent parser;
-  `parse_dsl(expr)` returns `Evaluator`; `DSLError` on invalid expressions.
-- `integrations/rules/__init__.py` — `RulesEngine._compile()` handles
-  `trigger.type = "dsl"` (parses `expr`, stores compiled callable);
-  `evaluate()` dispatches DSL rules via the compiled evaluator, skipping the
-  normal conditions block.  `SETTINGS_SCHEMA` updated with `dsl` enum value
-  and `expr` property.
-- `web/api_v1.py` — `_validate_rule_body()` accepts `dsl`; requires
-  non-empty `trigger.expr` for DSL rules.
-- `tests/test_rules_dsl.py` (new) — **88 tests**: all predicate types,
-  AND/OR/NOT/implicit-AND, precedence, grouping, quoted strings with escapes,
-  error cases, RulesEngine end-to-end, stop_on_match, mixed DSL+non-DSL rules,
-  bad-expr compile-time skip, api_v1 validation.
+(See Phase 64 notes in git history for full details.)
 
 ## §2 What shipped in Phase 63 (2026-05-13)
 
 ### feat: automation rules reordering
 
-**Problem**: The AutomationsSection in SettingsPage listed rules in config order
-(which is evaluation order) but had no way to change that order.  Moving a rule
-required hand-editing `config.json`.
-
-**Fix**:
-
-**Backend — `web/api_v1.py`**:
-- `POST /api/v1/automations/reorder` — body `{"order": [2, 0, 1]}` is a
-  permutation of `range(len(rules))`; `order[i]` is the old index of the rule
-  that ends up at position *i*.
-  Validation: 400 if `order` is not a list, 400 if it is not a true permutation
-  (wrong length, duplicates, or out-of-range values).
-  Auth: `X-API-Key` (existing `_AUTH` dependency).
-
-**Backend — `web/main.py`**:
-- `POST /api/settings/automations/reorder` — same semantics, session-cookie auth.
-  Inline validation (400 if not list, 400 if not permutation).
-
-**Frontend — `SettingsPage.tsx`** (`AutomationsSection`):
-- Added `handleMove(idx, dir: -1 | 1)` — builds the permutation array by
-  splicing the moved index, POSTs to `/api/settings/automations/reorder`,
-  then invalidates the `['settings-automations']` query on success.
-- Each rule card row now has ↑ / ↓ arrow buttons (ghost, 24×24 px) placed
-  before Edit and Delete.  The ↑ button is disabled for the first rule;
-  ↓ is disabled for the last rule.
-
-**Tests** (`tests/test_automations_api.py` — 12 new, all pass):
-- `test_reorder_basic` — `[2,0,1]` permutation produces correct order.
-- `test_reorder_reverse` — full reversal.
-- `test_reorder_identity` — `[0,1]` leaves order unchanged.
-- `test_reorder_single` — single-rule list, `[0]` is valid.
-- `test_reorder_empty_list_ok` — empty rules + empty order succeeds.
-- `test_reorder_wrong_length` — 400 if list length ≠ rule count.
-- `test_reorder_duplicate_index` — 400 if duplicates present.
-- `test_reorder_out_of_range` — 400 if index ≥ rule count.
-- `test_reorder_non_list_order` — 400 if `order` is not a list.
-- `test_reorder_non_object_body` — 400 if body is not an object.
-- `test_reorder_missing_order_key` — 400 if `order` key absent.
-- `test_reorder_auth_required` — 401 without API key.
+(See Phase 63 notes in git history for full details.)
 
 ## §2 What shipped in Phase 62 (2026-05-13)
 
@@ -267,10 +141,26 @@ required hand-editing `config.json`.
 
 None.
 
-## §4 Follow-ups (Phase 67+ candidates)
+## §4 Follow-ups (Phase 69+ candidates)
 
-**Automation rules — additional trigger types** (future):
-- `schedule` / cron-based triggers (would need APScheduler or asyncio scheduler).
+**Anti-spam lockout hardening** (important):
+- Move fuse check into the lowest-level send path (before _run_osascript in
+  chat_send.py) so it's impossible to bypass — currently check_send_guard()
+  is a separate function callers must remember to invoke. If fuse is active,
+  reject at the osascript level regardless of caller (web, API, plugin, MCP,
+  MQTT outbound, automation reply actions).
+- ComposeBox: show yellow warning triangle + "Sending blocked for Xm" or
+  "Permanently locked — enter unlock code in Settings" (steps 1-3 currently
+  silently disable input with no explanation).
+- Permanent banner: for step 4+ (permanent lockout), persistent banner across
+  top of the app (in addition to LockoutOverlay).
+- Plugin denials: XMPP, Telegram, MQTT outbound, API, MCP should all get a
+  clear error message with remaining lockout time when fuse is active.
+  Catch BroadcastBlockedError / RateLimitError in each integration's send path.
+- Unlock code entry: add to Settings page (not as a magic message). Admin
+  generates code, user enters it in Settings → Unlock section.
+- All entry points must return the same info: reason (broadcast/rate-limit),
+  remaining time, and unlock instructions for permanent lockout.
 
 **Edited messages — history popover** (research needed):
 - Blocker: mbair is macOS 12 — no `date_edited` column. Needs macOS 13+ hardware
@@ -283,7 +173,7 @@ None.
   Upload: `TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*`
 
 **Public repo sync** (allenbina/chatwire):
-- DONE through Phase 66 (commit caf2a8c, 2026-05-13). Keep in sync after future phases.
+- Synced through Phase 68 (commit 795a595, 2026-05-13). Keep in sync after future phases.
 
 **Other features**:
 - #41 Demo app on chatwire.app
@@ -292,41 +182,16 @@ None.
 - #21, #22 Documentation
 - #1 Mac DMG, #2 Custom marketplaces
 
-**Bugs from interactive QA (2026-05-13 batch 2)**:
-- Whitelist add doesn't update sidebar live — need to restart to see new contact.
-  Invalidate conversations query after whitelist add/remove.
-- Whitelist removal needs testing — verify contact disappears from sidebar.
-- Video thumbnails on contact info page show "video" text instead of first frame
-  with play icon overlay. Also clicking video opens new tab — should open in
-  the lightbox (same as photos).
-- CI build failure notifications: add ntfy curl on failure to the self-hosted
-  runner CI workflow (post-job step).
-
-**Testing (post-RC1)**:
-- Full install walkthrough on a clean Mac (document steps)
-- Uninstall test: confirm all files removed (themes, plugins, DB, config)
-- Reinstall test: confirm clean slate (no leftover state from previous install)
-- Python version matrix: 3.10/3.11/3.12/3.13
-- Node version matrix: 20/22
-- macOS version compat: handle missing columns gracefully (date_edited = Ventura+)
-
-**Admin tooling**:
-- Google Form + Spreadsheet for account unlock requests. Form logs request,
-  looks up previous requests/unlocks for that hardware. Share form without
-  exposing the spreadsheet.
-
 **Infrastructure**:
 - Set up plinux-local test env (chat.db snapshot, separate port)
-
-**Logs page enhancement**:
-- Add a services/plugins status tab showing: installed plugins, which are
-  on/off, and their health status.
 
 **UI polish**:
 - Reply ghost bubble: hide sender name in 1:1 threads (redundant — only two
   people). Show sender name only in group chats.
 
 **Visual QA** (requires interactive mbair session):
+- Schedule trigger: confirm "Schedule (cron)" option in dropdown + cron input
+  + syntax hint render correctly.
 - Automations UI — confirm on_send trigger dropdown + To handles / Not to handles
   conditions render correctly in the rule editor dialog.
 - Automations UI — confirm DSL mode toggle, reorder ↑/↓ buttons, data exposure
@@ -348,74 +213,38 @@ None.
 
 ## §5 Architecture notes
 
+### schedule trigger (added Phase 68)
+
+- **`integrations/rules/cron.py`** — `_parse_field(field, lo, hi, name)`:
+  parses one cron field into a `frozenset`; supports `*`, literals, ranges,
+  lists, step notation. `compile_cron(expr)` returns a 5-tuple of frozensets
+  (minute, hour, dom, month, dow). `match_cron(compiled, dt)` converts
+  Python's weekday (Mon=0) to cron dow (Sun=0) via `(weekday+1) % 7`.
+- **`integrations/rules/__init__.py`** changes:
+  - `_compile()`: `"schedule"` joins the valid trigger set; requires `cron`
+    field; calls `compile_cron()`; stores result as `compiled_cron`.
+  - `evaluate()`: `tt in ("on_send", "schedule")` → `continue`.
+  - `evaluate_scheduled(dt)`: iterates only `schedule` rules; calls
+    `match_cron(rule["compiled_cron"], dt)`; respects `stop_on_match`.
+  - `_ScheduleContext`: `handle=""`, `text=""`, `is_group=False`, `chat_guid=""`.
+  - `_do_reply()`: returns early (with warning) if `not msg.handle`.
+  - `start()` → `asyncio.ensure_future(_schedule_loop())` if schedule rules exist.
+  - `stop()` → `_schedule_task.cancel()` + `await _schedule_task`.
+  - `_schedule_loop()`: `sleep_s = 60.1 - now.second - now.microsecond/1e6`;
+    wakes at top of each minute; calls `_fire_scheduled(now)`.
+  - `_fire_scheduled(dt)`: evaluates schedule rules, instantiates
+    `_ScheduleContext()`, dispatches via `_dispatch(action, ctx, rule_name)`.
+- **`web/api_v1.py`**: `"schedule"` in `valid_triggers`; extra check requires
+  non-empty `trigger.cron` for schedule rules.
+- **58 tests** in `tests/test_schedule_rules.py`.
+
 ### on_send trigger (added Phase 66)
 
-- **`integrations/base.py`** — `OutboundEvent` dataclass: `handle`, `text`,
-  `is_group`, `chat_guid`.  Added to `__all__`.
-- **`integrations/rules/__init__.py`** changes:
-  - `_compile()`: `"on_send"` joins the valid trigger set; compiles
-    `to_handles` and `not_to_handles` frozensets from `conds["to_handles"]`
-    / `conds["not_to_handles"]`.  No regex or DSL parse needed.
-  - `evaluate()`: `if tt == "on_send": continue` — direction isolation.
-  - `evaluate_outbound(text, to_handle, is_group, chat_guid)`:
-    iterates only `on_send` rules; checks `to_handles`, `not_to_handles`,
-    `in_group`, `group_guid`; respects `stop_on_match`.
-  - `RulesIntegration.on_outbound(event)`: calls `evaluate_outbound()`;
-    dispatches matched rules via `_dispatch()`.  No-ctx early return.
-  - `SETTINGS_SCHEMA`: `"on_send"` in trigger type enum; `to_handles` /
-    `not_to_handles` added to conditions properties.
-- **`bridge.py`** — `_fan_out_outbound(integrations, target, body)`:
-  constructs `OutboundEvent`; iterates integrations; calls `on_outbound`
-  when present; swallows per-integration exceptions with a warning log.
-  Called from `BridgeContextImpl.send_text()` after the actual send.
-- **`web/api_v1.py`**: `"on_send"` in `valid_triggers`; no `expr` check.
-- **35 tests** in `tests/test_on_send_rules.py`.
+(See Phase 66 notes and §5 in git history for full details.)
 
 ### Automation rules DSL (added Phase 64)
 
-- **`integrations/rules/dsl.py`**:
-  - `_tokenize(expr)` — character-level scanner; yields `(kind, value)` tuples.
-    Kinds: `AND`, `OR`, `NOT`, `LPAREN`, `RPAREN`, `PRED`, `EOF`.
-    Respects double-quoted strings in predicate values (backslash escapes).
-  - `_compile_pred(token_value)` — maps `key:value` to an `Evaluator` closure.
-    Supported keys: `always`, `contains`, `exact`, `regex`, `from`, `not_from`,
-    `in` (group/1to1/dm/direct), `group` (GUID).
-    Raises `DSLError` on unknown key, invalid `in:` value, or bad regex.
-  - `_Parser` — recursive descent; grammar has two precedence levels:
-    OR (`_parse_or`) > AND+implicit (`_parse_and`); NOT is right-recursive via `_parse_term`.
-  - `parse_dsl(expr)` — public entry point; raises `DSLError` on empty string.
-  - `Evaluator` type alias: `Callable[[str, str, bool, Optional[str]], bool]`
-    (text, handle_lc, is_group, chat_guid).
-- **`integrations/rules/__init__.py`** changes:
-  - `_compile()`: `trigger_type == "dsl"` → calls `parse_dsl(trigger_raw["expr"])`;
-    result stored as `compiled_dsl` in compiled rule dict.
-    DSLError / missing expr → `ValueError` → rule skipped with warning.
-  - `evaluate()`: DSL rules checked first in loop body; evaluator called with
-    `(text, handle_lc, msg_is_group, msg_chat_guid)`; `continue` skips the
-    normal conditions block for DSL rules.
-  - `SETTINGS_SCHEMA`: trigger `type` enum gains `"dsl"`; `expr` property added.
-- **`web/api_v1.py`**: `valid_triggers` gains `"dsl"`; extra check rejects
-  `dsl` without a non-empty `trigger.expr`.
-- **88 tests** in `tests/test_rules_dsl.py`.
-
-### AutomationsSection (updated Phase 66, SettingsPage.tsx)
-
-- **`on_send` trigger**: dropdown option "On send (outbound)"; pattern input
-  hidden; conditions section shows To/Not-to handles instead of From/Not-from.
-- **`_formToApiRule`**: for `on_send`, emits `to_handles`/`not_to_handles` in
-  conditions; no `trigger.pattern`.
-- **`_apiRuleToForm`**: detects `trigger.type === 'on_send'` →
-  populates `toHandles`/`notToHandles`; clears `fromHandles`/`notFromHandles`.
-
-### AutomationsSection (updated Phase 65, SettingsPage.tsx)
-
-- **DSL mode toggle**: "Switch to DSL mode" button in Trigger section header.
-  When active: monospace Textarea for `dslExpr`; Conditions section hidden;
-  `_formToApiRule` emits `{type:'dsl', expr}`; `handleSave` requires non-empty expr.
-- **`_formToApiRule`** / **`_apiRuleToForm`**: both exported for testing.
-  `_apiRuleToForm` detects `trigger.type === 'dsl'` → `{dslMode: true, dslExpr: …}`.
-- **Rule card**: DSL badge + truncated expression instead of pattern pill.
-- **22 tests** in `web/frontend/src/pages/AutomationsDslMode.test.tsx`.
+(See Phase 64 notes and §5 in git history for full details.)
 
 ### Deploy pipeline (updated 2026-05-12)
 
@@ -436,10 +265,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 67 shipped (public repo allenbina/chatwire synced to Phase 66).
-1326 pytest / 218 Vitest — all green (no code changes this session).
-mbair running v1.14.0 (git+ssh, Phase 66 code, healthy).
-Public repo allenbina/chatwire: synced through Phase 66 (commit caf2a8c).
+STATE: Phase 68 shipped (schedule trigger type for automation rules).
+1384 pytest / 218 Vitest — all green (+58 new tests).
+mbair running v1.14.0 (git+ssh, Phase 68 code, healthy).
+Public repo allenbina/chatwire: synced through Phase 68 (commit 795a595).
 
 Key blockers:
   - Edit history popover (#59 follow-up): mbair is macOS 12 — no date_edited column.
@@ -450,25 +279,19 @@ Key blockers:
 
 Pick a task from §4 options:
 
-Option A — Schedule trigger type (cron-based automation):
-  `schedule` trigger using asyncio scheduler.
-  Fires rules at a configured cron schedule (no incoming message context).
-  Would need APScheduler or similar, or a simple asyncio.sleep loop.
-  New trigger type: {"type": "schedule", "cron": "0 9 * * *"} (cron expression).
-  Fires evaluate_scheduled() in rules engine — no text/handle context.
-  Bridge starts scheduler loop on startup; stops on shutdown.
+Option A — Reply ghost bubble: hide sender name in 1:1 threads.
+  In iOS reply ghost bubble, sender name is redundant in 1-to-1 threads.
+  Show sender name only in group chats.
+  Likely a small frontend-only change in the message thread component.
 
 Option B — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Requires TWINE_TOKEN env var or ~/.pypirc.
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
 
-Option C — Reply ghost bubble: hide sender name in 1:1 threads.
-  In iOS reply ghost bubble, sender name is redundant in 1-to-1 threads.
-  Show sender name only in group chats.
-  Likely a small frontend-only change in the message thread component.
+Option C — Any remaining §4 follow-up that fits in one session.
 
-VISUAL QA NOTE: on_send trigger UI (To handles / Not to handles conditions),
+VISUAL QA NOTE: Schedule trigger UI (cron input, syntax hint), on_send trigger UI,
 Automations UI (DSL mode toggle, reorder ↑/↓ buttons), data exposure modal,
 "edited" badge, pin icons, sidebar toggle buttons, hiatus indicator,
 reminder contacts picker, per-theme custom CSS editor, theme skin ZIP buttons,
@@ -488,7 +311,7 @@ DEPLOY:
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
 After work — commit, push, deploy (if code changed), sync public repo, and notify:
-  curl -s -d "Phase 68 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+  curl -s -d "Phase 69 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
 
 Public repo sync (after future code phases):
   rsync -a --checksum --exclude='dist/' --exclude='node_modules/' --exclude='__pycache__/' --exclude='.git/' --exclude='*.pyc' --exclude='*.egg-info/' /home/mediafront/git/chatwire-dev/ /tmp/chatwire-public/

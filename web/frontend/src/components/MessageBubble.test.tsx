@@ -173,28 +173,30 @@ describe('MessageBubble', () => {
   // ReplyQuote — iOS-style ghost bubble
   // ---------------------------------------------------------------------------
 
-  it('renders ghost bubble with sender label and preview text for a reply', () => {
+  it('renders ghost bubble with sender label and preview text for a reply (group chat)', () => {
     const msg = makeMessage({
       rowid: 12,
       text: 'My reply',
       from_me: true,
       reply_to: { rowid: 5, text: 'Parent message text', sender: 'Alice' },
     })
-    render(<MessageBubble msg={msg} />)
+    // isGroup=true: sender label is shown in group chats
+    render(<MessageBubble msg={msg} isGroup={true} />)
     // Ghost bubble shows the sender label
     expect(screen.getByText('Alice')).toBeInTheDocument()
     // Ghost bubble shows the parent text
     expect(screen.getByText('Parent message text')).toBeInTheDocument()
   })
 
-  it('shows "You" as sender label when reply_to.sender is empty (parent from me)', () => {
+  it('shows "You" as sender label when reply_to.sender is empty (parent from me, group chat)', () => {
     const msg = makeMessage({
       rowid: 13,
       text: 'Continuing my thread',
       from_me: true,
       reply_to: { rowid: 3, text: 'My earlier message', sender: '' },
     })
-    render(<MessageBubble msg={msg} />)
+    // isGroup=true: "You" label is shown in group chats
+    render(<MessageBubble msg={msg} isGroup={true} />)
     expect(screen.getByText('You')).toBeInTheDocument()
     expect(screen.getByText('My earlier message')).toBeInTheDocument()
   })
@@ -248,5 +250,70 @@ describe('MessageBubble', () => {
     const ghostBtn = screen.getByRole('button', { name: /Reply to Eve/i })
     fireEvent.click(ghostBtn)
     expect(onScroll).toHaveBeenCalledWith(42)
+  })
+
+  // ---------------------------------------------------------------------------
+  // Reply ghost bubble sender-name visibility (#69)
+  // ---------------------------------------------------------------------------
+
+  it('hides sender name in ghost bubble for 1:1 threads (isGroup=false)', () => {
+    const msg = makeMessage({
+      rowid: 18,
+      text: 'Reply in 1:1',
+      from_me: false,
+      reply_to: { rowid: 10, text: 'Original', sender: 'Frank' },
+    })
+    render(<MessageBubble msg={msg} isGroup={false} />)
+    // aria-label still identifies the reply context
+    expect(screen.getByRole('button', { name: /Reply to Frank/i })).toBeInTheDocument()
+    // but the sender name paragraph should NOT be rendered
+    expect(screen.queryByText('Frank')).toBeNull()
+  })
+
+  it('shows sender name in ghost bubble for group chats (isGroup=true)', () => {
+    const msg = makeMessage({
+      rowid: 19,
+      text: 'Reply in group',
+      from_me: false,
+      reply_to: { rowid: 11, text: 'Group original', sender: 'Grace' },
+    })
+    render(<MessageBubble msg={msg} isGroup={true} />)
+    expect(screen.getByRole('button', { name: /Reply to Grace/i })).toBeInTheDocument()
+    // sender name label should be visible
+    expect(screen.getByText('Grace')).toBeInTheDocument()
+  })
+
+  it('hides "You" label in ghost bubble for own replies in 1:1 threads', () => {
+    const msg = makeMessage({
+      rowid: 20,
+      text: 'Reply to own msg in 1:1',
+      from_me: false,
+      // sender '' means the original was from me
+      reply_to: { rowid: 12, text: 'I said this', sender: '' },
+    })
+    render(<MessageBubble msg={msg} isGroup={false} />)
+    expect(screen.queryByText('You')).toBeNull()
+  })
+
+  it('shows "You" label in ghost bubble for own replies in group chats', () => {
+    const msg = makeMessage({
+      rowid: 21,
+      text: 'Reply to own msg in group',
+      from_me: false,
+      reply_to: { rowid: 13, text: 'I said this', sender: '' },
+    })
+    render(<MessageBubble msg={msg} isGroup={true} />)
+    expect(screen.getByText('You')).toBeInTheDocument()
+  })
+
+  it('defaults to hiding sender name when isGroup is omitted', () => {
+    const msg = makeMessage({
+      rowid: 22,
+      text: 'Reply default',
+      from_me: false,
+      reply_to: { rowid: 14, text: 'Default case', sender: 'Hank' },
+    })
+    render(<MessageBubble msg={msg} />)
+    expect(screen.queryByText('Hank')).toBeNull()
   })
 })
