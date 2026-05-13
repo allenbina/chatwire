@@ -27,6 +27,12 @@ Trigger types
   dsl           — boolean expression grammar covering trigger + conditions
   on_send       — fires for every outbound text message the user (or any
                   integration) sends via the bridge
+  schedule      — fires on a cron schedule (no message context); requires
+                  ``trigger.cron`` — a 5-field cron expression
+                  (minute hour dom month dow, 0=Sunday for dow).
+                  Example: ``"0 9 * * 1-5"`` fires at 09:00 Mon–Fri.
+                  Actions: webhook and log are supported; reply is skipped
+                  (no recipient handle available).
 
 Condition keys (all absent = no restriction)
 --------------------------------------------
@@ -42,10 +48,13 @@ Condition keys (all absent = no restriction)
     in_group         — true → group sends only; false → 1:1 sends only
     group_guid       — must match this specific group chat GUID
 
+  Schedule rules (schedule): no conditions — fires purely on the cron schedule.
+
 Action types
 ------------
   reply   — send a text reply; supports {handle}, {name}, {text} templates
              (for on_send rules, {handle} is the recipient handle)
+             (not applicable to schedule rules — skipped with a warning)
   webhook — HTTP POST (or configurable method) to a URL with JSON context
   log     — emit a log line at info/warning/debug/error level
 
@@ -59,6 +68,7 @@ Template variables for ``reply`` and ``log`` actions
   {handle} — raw sender/recipient handle (e.g. "+15551234567")
   {name}   — contact display name, falls back to handle when not in address book
   {text}   — full message text (stripped)
+  {rule}   — rule name (log action only)
 """
 from __future__ import annotations
 
@@ -71,6 +81,15 @@ try:
 except ImportError:  # pragma: no cover — isolated test environments
     parse_dsl = None  # type: ignore[assignment]
     DSLError = ValueError  # type: ignore[misc,assignment]
+
+try:
+    from integrations.rules.cron import (  # type: ignore[import]
+        CronError, compile_cron, match_cron,
+    )
+except ImportError:  # pragma: no cover — isolated test environments
+    compile_cron = None  # type: ignore[assignment]
+    match_cron = None  # type: ignore[assignment]
+    CronError = ValueError  # type: ignore[misc,assignment]
 
 log = logging.getLogger(__name__)
 
@@ -142,6 +161,7 @@ class RulesEngine:
 
         compiled_regex = None
         compiled_dsl = None
+        compiled_cron = None
         if trigger_type == "text_regex":
             compiled_regex = re.compile(pattern, re.IGNORECASE)
         elif trigger_type == "dsl":
@@ -151,6 +171,13 @@ class RulesEngine:
             if not expr:
                 raise ValueError("dsl trigger requires a non-empty 'expr' field")
             compiled_dsl = parse_dsl(expr)
+        elif trigger_type == "schedule":
+            if compile_cron is None:
+                raise ValueError("schedule trigger requires the integrations.rules.cron module")
+            cron_expr: str = trigger_raw.get("cron") or ""
+            if not cron_expr:
+                raise ValueError("schedule trigger requires a non-empty 'cron' field")
+            compiled_cron = compile_cron(cron_expr)
         elif trigger_type not in ("text_exact", "text_contains", "always", "on_send"):
             raise ValueError("unknown trigger type: {!r}".format(trigger_type))
 
@@ -182,6 +209,7 @@ class RulesEngine:
             "pattern": pattern.lower() if trigger_type != "text_regex" else pattern,
             "compiled_regex": compiled_regex,
             "compiled_dsl": compiled_dsl,
+            "compiled_cron": compiled_cron,
             "from_handles": from_handles,
             "not_from_handles": not_from_handles,
             "to_handles": to_handles,
@@ -221,8 +249,8 @@ class RulesEngine:
         for rule in self._rules:
             tt = rule["trigger_type"]
 
-            # on_send rules fire for outbound only — skip here
-            if tt == "on_send":
+            # on_send and schedule rules fire via separate paths — skip here
+            if tt in ("on_send", "schedule"):
                 continue
 
             # ---- DSL rules: evaluator covers both trigger and conditions ----
@@ -320,10 +348,51 @@ class RulesEngine:
 
         return results
 
+    def evaluate_scheduled(self, dt: object) -> "list[tuple[str, list[dict]]]":
+        """Return (rule_name, actions) for every ``schedule`` rule that fires at *dt*.
+
+        Evaluates only rules whose ``trigger.type`` is ``"schedule"``; all
+        other rules are skipped.  *dt* is tested against each rule's compiled
+        cron expression using :func:`integrations.rules.cron.match_cron`.
+        ``stop_on_match`` behaves identically to :meth:`evaluate`.
+
+        Args:
+            dt: A :class:`datetime.datetime` representing the fire time
+                (typically ``datetime.datetime.now()``).
+
+        Returns:
+            List of ``(rule_name, actions)`` tuples, one per matching rule.
+        """
+        results: list = []
+        for rule in self._rules:
+            if rule["trigger_type"] != "schedule":
+                continue
+            compiled_cron = rule.get("compiled_cron")
+            if compiled_cron is None or match_cron is None:
+                continue
+            if match_cron(compiled_cron, dt):
+                results.append((rule["name"], rule["actions"]))
+                if rule["stop_on_match"]:
+                    break
+        return results
+
 
 # ---------------------------------------------------------------------------
 # Integration wrapper
 # ---------------------------------------------------------------------------
+
+class _ScheduleContext:
+    """Minimal message-like context object passed to actions for schedule rules.
+
+    Schedule rules have no message sender or text, so all fields are empty.
+    The ``_do_reply`` dispatcher checks ``handle`` and skips silently when it
+    is empty, so ``reply`` actions in schedule rules are safely no-ops.
+    """
+    handle: str = ""
+    text: str = ""
+    is_group: bool = False
+    chat_guid: str = ""
+
 
 class RulesIntegration:
     """Built-in automation rules engine for chatwire.
@@ -371,7 +440,7 @@ class RulesIntegration:
                             "type": "object",
                             "title": "Trigger",
                             "description": (
-                                "When to fire: text_exact / text_contains / text_regex / always / dsl."
+                                "When to fire: text_exact / text_contains / text_regex / always / dsl / on_send / schedule."
                             ),
                             "properties": {
                                 "type": {
@@ -383,6 +452,7 @@ class RulesIntegration:
                                         "always",
                                         "dsl",
                                         "on_send",
+                                        "schedule",
                                     ],
                                 },
                                 "pattern": {
@@ -394,6 +464,14 @@ class RulesIntegration:
                                     "description": (
                                         "DSL expression (dsl trigger type only). "
                                         "Example: 'from:+15551234567 contains:\"hello\" AND in:group'"
+                                    ),
+                                },
+                                "cron": {
+                                    "type": "string",
+                                    "description": (
+                                        "Cron schedule (schedule trigger type only). "
+                                        "5-field format: minute hour dom month dow. "
+                                        "Example: '0 9 * * 1-5' fires at 09:00 Mon–Fri."
                                     ),
                                 },
                             },
@@ -505,19 +583,35 @@ class RulesIntegration:
         self._engine = RulesEngine(rules_raw)
         self._ctx: Any = None
         self._client: Any = None  # httpx.AsyncClient — created lazily on first webhook
+        self._schedule_task: Any = None  # asyncio.Task for schedule loop
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def start(self, ctx: Any) -> None:
+        import asyncio as _asyncio
         self._ctx = ctx
-        log.info(
-            "chatwire_rules: started; %d rule(s) loaded",
-            len(self._engine._rules),
+        schedule_count = sum(
+            1 for r in self._engine._rules if r["trigger_type"] == "schedule"
         )
+        log.info(
+            "chatwire_rules: started; %d rule(s) loaded (%d schedule)",
+            len(self._engine._rules),
+            schedule_count,
+        )
+        if schedule_count:
+            self._schedule_task = _asyncio.ensure_future(self._schedule_loop())
 
     async def stop(self) -> None:
+        import asyncio as _asyncio
+        if self._schedule_task is not None:
+            self._schedule_task.cancel()
+            try:
+                await self._schedule_task
+            except _asyncio.CancelledError:
+                pass
+            self._schedule_task = None
         if self._client is not None:
             try:
                 await self._client.aclose()
@@ -526,6 +620,46 @@ class RulesIntegration:
             self._client = None
         self._ctx = None
         log.info("chatwire_rules: stopped")
+
+    # ------------------------------------------------------------------
+    # Schedule loop
+    # ------------------------------------------------------------------
+
+    async def _schedule_loop(self) -> None:
+        """Asyncio task: wake at the top of each minute and fire schedule rules."""
+        import asyncio as _asyncio
+        import datetime as _dt
+        log.info("chatwire_rules: schedule loop running")
+        try:
+            while True:
+                # Sleep until the next minute boundary (+0.1 s margin so we
+                # don't fire twice at second==0 due to tiny float errors).
+                now = _dt.datetime.now()
+                sleep_s = 60.1 - now.second - now.microsecond / 1_000_000
+                await _asyncio.sleep(sleep_s)
+                fire_at = _dt.datetime.now()
+                await self._fire_scheduled(fire_at)
+        except _asyncio.CancelledError:
+            log.info("chatwire_rules: schedule loop stopped")
+            raise
+
+    async def _fire_scheduled(self, dt: object) -> None:
+        """Evaluate schedule rules against *dt* and dispatch matching actions."""
+        if self._ctx is None:
+            return
+        matches = self._engine.evaluate_scheduled(dt)
+        if not matches:
+            return
+        ctx = _ScheduleContext()
+        for rule_name, actions in matches:
+            for action in actions:
+                try:
+                    await self._dispatch(action, ctx, rule_name)
+                except Exception as exc:
+                    log.warning(
+                        "chatwire_rules: schedule rule %r action %r raised: %s",
+                        rule_name, action.get("type"), exc,
+                    )
 
     # ------------------------------------------------------------------
     # Bridge hook
@@ -600,6 +734,13 @@ class RulesIntegration:
 
     async def _do_reply(self, action: dict, msg: Any) -> None:
         if SendTarget is None or self._ctx is None:
+            return
+        if not getattr(msg, "handle", ""):
+            # Schedule rules have no recipient — reply is not applicable.
+            log.warning(
+                "chatwire_rules: reply action skipped — no recipient handle "
+                "(schedule rules cannot send replies)"
+            )
             return
 
         name = (self._ctx.name_for(msg.handle) if hasattr(self._ctx, "name_for") else None) or msg.handle or ""

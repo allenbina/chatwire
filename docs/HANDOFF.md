@@ -1,21 +1,35 @@
-# Handoff — Phase 66: on_send automation trigger
+# Handoff — Phase 67: public repo sync to Phase 66
 
-> Phase 66 session shipped (2026-05-13, commit b1b4275 in chatwire-dev).
-> 1326 pytest (+35 new) + 218 Vitest — all green.
-> mbair redeployed — healthy at v1.14.0 (git+ssh, Phase 66 code).
+> Phase 67 session shipped (2026-05-13, commit caf2a8c in allenbina/chatwire public repo).
+> 1326 pytest / 218 Vitest — all green (unchanged).
+> mbair running v1.14.0 (git+ssh, Phase 66 code, healthy).
 
 ## §1 Current state
 
-- **mbair**: commit b1b4275 deployed and healthy (`/healthz` → ok, v1.14.0).
+- **mbair**: commit b1b4275 (Phase 66) deployed and healthy (`/healthz` → ok, v1.14.0).
 - **chatwire-theme-rosepine**: installed on mbair from git+ssh;
   `GET /api/ui/plugin-themes` returns all 3 variants.
 - **chatwire-plugins registry**: 9 plugins live on GitHub (`allenbina/chatwire-plugins`).
 - **Tests**: 1326 pytest / 218 Vitest — all green.
   Pre-existing failures: test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4) —
-  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 66.
-- **PyPI**: v1.14.0 (no version bump — frontend-only change; plugins not yet on PyPI).
-- **Public repo (allenbina/chatwire)**: needs sync to Phase 66.
+  all caused by test_mcp.py closing the asyncio event loop; unrelated to Phase 66/67.
+- **PyPI**: v1.14.0 (plugins not yet on PyPI).
+- **Public repo (allenbina/chatwire)**: synced to Phase 66 (commit caf2a8c, 2026-05-13).
 - **Open bugs**: 0.
+
+## §2 What shipped in Phase 67 (2026-05-13)
+
+### chore: sync public repo (allenbina/chatwire) to Phase 66
+
+**What**: Rsynced chatwire-dev source (excluding dist/, node_modules/, __pycache__/, .git/)
+to /tmp/chatwire-public and pushed to github.com/allenbina/chatwire.
+
+**Files synced**: bridge.py, integrations/base.py, integrations/rules/__init__.py,
+web/api_v1.py, web/main.py, web/frontend/src/pages/SettingsPage.tsx,
+web/frontend/src/pages/AutomationsDslMode.test.tsx, web/frontend/src/components/MediaGallery.tsx,
+tests/test_on_send_rules.py (new), tests/test_automations_api.py, docs/HANDOFF.md.
+
+**Public repo commit**: caf2a8c — "feat: on_send automation trigger for outbound iMessages (#66)"
 
 ## §2 What shipped in Phase 66 (2026-05-13)
 
@@ -269,8 +283,7 @@ None.
   Upload: `TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*`
 
 **Public repo sync** (allenbina/chatwire):
-- Needs rsync from chatwire-dev to /tmp/chatwire-public, then push.
-  (Was noted as done for Phase 65 but Phase 66 not yet synced.)
+- DONE through Phase 66 (commit caf2a8c, 2026-05-13). Keep in sync after future phases.
 
 **Other features**:
 - #41 Demo app on chatwire.app
@@ -279,8 +292,35 @@ None.
 - #21, #22 Documentation
 - #1 Mac DMG, #2 Custom marketplaces
 
+**Bugs from interactive QA (2026-05-13 batch 2)**:
+- Whitelist add doesn't update sidebar live — need to restart to see new contact.
+  Invalidate conversations query after whitelist add/remove.
+- Whitelist removal needs testing — verify contact disappears from sidebar.
+- Video thumbnails on contact info page show "video" text instead of first frame
+  with play icon overlay. Also clicking video opens new tab — should open in
+  the lightbox (same as photos).
+- CI build failure notifications: add ntfy curl on failure to the self-hosted
+  runner CI workflow (post-job step).
+
+**Testing (post-RC1)**:
+- Full install walkthrough on a clean Mac (document steps)
+- Uninstall test: confirm all files removed (themes, plugins, DB, config)
+- Reinstall test: confirm clean slate (no leftover state from previous install)
+- Python version matrix: 3.10/3.11/3.12/3.13
+- Node version matrix: 20/22
+- macOS version compat: handle missing columns gracefully (date_edited = Ventura+)
+
+**Admin tooling**:
+- Google Form + Spreadsheet for account unlock requests. Form logs request,
+  looks up previous requests/unlocks for that hardware. Share form without
+  exposing the spreadsheet.
+
 **Infrastructure**:
 - Set up plinux-local test env (chat.db snapshot, separate port)
+
+**Logs page enhancement**:
+- Add a services/plugins status tab showing: installed plugins, which are
+  on/off, and their health status.
 
 **UI polish**:
 - Reply ghost bubble: hide sender name in 1:1 threads (redundant — only two
@@ -396,10 +436,10 @@ Read docs/HANDOFF.md in full. This is your state file.
 
 git pull first — there may be commits from an interactive session.
 
-STATE: Phase 66 shipped (on_send automation trigger for outbound iMessages).
-1326 pytest (+35 new) + 218 Vitest — all green.
+STATE: Phase 67 shipped (public repo allenbina/chatwire synced to Phase 66).
+1326 pytest / 218 Vitest — all green (no code changes this session).
 mbair running v1.14.0 (git+ssh, Phase 66 code, healthy).
-Public repo allenbina/chatwire: needs rsync sync to Phase 66.
+Public repo allenbina/chatwire: synced through Phase 66 (commit caf2a8c).
 
 Key blockers:
   - Edit history popover (#59 follow-up): mbair is macOS 12 — no date_edited column.
@@ -410,21 +450,23 @@ Key blockers:
 
 Pick a task from §4 options:
 
-Option A — Sync public repo (allenbina/chatwire) to Phase 66.
-  rsync -a --checksum (no --delete) from chatwire-dev/ to /tmp/chatwire-public/
-  with excludes for dist/, node_modules/, __pycache__/, .git/
-  Then git add -A && git commit && git push in /tmp/chatwire-public/
-  After rsync, RESTORE .gitignore: git checkout -- .gitignore
-
-Option B — Schedule trigger type (cron-based automation):
+Option A — Schedule trigger type (cron-based automation):
   `schedule` trigger using asyncio scheduler.
   Fires rules at a configured cron schedule (no incoming message context).
   Would need APScheduler or similar, or a simple asyncio.sleep loop.
+  New trigger type: {"type": "schedule", "cron": "0 9 * * *"} (cron expression).
+  Fires evaluate_scheduled() in rules engine — no text/handle context.
+  Bridge starts scheduler loop on startup; stops on shutdown.
 
-Option C — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
+Option B — Publish plugins to PyPI (theme-rosepine + mqtt + ha + xmpp).
   Requires TWINE_TOKEN env var or ~/.pypirc.
   Build: python3 -m build <plugin-dir>
   Upload: TWINE_TOKEN=<token> python3 -m twine upload --non-interactive <dist>/*
+
+Option C — Reply ghost bubble: hide sender name in 1:1 threads.
+  In iOS reply ghost bubble, sender name is redundant in 1-to-1 threads.
+  Show sender name only in group chats.
+  Likely a small frontend-only change in the message thread component.
 
 VISUAL QA NOTE: on_send trigger UI (To handles / Not to handles conditions),
 Automations UI (DSL mode toggle, reorder ↑/↓ buttons), data exposure modal,
@@ -445,18 +487,18 @@ DEPLOY:
   ssh mbair "/bin/launchctl kickstart -k gui/501/dev.chatwire.web && /bin/launchctl kickstart -k gui/501/dev.chatwire.bridge"
   ssh mbair "/usr/bin/curl -sf localhost:8723/healthz"
 
-After work — commit, push, deploy, and notify:
-  curl -s -d "Phase 67 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+After work — commit, push, deploy (if code changed), sync public repo, and notify:
+  curl -s -d "Phase 68 complete — <summary>" ntfy.sh/p9SKpYzY70LlyK1N
+
+Public repo sync (after future code phases):
+  rsync -a --checksum --exclude='dist/' --exclude='node_modules/' --exclude='__pycache__/' --exclude='.git/' --exclude='*.pyc' --exclude='*.egg-info/' /home/mediafront/git/chatwire-dev/ /tmp/chatwire-public/
+  git -C /tmp/chatwire-public checkout -- .gitignore
+  git -C /tmp/chatwire-public add -A && git -C /tmp/chatwire-public commit -m "..." && git -C /tmp/chatwire-public push origin main
 
 NOTE: Run pytest as: python3 -m pytest /home/mediafront/git/chatwire-dev/tests/ --tb=short -q
 NOTE: npm test command works — use: npm --prefix /home/mediafront/git/chatwire-dev/web/frontend test -- --run
 NOTE: Pre-existing failures (8): test_mcp.py (3), test_tinfoil.py (1), test_transform_pipeline.py (4)
   — all caused by test_mcp.py closing the asyncio event loop. Use asyncio.run() in new test files.
-NOTE: Public repo sync method: rsync -a --checksum (no --delete) from chatwire-dev/
-  to /tmp/chatwire-public/ with excludes for dist/, node_modules/, __pycache__/, .git/
-  Then git add -A && git commit && git push in /tmp/chatwire-public/
-NOTE: After rsync, RESTORE .gitignore (git checkout -- .gitignore) to preserve
-  web/frontend/dist/ exclusion — chatwire-dev commits dist/ but public repo does not.
 NOTE: Tests mirror web/main.py helpers locally (never import web.main directly —
   module-level side-effects and Python-3.10+ annotation syntax breaks on Python 3.8).
 NOTE: mbair is macOS 12.7.6 — date_edited column does not exist in chat.db there.

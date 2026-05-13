@@ -36,6 +36,7 @@ const _BASE_FORM = {
   dslExpr: '',
   triggerType: 'text_contains' as const,
   pattern: 'hello',
+  cron: '',
   fromHandles: '',
   notFromHandles: '',
   toHandles: '',

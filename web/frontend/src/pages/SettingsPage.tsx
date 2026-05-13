@@ -3159,7 +3159,7 @@ export function SettingsPage() {
 // Automations section — rule builder UI
 // ---------------------------------------------------------------------------
 
-type TriggerType = 'text_exact' | 'text_contains' | 'text_regex' | 'always' | 'dsl' | 'on_send'
+type TriggerType = 'text_exact' | 'text_contains' | 'text_regex' | 'always' | 'dsl' | 'on_send' | 'schedule'
 type ActionType = 'reply' | 'webhook' | 'log'
 
 interface RuleActionForm {
@@ -3178,6 +3178,7 @@ interface AutomationRuleForm {
   dslExpr: string
   triggerType: TriggerType
   pattern: string
+  cron: string
   fromHandles: string
   notFromHandles: string
   toHandles: string
@@ -3192,7 +3193,7 @@ const _EMPTY_ACTION: RuleActionForm = {
   type: 'reply', text: '', url: '', method: 'POST', headers: '', level: 'info', message: '',
 }
 const _EMPTY_RULE_FORM: AutomationRuleForm = {
-  name: '', dslMode: false, dslExpr: '', triggerType: 'text_contains', pattern: '',
+  name: '', dslMode: false, dslExpr: '', triggerType: 'text_contains', pattern: '', cron: '',
   fromHandles: '', notFromHandles: '', toHandles: '', notToHandles: '',
   inGroup: 'any', groupGuid: '',
   actions: [{ ..._EMPTY_ACTION }], stopOnMatch: false,
@@ -3225,7 +3226,11 @@ export function _formToApiRule(f: AutomationRuleForm): Record<string, unknown> {
   }
 
   const trigger: Record<string, unknown> = { type: f.triggerType }
-  if (f.triggerType !== 'always' && f.triggerType !== 'on_send') trigger.pattern = f.pattern
+  if (f.triggerType === 'schedule') {
+    trigger.cron = f.cron
+  } else if (f.triggerType !== 'always' && f.triggerType !== 'on_send') {
+    trigger.pattern = f.pattern
+  }
 
   const conditions: Record<string, unknown> = {}
   if (f.triggerType === 'on_send') {
@@ -3233,15 +3238,17 @@ export function _formToApiRule(f: AutomationRuleForm): Record<string, unknown> {
     if (to.length) conditions.to_handles = to
     const notTo = f.notToHandles.split(',').map(s => s.trim()).filter(Boolean)
     if (notTo.length) conditions.not_to_handles = notTo
-  } else {
+  } else if (f.triggerType !== 'schedule') {
     const from = f.fromHandles.split(',').map(s => s.trim()).filter(Boolean)
     if (from.length) conditions.from_handles = from
     const notFrom = f.notFromHandles.split(',').map(s => s.trim()).filter(Boolean)
     if (notFrom.length) conditions.not_from_handles = notFrom
   }
-  if (f.inGroup === 'group_only') conditions.in_group = true
-  if (f.inGroup === 'one_to_one') conditions.in_group = false
-  if (f.groupGuid.trim()) conditions.group_guid = f.groupGuid.trim()
+  if (f.triggerType !== 'schedule') {
+    if (f.inGroup === 'group_only') conditions.in_group = true
+    if (f.inGroup === 'one_to_one') conditions.in_group = false
+    if (f.groupGuid.trim()) conditions.group_guid = f.groupGuid.trim()
+  }
 
   const rule: Record<string, unknown> = { name: f.name, trigger, actions }
   if (Object.keys(conditions).length) rule.conditions = conditions
@@ -3273,6 +3280,17 @@ export function _apiRuleToForm(r: Record<string, unknown>): AutomationRuleForm {
     }
   }
 
+  if (trigger.type === 'schedule') {
+    return {
+      ..._EMPTY_RULE_FORM,
+      name: (r.name as string) ?? '',
+      triggerType: 'schedule',
+      cron: (trigger.cron as string) ?? '',
+      actions: actions.length ? actions : [{ ..._EMPTY_ACTION }],
+      stopOnMatch: Boolean(r.stop_on_match),
+    }
+  }
+
   const conds = (r.conditions as Record<string, unknown>) ?? {}
   const inGroupRaw = conds.in_group
   let inGroup: AutomationRuleForm['inGroup'] = 'any'
@@ -3286,6 +3304,7 @@ export function _apiRuleToForm(r: Record<string, unknown>): AutomationRuleForm {
     dslExpr: '',
     triggerType: tt,
     pattern: (trigger.pattern as string) ?? '',
+    cron: '',
     fromHandles: tt !== 'on_send' ? ((conds.from_handles as string[]) ?? []).join(', ') : '',
     notFromHandles: tt !== 'on_send' ? ((conds.not_from_handles as string[]) ?? []).join(', ') : '',
     toHandles: tt === 'on_send' ? ((conds.to_handles as string[]) ?? []).join(', ') : '',
@@ -3304,6 +3323,7 @@ const _TRIGGER_LABELS: Record<TriggerType, string> = {
   always: 'Always',
   dsl: 'DSL',
   on_send: 'On send',
+  schedule: 'Schedule',
 }
 
 function AutomationsSection() {
@@ -3337,7 +3357,9 @@ function AutomationsSection() {
     if (!form.name.trim()) { toast.error('Rule name is required'); return }
     if (form.dslMode) {
       if (!form.dslExpr.trim()) { toast.error('DSL expression is required'); return }
-    } else if (form.triggerType !== 'always' && !form.pattern.trim()) {
+    } else if (form.triggerType === 'schedule') {
+      if (!form.cron.trim()) { toast.error('Cron expression is required for schedule trigger'); return }
+    } else if (form.triggerType !== 'always' && form.triggerType !== 'on_send' && !form.pattern.trim()) {
       toast.error('Pattern is required for this trigger type'); return
     }
     setSaving(true)
@@ -3434,6 +3456,7 @@ function AutomationsSection() {
           const triggerType = rTrigger.type as TriggerType
           const pattern = rTrigger.pattern as string | undefined
           const dslExpr = rTrigger.expr as string | undefined
+          const cronExpr = rTrigger.cron as string | undefined
           return (
             <div key={idx} className="flex items-center justify-between rounded border border-border px-3 py-2 text-xs gap-2">
               <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
@@ -3446,7 +3469,12 @@ function AutomationsSection() {
                     {dslExpr}
                   </span>
                 )}
-                {triggerType !== 'dsl' && pattern && (
+                {triggerType === 'schedule' && cronExpr && (
+                  <span className="text-muted-foreground font-mono truncate max-w-[140px]" title={cronExpr}>
+                    {cronExpr}
+                  </span>
+                )}
+                {triggerType !== 'dsl' && triggerType !== 'schedule' && pattern && (
                   <span className="text-muted-foreground font-mono truncate max-w-[140px]">
                     &ldquo;{pattern}&rdquo;
                   </span>
@@ -3557,13 +3585,22 @@ function AutomationsSection() {
                       <option value="text_regex">Regex</option>
                       <option value="always">Always</option>
                       <option value="on_send">On send (outbound)</option>
+                      <option value="schedule">Schedule (cron)</option>
                     </select>
-                    {form.triggerType !== 'always' && form.triggerType !== 'on_send' && (
+                    {form.triggerType !== 'always' && form.triggerType !== 'on_send' && form.triggerType !== 'schedule' && (
                       <Input
                         value={form.pattern}
                         onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
                         placeholder={form.triggerType === 'text_regex' ? 'e.g. hello|hi' : 'e.g. hello'}
                         className="text-xs"
+                      />
+                    )}
+                    {form.triggerType === 'schedule' && (
+                      <Input
+                        value={form.cron}
+                        onChange={e => setForm(f => ({ ...f, cron: e.target.value }))}
+                        placeholder="e.g. 0 9 * * 1-5"
+                        className="text-xs font-mono"
                       />
                     )}
                   </div>
@@ -3572,12 +3609,19 @@ function AutomationsSection() {
                       Case-insensitive regex, searched against the full message text.
                     </p>
                   )}
+                  {form.triggerType === 'schedule' && (
+                    <p className="text-xs text-muted-foreground">
+                      5-field cron: <code>minute hour dom month dow</code> (0 = Sunday).
+                      Example: <code>0 9 * * 1-5</code> = 09:00 Mon–Fri.
+                      Supports <code>*</code>, ranges (<code>1-5</code>), lists (<code>1,3</code>), steps (<code>*/15</code>).
+                    </p>
+                  )}
                 </>
               )}
             </div>
 
-            {/* Conditions — hidden in DSL mode (DSL expression covers trigger+conditions) */}
-            {!form.dslMode && <div className="space-y-2">
+            {/* Conditions — hidden in DSL mode and schedule mode (no message context) */}
+            {!form.dslMode && form.triggerType !== 'schedule' && <div className="space-y-2">
               <p className="text-xs font-medium">
                 Conditions{' '}
                 <span className="text-muted-foreground font-normal">(optional — absent = unrestricted)</span>
