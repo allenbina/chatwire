@@ -15,6 +15,7 @@
 import { useState, useEffect } from 'react'
 import DOMPurify from 'dompurify'
 import type { Message, Attachment, LinkPreview } from '../api'
+import { sendTapback, unsendMessage, editMessage } from '../api'
 import { MediaGallery, PendingAttachment } from './MediaGallery'
 import { BlurImage } from './BlurImage'
 import { SlotRenderer } from '../plugins/SlotRenderer'
@@ -488,6 +489,11 @@ export function MessageBubble({
         isMine ? 'self-end items-end' : 'self-start items-start',
         pending ? 'opacity-60' : '',
       ].join(' ')}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchEnd}
     >
       {/* Inline reply quote */}
       {msg.reply_to && (

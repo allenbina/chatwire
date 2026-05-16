@@ -537,6 +537,16 @@ function ThemeSection() {
     }
   }
 
+  async function handleSaveAsNew(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newName.trim()) return
+    const pkg = buildCurrentPackage(newName.trim(), newAuthor.trim())
+    await savePackage(pkg)
+    setNamePrompt(false)
+    setNewName('')
+    setNewAuthor('')
+  }
+
   return (
     <div className="space-y-4">
       {/* Main theme picker — all schemes */}
