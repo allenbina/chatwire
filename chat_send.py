@@ -10,21 +10,24 @@ before reaching the AppleScript layer.  The guard enforces:
 1. **Global rate limit** — 20 messages / 60 s (token bucket).  Raises
    ``RateLimitError`` when exhausted.
 2. **Broadcast detection** — maintains ``{hash → set(recipients)}`` with a
-   1-hour rolling window.  At 3 unique recipients sends an ntfy warning.  At
-   5 starts escalating send-timeouts (5 min → 15 min → 60 min → 6 h →
-   disabled).  Timeout state is persisted to
-   ``~/.chatwire/rate_limit_state.json`` so restarts don't reset escalation.
-   Raises ``BroadcastBlockedError`` when a timeout is active.
+   1-hour rolling window.  At 3 unique recipients logs a warning.  At
+   5 trips the global escalating fuse (5 min → 30 min → 2 h → 24 h → 24 h →
+   permanent).  Fuse state is persisted to ``~/.chatwire/fuse_state.json``
+   so restarts don't reset escalation.  On step 4+ a machine-bound unlock
+   code is written to ``~/.chatwire/lockout.json``.
+   Raises ``BroadcastBlockedError`` when the fuse is active.
 3. **Audit log** — appends one TSV line per send to
    ``~/.chatwire/send_audit.log`` (timestamp, recipient, source, hash).
 """
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import os
 import re
+import secrets
 import sqlite3
 import subprocess
 import threading
@@ -34,6 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from chat_db import CHAT_DB
+from web import log_stream as _ls
 
 log = logging.getLogger("chat_send")
 
@@ -44,14 +48,23 @@ log = logging.getLogger("chat_send")
 _RATE_LIMIT_COUNT = 20       # max messages per window
 _RATE_LIMIT_WINDOW_S = 60.0  # window duration in seconds
 
-_BROADCAST_WARN_AT = 3       # unique recipients → ntfy warning
-_BROADCAST_BLOCK_AT = 5      # unique recipients → escalating timeout
+_BROADCAST_WARN_AT = 3       # unique recipients → log warning
+_BROADCAST_BLOCK_AT = 5      # unique recipients → trip global fuse
 _BROADCAST_WINDOW_S = 3600   # rolling window (1 hour)
 
-# Timeout steps in seconds; -1 means "disabled until manual re-enable"
-_ESCALATION_STEPS = [5 * 60, 15 * 60, 60 * 60, 6 * 3600, -1]
+# Fuse cooldown steps in seconds (index 0 = step 1 … index 4 = step 5).
+# Step 6 (index 5) is permanent (None).
+_FUSE_STEPS_S: list[float | None] = [
+    5 * 60,      # Step 1: 5 minutes
+    30 * 60,     # Step 2: 30 minutes
+    2 * 3600,    # Step 3: 2 hours
+    24 * 3600,   # Step 4: 24 hours
+    24 * 3600,   # Step 5: 24 hours
+    None,        # Step 6: permanent
+]
 
-_STATE_FILE = Path.home() / ".chatwire" / "rate_limit_state.json"
+_FUSE_FILE  = Path.home() / ".chatwire" / "fuse_state.json"
+_LOCKOUT_FILE = Path.home() / ".chatwire" / "lockout.json"
 _AUDIT_LOG  = Path.home() / ".chatwire" / "send_audit.log"
 
 
@@ -64,15 +77,44 @@ class RateLimitError(Exception):
 
 
 class BroadcastBlockedError(Exception):
-    """Raised when a broadcast-detection timeout is currently active.
+    """Raised when the anti-spam fuse is currently active.
 
     Attributes:
-        retry_after: seconds until the timeout expires, or None if disabled.
+        retry_after: seconds until the fuse expires, or None if permanent.
+        step:        current fuse step (1-6).
     """
 
-    def __init__(self, msg: str, retry_after: float | None = None) -> None:
+    def __init__(
+        self, msg: str, retry_after: float | None = None, step: int = 0
+    ) -> None:
         super().__init__(msg)
         self.retry_after = retry_after
+        self.step = step
+
+
+# ---------------------------------------------------------------------------
+# Trigger-notify hook registry
+# ---------------------------------------------------------------------------
+
+# bridge.py registers a callback here after building integrations.
+# Called (from a thread) whenever the fuse fires to notify all notify-tier
+# plugins.  Callbacks must be synchronous and short; they schedule async
+# work via the event loop.
+_trigger_notify_hooks: list = []
+
+
+def register_trigger_notify_hook(fn: object) -> None:
+    """Register a sync callable to be invoked when the anti-spam fuse trips."""
+    _trigger_notify_hooks.append(fn)
+
+
+def _call_trigger_notify_hooks() -> None:
+    """Invoke all registered trigger-notify hooks.  Never raises."""
+    for hook in _trigger_notify_hooks:
+        try:
+            hook()  # type: ignore[operator]
+        except Exception:
+            log.exception("trigger notify hook failed")
 
 
 # ---------------------------------------------------------------------------
@@ -144,88 +186,155 @@ class _BroadcastTracker:
 
 
 # ---------------------------------------------------------------------------
-# Escalation state  (persisted to disk)
+# Global fuse state  (persisted to disk as wall-clock timestamps)
 # ---------------------------------------------------------------------------
 
-class _EscalationState:
-    """Persistent escalating-timeout state for broadcast blocking.
+class _FuseState:
+    """Global escalating fuse — single shared lock for all broadcast blocks.
 
-    Persisted as JSON so restarts don't reset escalation level.
-    Wall-clock expiry is stored; on load we convert back to monotonic.
+    State file: ``~/.chatwire/fuse_state.json``::
+
+        {"step": 0, "cooldown_until": null, "last_trigger": null}
+
+    - ``step`` 0 = inactive; 1-5 = timed out; 6 = permanent.
+    - ``cooldown_until`` is a UNIX wall-clock timestamp (null when inactive).
+    - ``last_trigger`` tracks when the fuse was last tripped; if a second
+      trigger happens within 1 hour the step counter is incremented by 2
+      instead of 1 (rapid-re-offender fast-escalation).
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        # hash → {"level": int, "until_mono": float}
-        # level is the index into _ESCALATION_STEPS that was last applied.
-        self._data: dict[str, dict] = {}
+        self._step: int = 0
+        self._cooldown_until: float | None = None
+        self._last_trigger: float | None = None
         self._load()
 
     def _load(self) -> None:
         try:
-            raw = json.loads(_STATE_FILE.read_text())
-            now_wall = time.time()
-            now_mono = time.monotonic()
-            for h, v in raw.items():
-                level = int(v.get("level", 0))
-                until_wall = float(v.get("until_wall", 0))
-                until_mono = now_mono + max(0.0, until_wall - now_wall)
-                self._data[h] = {"level": level, "until_mono": until_mono}
+            raw = json.loads(_FUSE_FILE.read_text())
+            self._step = int(raw.get("step", 0))
+            cu = raw.get("cooldown_until")
+            self._cooldown_until = float(cu) if cu is not None else None
+            lt = raw.get("last_trigger")
+            self._last_trigger = float(lt) if lt is not None else None
         except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
             pass
 
     def _save(self) -> None:
-        """Persist to disk; caller holds self._lock."""
-        now_mono = time.monotonic()
-        now_wall = time.time()
-        out: dict[str, dict] = {}
-        for h, v in self._data.items():
-            remaining = v["until_mono"] - now_mono
-            out[h] = {
-                "level": v["level"],
-                "until_wall": now_wall + max(0.0, remaining),
-            }
+        """Persist to disk; caller must hold self._lock."""
         try:
-            _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            tmp = _STATE_FILE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(out, indent=2))
-            tmp.replace(_STATE_FILE)
-        except Exception:
-            log.exception("failed to save rate_limit_state.json")
-
-    def check_blocked(self, msg_hash: str) -> tuple[bool, float | None]:
-        """Return (is_blocked, seconds_remaining_or_None_if_disabled)."""
-        with self._lock:
-            st = self._data.get(msg_hash)
-            if st is None:
-                return False, None
-            step = _ESCALATION_STEPS[st["level"]]
-            if step == -1:
-                return True, None
-            remaining = st["until_mono"] - time.monotonic()
-            return (remaining > 0, remaining if remaining > 0 else None)
-
-    def escalate(self, msg_hash: str) -> float | None:
-        """Move to next escalation level; return timeout seconds or None=disabled."""
-        with self._lock:
-            st = self._data.get(msg_hash)
-            cur_level = st["level"] if st else -1
-            next_level = min(cur_level + 1, len(_ESCALATION_STEPS) - 1)
-            step = _ESCALATION_STEPS[next_level]
-            now_mono = time.monotonic()
-            self._data[msg_hash] = {
-                "level": next_level,
-                "until_mono": now_mono if step == -1 else now_mono + step,
+            _FUSE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            state = {
+                "step": self._step,
+                "cooldown_until": self._cooldown_until,
+                "last_trigger": self._last_trigger,
             }
+            tmp = _FUSE_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(state, indent=2))
+            tmp.replace(_FUSE_FILE)
+        except Exception:
+            log.exception("failed to save fuse_state.json")
+
+    def check(self) -> None:
+        """Raise BroadcastBlockedError if the fuse is currently active."""
+        with self._lock:
+            if self._step == 0:
+                return
+            if self._step >= 6:
+                # Build a message that includes the challenge code + form URL
+                # so every entry point (plugins, API, CLI) shows the same info.
+                cw_code = _read_unlock_code()
+                form_url = _get_unlock_form_url() or "https://chatwire.app/unlock"
+                if cw_code:
+                    msg = (
+                        f"Chatwire locked. Code: {cw_code}. "
+                        f"Request unlock: {form_url}"
+                    )
+                else:
+                    msg = f"Chatwire locked. Request unlock: {form_url}"
+                raise BroadcastBlockedError(msg, None, step=self._step)
+            if self._cooldown_until is not None:
+                remaining = self._cooldown_until - time.time()
+                if remaining > 0:
+                    raise BroadcastBlockedError(
+                        f"Sends paused for {remaining / 60:.0f} min "
+                        "— chatwire detected a broadcast pattern.",
+                        remaining,
+                        step=self._step,
+                    )
+
+    def trigger(self) -> float | None:
+        """Trip the fuse; return cooldown seconds, or None if permanent.
+
+        If the last trigger was within 1 hour, the step increments by 2
+        (skip-a-step fast-escalation for rapid re-offenders).
+        """
+        with self._lock:
+            now = time.time()
+            rapid = (
+                self._last_trigger is not None
+                and now - self._last_trigger < 3600
+            )
+            increment = 2 if rapid else 1
+            self._step = min(self._step + increment, 6)
+            self._last_trigger = now
+
+            step_s = _FUSE_STEPS_S[self._step - 1]
+            if step_s is None:
+                self._cooldown_until = None
+            else:
+                self._cooldown_until = now + step_s
+
             self._save()
-            return None if step == -1 else float(step)
+
+            # Generate and persist unlock code on step 4+
+            if self._step >= 4:
+                _write_lockout(self._step)
+
+            return step_s
+
+    def status(self) -> dict:
+        """Return a dict suitable for the /api/ui/fuse-status endpoint."""
+        with self._lock:
+            if self._step == 0:
+                return {
+                    "locked": False,
+                    "step": 0,
+                    "cooldown_remaining_s": None,
+                    "unlock_code": None,
+                }
+            if self._step >= 6:
+                return {
+                    "locked": True,
+                    "step": self._step,
+                    "cooldown_remaining_s": None,
+                    "unlock_code": _read_unlock_code(),
+                }
+            remaining: float | None = None
+            locked = False
+            if self._cooldown_until is not None:
+                r = self._cooldown_until - time.time()
+                if r > 0:
+                    remaining = r
+                    locked = True
+            unlock_code = _read_unlock_code() if self._step >= 4 else None
+            return {
+                "locked": locked,
+                "step": self._step,
+                "cooldown_remaining_s": remaining,
+                "unlock_code": unlock_code,
+            }
 
     # --- for tests ---
     def _reset(self) -> None:
         with self._lock:
-            self._data.clear()
+            self._step = 0
+            self._cooldown_until = None
+            self._last_trigger = None
             try:
-                _STATE_FILE.unlink(missing_ok=True)
+                _FUSE_FILE.unlink(missing_ok=True)
+                _LOCKOUT_FILE.unlink(missing_ok=True)
             except Exception:
                 pass
 
@@ -234,65 +343,162 @@ class _EscalationState:
 # Module-level singletons
 # ---------------------------------------------------------------------------
 
-_rate_bucket    = _TokenBucket()
-_broadcast      = _BroadcastTracker()
-_escalation     = _EscalationState()
+_rate_bucket = _TokenBucket()
+_broadcast   = _BroadcastTracker()
+_fuse        = _FuseState()
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_spam_whitelist() -> frozenset[str]:
-    """Read spam_whitelist from config.  Graceful fallback to empty set."""
-    try:
-        from config import load_config as _load
-        cfg = _load()
-        names = cfg.get("web", {}).get("spam_whitelist", [])
-        if isinstance(names, list):
-            return frozenset(n.strip().lower() for n in names if n.strip())
-    except Exception:
-        pass
-    return frozenset()
-
-
-def _normalize_text(text: str, whitelist_names: frozenset[str]) -> str:
+def _normalize_text(text: str) -> str:
     """Normalise text for broadcast-detection hashing.
 
-    Steps: lowercase → strip whitelisted names → strip punctuation →
-    collapse whitespace.
+    Steps: lowercase → strip punctuation → collapse whitespace.
     """
     t = text.lower()
-    for name in whitelist_names:
-        t = t.replace(name, "")
     t = re.sub(r"[^\w\s]", "", t)
     return " ".join(t.split())
+
+
+def _get_machine_id() -> str:
+    """Return a machine-specific identifier for unlock-code binding.
+
+    On macOS: reads IOPlatformUUID from ioreg.
+    Fallback: SHA-256 of hostname + username.
+    """
+    try:
+        result = subprocess.run(
+            ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if "IOPlatformUUID" in line:
+                m = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', line)
+                if m:
+                    return m.group(1)
+    except Exception:
+        pass
+    import socket
+    import os as _os
+    return hashlib.sha256(
+        f"{socket.gethostname()}{_os.getenv('USER', '')}".encode()
+    ).hexdigest()
+
+
+def _get_first_run_ts() -> str:
+    """Return a persistent first-run timestamp string, creating it if needed."""
+    try:
+        from config import load_config as _load, save_config as _save
+        cfg = _load()
+        ts = cfg.get("_first_run_ts")
+        if ts:
+            return str(ts)
+        ts = str(time.time())
+        cfg["_first_run_ts"] = ts
+        _save(cfg)
+        return ts
+    except Exception:
+        return "0"
+
+
+def _generate_unlock_code() -> str:
+    """Generate a machine-bound unlock code: ``CW-XXXX-YYYY``.
+
+    XXXX = first 4 hex chars of SHA-256(machine_id + first_run_ts).
+    YYYY = 4 random hex chars unique per lockout event.
+    """
+    machine_id = _get_machine_id()
+    first_run_ts = _get_first_run_ts()
+    xxxx = hashlib.sha256(
+        f"{machine_id}{first_run_ts}".encode()
+    ).hexdigest()[:4].upper()
+    yyyy = secrets.token_hex(2).upper()
+    return f"CW-{xxxx}-{yyyy}"
+
+
+def _write_lockout(step: int) -> None:
+    """Persist lockout.json with unlock code (preserved across re-triggers)."""
+    try:
+        _LOCKOUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        existing: dict = {}
+        try:
+            existing = json.loads(_LOCKOUT_FILE.read_text())
+        except Exception:
+            pass
+        if not existing.get("unlock_code"):
+            existing["unlock_code"] = _generate_unlock_code()
+        existing["step"] = step
+        existing["locked_at"] = time.time()
+        tmp = _LOCKOUT_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(existing, indent=2))
+        tmp.replace(_LOCKOUT_FILE)
+    except Exception:
+        log.exception("failed to write lockout.json")
+
+
+def _read_unlock_code() -> str | None:
+    """Read the unlock code from lockout.json, or None if absent."""
+    try:
+        return json.loads(_LOCKOUT_FILE.read_text()).get("unlock_code")
+    except Exception:
+        return None
+
+
+def _get_unlock_secret() -> str:
+    """Return (or generate) the HMAC secret for unlock-code verification.
+
+    Stored in ``~/.chatwire/config.json`` as ``unlock_secret`` (32-byte hex).
+    Generated on first call and persisted immediately.
+    """
+    try:
+        from config import load_config as _load, save_config as _save  # noqa: PLC0415
+        cfg = _load()
+        secret = cfg.get("unlock_secret")
+        if secret:
+            return str(secret)
+        secret = secrets.token_hex(32)
+        cfg["unlock_secret"] = secret
+        _save(cfg)
+        return secret
+    except Exception:
+        # Fallback: derive from machine ID so restarts stay consistent.
+        return hashlib.sha256(_get_machine_id().encode()).hexdigest()
+
+
+def _compute_unlock_response(cw_code: str, secret: str) -> str:
+    """Compute the admin-issued unlock code for a given CW machine code.
+
+    Algorithm: HMAC-SHA256(cw_code, secret) → first 8 hex chars → UL-XXXX-XXXX.
+    The Apps Script in docs/admin/unlock-apps-script.js uses the same formula.
+    """
+    digest = hmac.new(
+        secret.encode(), cw_code.encode(), hashlib.sha256
+    ).hexdigest()
+    return f"UL-{digest[:4].upper()}-{digest[4:8].upper()}"
+
+
+def validate_and_reset_fuse(unlock_code: str) -> bool:
+    """Validate an admin-issued unlock code and reset the fuse if correct.
+
+    Returns True on success (fuse reset to step 0), False on failure.
+    """
+    cw_code = _read_unlock_code()
+    if not cw_code:
+        return False
+    secret = _get_unlock_secret()
+    expected = _compute_unlock_response(cw_code, secret)
+    if not hmac.compare_digest(unlock_code.strip().upper(), expected.upper()):
+        return False
+    _fuse._reset()
+    return True
 
 
 def _msg_hash(normalized: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
-def _ntfy_warning(message: str) -> None:
-    """Fire-and-forget ntfy notification.  Never raises."""
-    try:
-        from config import load_config as _load
-        cfg = _load()
-        topic = (cfg.get("web", {}).get("ntfy_topic") or
-                 os.environ.get("NTFY_TOPIC", "")).strip()
-        if not topic:
-            log.warning("no ntfy_topic configured; dropping spam warning: %s", message)
-            return
-        import urllib.request
-        req = urllib.request.Request(
-            f"https://ntfy.sh/{topic}",
-            data=message.encode(),
-            method="POST",
-            headers={"Content-Type": "text/plain"},
-        )
-        urllib.request.urlopen(req, timeout=5)
-    except Exception:
-        log.exception("ntfy warning failed")
 
 
 def _write_audit(recipient: str, source: str, msg_hash: str) -> None:
@@ -323,62 +529,82 @@ def check_send_guard(recipient: str, body: str, source: str = "unknown") -> str:
         to log it themselves).
 
     Raises:
-        RateLimitError:       Global rate limit exhausted.
-        BroadcastBlockedError: Broadcast timeout active for this message hash.
+        RateLimitError:        Global rate limit exhausted.
+        BroadcastBlockedError: Global fuse is active (broadcast detected).
     """
-    # 1. Global rate limit
+    # 1. Global fuse check — blocks ALL sends when active
+    _fuse.check()
+
+    # 2. Global rate limit
     if not _rate_bucket.consume():
+        _ls.warn("anti_spam", "rate limit exceeded — send blocked (20 messages/minute)")
         raise RateLimitError(
             "Send rate limit exceeded (20 messages / minute). Try again shortly."
         )
 
-    # 2. Broadcast detection (text-only; file sends pass an empty body)
-    whitelist = _get_spam_whitelist()
-    normalized = _normalize_text(body, whitelist)
+    # 3. Broadcast detection (text-only; file sends pass an empty body)
+    normalized = _normalize_text(body)
     h = _msg_hash(normalized)
 
     if body.strip():  # skip broadcast tracking for empty/file sends
-        blocked, remaining = _escalation.check_blocked(h)
-        if blocked:
-            if remaining is None:
-                raise BroadcastBlockedError(
-                    "Broadcast sending disabled — re-enable in settings.", None
-                )
-            raise BroadcastBlockedError(
-                f"Broadcast timeout active ({remaining / 60:.0f} min remaining).",
-                remaining,
-            )
-
         unique_count = _broadcast.record(h, recipient)
 
         if unique_count == _BROADCAST_WARN_AT:
             log.warning("broadcast warning: same message to %d recipients hash=%s",
                         unique_count, h[:8])
-            _ntfy_warning(
-                f"chatwire anti-spam: same message sent to {unique_count} "
-                f"different recipients. Possible broadcast spam."
-            )
+            _ls.warn("anti_spam", f"broadcast warning — same message to {unique_count} recipients")
 
         if unique_count >= _BROADCAST_BLOCK_AT:
-            timeout = _escalation.escalate(h)
-            if timeout is None:
-                detail = "disabled — re-enable in chatwire settings"
+            cooldown_s = _fuse.trigger()
+            current_step = _fuse._step
+            if cooldown_s is None:
+                detail = "permanently locked — request an unlock code"
             else:
-                detail = f"blocked for {timeout / 60:.0f} min"
-            log.warning("broadcast block: hash=%s unique=%d action=%s",
-                        h[:8], unique_count, detail)
-            _ntfy_warning(
-                f"chatwire anti-spam: broadcast blocked. Same message to "
-                f"{unique_count} recipients. Sending {detail}."
-            )
+                detail = f"blocked for {cooldown_s / 60:.0f} min"
+            log.warning("broadcast block: hash=%s unique=%d step=%d action=%s",
+                        h[:8], unique_count, current_step, detail)
+            _ls.error("anti_spam", f"broadcast blocked — {unique_count} recipients, step {current_step}: {detail}")
+            _call_trigger_notify_hooks()
             raise BroadcastBlockedError(
                 f"Broadcast detected ({unique_count} recipients). Sending {detail}.",
-                timeout,
+                cooldown_s,
+                step=current_step,
             )
 
-    # 3. Audit log
+    # 4. Audit log
     _write_audit(recipient, source, h)
     return h
+
+
+def _get_unlock_form_url() -> str | None:
+    """Return the Google Form URL for unlock requests, or None if not configured.
+
+    Reads (in priority order):
+      1. CHATWIRE_UNLOCK_FORM_URL environment variable
+      2. unlock_form_url key in ~/.chatwire/config.json
+    """
+    env_url = os.environ.get("CHATWIRE_UNLOCK_FORM_URL", "").strip()
+    if env_url:
+        return env_url
+    try:
+        from config import load_config as _load  # noqa: PLC0415
+        cfg = _load()
+        url = cfg.get("unlock_form_url", "")
+        return str(url).strip() if url else None
+    except Exception:
+        return None
+
+
+def get_fuse_status() -> dict:
+    """Return the current fuse status dict for the /api/ui/fuse-status endpoint.
+
+    Includes ``unlock_form_url`` so the frontend can link to the request form
+    without hard-coding it.
+    """
+    status = _fuse.status()
+    status["unlock_form_url"] = _get_unlock_form_url()
+    return status
+
 
 OSASCRIPT_TIMEOUT_S = 30
 
@@ -484,6 +710,9 @@ def _service_const(service: str) -> str:
 
 
 def send_text(handle: str, body: str, service: str = "iMessage") -> None:
+    # Defense-in-depth: enforce the fuse even if the caller skipped
+    # check_send_guard().  BroadcastBlockedError propagates to the caller.
+    _fuse.check()
     svc = _service_const(service)
     script = f'''
     tell application "Messages"
@@ -497,6 +726,8 @@ def send_text(handle: str, body: str, service: str = "iMessage") -> None:
 
 
 def send_file(handle: str, path: Path, service: str = "iMessage") -> None:
+    # Defense-in-depth: fuse check before the osascript call.
+    _fuse.check()
     svc = _service_const(service)
     script = f'''
     tell application "Messages"
@@ -515,6 +746,8 @@ def send_file(handle: str, path: Path, service: str = "iMessage") -> None:
 # fallback for groups — the service is fixed by how the chat was created.
 
 def send_text_to_chat(chat_guid: str, body: str) -> None:
+    # Defense-in-depth: fuse check before the osascript call.
+    _fuse.check()
     script = f'''
     tell application "Messages"
         set targetChat to chat id "{_escape(chat_guid)}"
@@ -526,6 +759,8 @@ def send_text_to_chat(chat_guid: str, body: str) -> None:
 
 
 def send_file_to_chat(chat_guid: str, path: Path) -> None:
+    # Defense-in-depth: fuse check before the osascript call.
+    _fuse.check()
     script = f'''
     tell application "Messages"
         set targetChat to chat id "{_escape(chat_guid)}"

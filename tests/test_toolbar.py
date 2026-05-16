@@ -109,19 +109,16 @@ class TestGetServiceStatuses:
         monkeypatch.setattr(tb, "_healthz_ok", lambda: web_ok)
 
     def test_all_running(self, monkeypatch):
-        labels = {"dev.chatwire.bridge", "dev.chatwire.web", "dev.chatwire.keepawake"}
+        labels = {"dev.chatwire.bridge", "dev.chatwire.web"}
         self._patch_all(monkeypatch, labels, web_ok=True)
         statuses = tb.get_service_statuses()
-        assert len(statuses) == 3
+        assert len(statuses) == 2
         bridge = next(s for s in statuses if s.name == "bridge")
         web = next(s for s in statuses if s.name == "web")
-        keepawake = next(s for s in statuses if s.name == "keepawake")
         assert bridge.loaded is True
         assert bridge.responding is False  # only web gets healthz
         assert web.loaded is True
         assert web.responding is True
-        assert keepawake.loaded is True
-        assert keepawake.responding is False
 
     def test_all_stopped(self, monkeypatch):
         self._patch_all(monkeypatch, set(), web_ok=False)
@@ -137,10 +134,10 @@ class TestGetServiceStatuses:
         assert web.loaded is True
         assert web.responding is False
 
-    def test_returns_all_three_services(self, monkeypatch):
+    def test_returns_all_services(self, monkeypatch):
         self._patch_all(monkeypatch, set(), web_ok=False)
         names = [s.name for s in tb.get_service_statuses()]
-        assert set(names) == {"bridge", "web", "keepawake"}
+        assert set(names) == {"bridge", "web"}
 
 
 # ---------------------------------------------------------------------------
@@ -171,9 +168,9 @@ class TestServiceStatusLine:
         s = self._make("bridge", loaded=False)
         assert tb.service_status_line(s) == "bridge: stopped"
 
-    def test_keepawake_running(self):
-        s = self._make("keepawake", loaded=True)
-        assert tb.service_status_line(s) == "keepawake: running"
+    def test_other_service_running(self):
+        s = self._make("bridge", loaded=True)
+        assert tb.service_status_line(s) == "bridge: running"
 
 
 # ---------------------------------------------------------------------------

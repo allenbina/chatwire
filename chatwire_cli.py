@@ -17,7 +17,7 @@ Usage:
     chatwire logs [--service bridge|web|all] [-f]
     chatwire doctor
     chatwire migrate
-    chatwire uninstall [--dry-run]
+    chatwire uninstall [--purge [--dry-run]]
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ DEFAULT_LOG_DIR = Path.home() / "Library" / "Logs" / "chatwire"
 LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates" / "launchd"
 
-PLIST_NAMES = ("bridge", "web", "keepawake")
+PLIST_NAMES = ("bridge", "web")
 
 
 def _require_macos() -> None:
@@ -181,6 +181,12 @@ def cmd_install_agents(args: argparse.Namespace) -> int:
                 print(f"launchctl load failed for {path}: {stderr}", file=sys.stderr)
         else:
             print(f"loaded {path.name}")
+
+    print()
+    print("Keep-awake: chatwire needs your Mac awake to relay messages.")
+    print("Without a keep-awake tool, macOS will sleep and you can't chat,")
+    print("wire, or chatwire. We recommend Amphetamine (free, Mac App Store):")
+    print("https://apps.apple.com/app/amphetamine/id937984704")
     return 0
 
 
@@ -198,15 +204,110 @@ def cmd_uninstall_agents(args: argparse.Namespace) -> int:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    """Phase 1 stub: prints the wizard URL. Phase 2 ships the wizard itself."""
-    cfg = config.apply_to_environ()
-    port = int(cfg.get("WEB_PORT") or os.environ.get("WEB_PORT") or 8723)
-    url = f"http://127.0.0.1:{port}/setup"
-    print(f"setup wizard (when implemented): {url}")
-    print("for now, run `chatwire install-agents` and configure via")
-    print(f"~/.chatwire/config.json (chmod 600).")
-    if args.open:
-        webbrowser.open(url)
+    """Alias for cmd_init (kept for backward compat)."""
+    return cmd_init(args)
+
+
+def _generate_vapid_keypair() -> tuple[str, str]:
+    """Return (private_b64url, public_b64url) for VAPID web push keys.
+
+    Private key is DER-encoded PKCS8, base64url-no-pad.
+    Public key is raw uncompressed P-256 point, base64url-no-pad.
+    """
+    import base64
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    priv = ec.generate_private_key(ec.SECP256R1(), default_backend())
+    priv_der = priv.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    pub_raw = priv.public_key().public_bytes(
+        encoding=serialization.Encoding.X962,
+        format=serialization.PublicFormat.UncompressedPoint,
+    )
+    priv_b64url = base64.urlsafe_b64encode(priv_der).rstrip(b"=").decode()
+    pub_b64url = base64.urlsafe_b64encode(pub_raw).rstrip(b"=").decode()
+    return priv_b64url, pub_b64url
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    """Interactive first-run wizard: prompts for handles, generates VAPID keys,
+    writes ~/.chatwire/config.json, and optionally installs launchd agents."""
+
+    # 1. Check for existing config
+    if config.CONFIG_PATH.exists():
+        ans = input("Config already exists. Re-run setup? [y/N] ").strip().lower()
+        if ans != "y":
+            print("Aborted.")
+            return 0
+
+    # 2. Prompt for self handles
+    raw = input("Enter your phone number(s) or Apple ID email(s), comma-separated: ").strip()
+    if not raw:
+        print("Error: at least one handle is required.", file=sys.stderr)
+        return 1
+    self_handles = [h.strip() for h in raw.split(",") if h.strip()]
+    if not self_handles:
+        print("Error: at least one handle is required.", file=sys.stderr)
+        return 1
+
+    # 3. Generate VAPID keys
+    try:
+        vapid_private, vapid_public = _generate_vapid_keypair()
+    except Exception as exc:
+        print(f"Warning: VAPID key generation failed ({exc}); push notifications won't work.", file=sys.stderr)
+        vapid_private = ""
+        vapid_public = ""
+
+    # 4. Build and write config
+    cfg = {
+        "version": config.CURRENT_VERSION,
+        "self_handles": self_handles,
+        "web": {
+            "port": 8723,
+            "vapid": {
+                "private": vapid_private,
+                "public": vapid_public,
+                "contact": "mailto:admin@example.com",
+            },
+        },
+    }
+    config.save_config(cfg)
+    print(f"Config written to {config.CONFIG_PATH}")
+
+    # 5. Offer to install launchd agents (macOS only)
+    if sys.platform == "darwin":
+        agent_ans = input("Install launchd agents now? [Y/n] ").strip().lower()
+        if agent_ans in ("", "y", "yes"):
+            # Build a minimal namespace matching what cmd_install_agents expects
+            agent_args = argparse.Namespace(
+                install_dir=str(_default_install_dir()),
+                venv_python=str(_default_venv_python()),
+                log_dir=str(DEFAULT_LOG_DIR),
+                label_prefix=DEFAULT_LABEL_PREFIX,
+            )
+            cmd_install_agents(agent_args)
+        else:
+            print()
+            print("Keep-awake: chatwire needs your Mac awake to relay messages.")
+            print("Without a keep-awake tool, macOS will sleep and you can't chat,")
+            print("wire, or chatwire. We recommend Amphetamine (free, Mac App Store):")
+            print("https://apps.apple.com/app/amphetamine/id937984704")
+    else:
+        print()
+        print("Keep-awake: chatwire needs your Mac awake to relay messages.")
+        print("Without a keep-awake tool, macOS will sleep and you can't chat,")
+        print("wire, or chatwire. We recommend Amphetamine (free, Mac App Store):")
+        print("https://apps.apple.com/app/amphetamine/id937984704")
+
+    # 6. Final instructions
+    print()
+    print("Run `chatwire doctor` to verify your setup.")
+    print("Web UI will be available at http://localhost:8723 once services start.")
     return 0
 
 
@@ -308,7 +409,18 @@ def run_doctor_checks() -> dict:
             "detail": f"{py_str} is below the 3.10 minimum — upgrade Python",
         })
 
-    # 3. Full Disk Access (critical)
+    # 3. MCP package (informational)
+    try:
+        import mcp as _mcp  # noqa: F401, PLC0415
+        checks.append({"label": "MCP package", "status": "ok", "detail": "installed"})
+    except ImportError:
+        checks.append({
+            "label": "MCP package",
+            "status": "info",
+            "detail": "not installed — install with: pip install 'chatwire[mcp]'",
+        })
+
+    # 4. Full Disk Access (critical)
     fda = probe_fda()
     checks.append({
         "label": "Full Disk Access",
@@ -439,82 +551,106 @@ def _uninstall_paths() -> dict[str, Path]:
         "chatwire_dir": Path.home() / ".chatwire",
         "log_dir": Path.home() / "Library" / "Logs" / "chatwire",
         "thumb_cache": Path.home() / ".chatwire" / "thumb_cache",
+        "img_cache": Path.home() / ".chatwire" / "img_cache",
     }
 
 
-def cmd_uninstall(args: argparse.Namespace) -> int:
-    """Stop services, remove data dirs, and uninstall the chatwire package.
-
-    Use --dry-run to see what would be removed without changing anything.
-    """
-    dry = args.dry_run
-    label_prefix = getattr(args, "label_prefix", DEFAULT_LABEL_PREFIX)
-    paths = _uninstall_paths()
-
-    def _say(msg: str) -> None:
-        print(msg)
-
-    def _act(description: str, *cmd: str) -> None:
-        if dry:
-            _say(f"  (dry-run) {description}")
-        else:
-            _say(f"  {description}")
-            subprocess.run(list(cmd), capture_output=True)
-
-    def _rm(path: Path) -> None:
-        if dry:
-            _say(f"  (dry-run) remove {path}")
-        elif path.exists():
-            shutil.rmtree(path) if path.is_dir() else path.unlink(missing_ok=True)
-            _say(f"  removed {path}")
-        else:
-            _say(f"  not found (skip): {path}")
-
-    if not dry:
-        _require_macos()
-        print()
-        print("WARNING: This will permanently remove chatwire and all its data.")
-        print()
-        confirm = input("Type YES to continue: ").strip()
-        if confirm != "YES":
-            print("Aborted.")
-            return 0
-        print()
-
-    # Step 1 — stop launchd agents
-    _say("==> Step 1: Stopping launchd agents")
-    if sys.platform == "darwin" or dry:
-        uid = os.getuid() if hasattr(os, "getuid") else 501
-        for name in PLIST_NAMES:
-            label = _label(label_prefix, name)
-            target = f"gui/{uid}/{label}"
-            _act(f"launchctl bootout {target}", "launchctl", "bootout", target)
-
-    # Step 2 — remove plist files
-    _say("==> Step 2: Removing plist files")
-    for name in PLIST_NAMES:
-        plist = _agent_path(label_prefix, name)
-        _rm(plist)
-
-    # Step 3 — pipx uninstall
-    _say("==> Step 3: Uninstalling via pipx")
-    pipx_bin = shutil.which("pipx") or str(Path.home() / ".local" / "bin" / "pipx")
-    _act(f"pipx uninstall chatwire", pipx_bin, "uninstall", "chatwire")
-
-    # Step 4 — remove ~/.chatwire/
-    _say(f"==> Step 4: Removing {paths['chatwire_dir']}/")
-    _rm(paths["chatwire_dir"])
-
-    # Step 5 — remove ~/Library/Logs/chatwire/
-    _say(f"==> Step 5: Removing {paths['log_dir']}/")
-    _rm(paths["log_dir"])
-
-    # Step 6 — thumb cache (inside ~/.chatwire/, noted explicitly)
-    _say(f"==> Step 6: Thumbnail cache — covered by step 4")
+def _purge_item(dry: bool, label: str, action_fn) -> bool:
+    """Prompt the user [y/N] for one purge item. Returns True if action taken."""
     if dry:
-        _say(f"  (dry-run) would remove {paths['thumb_cache']} (with parent)")
+        print(f"  (dry-run) would remove {label}")
+        return False
+    ans = input(f"  Remove {label}? [y/N] ").strip().lower()
+    if ans == "y":
+        action_fn()
+        print(f"    → removed {label}")
+        return True
+    return False
 
-    # Report: what we cannot remove
+
+def cmd_uninstall(args: argparse.Namespace) -> int:
+    """Uninstall chatwire, optionally removing config and data.
+
+    Without --purge: prints instructions for removing the package.
+    With --purge: prompts for each data item to delete individually.
+    Use --purge --dry-run to preview what would be removed.
+    """
+    purge = getattr(args, "purge", False)
+    dry = getattr(args, "dry_run", False)
+    label_prefix = getattr(args, "label_prefix", DEFAULT_LABEL_PREFIX)
+
+    if not purge:
+        # Non-destructive: just print removal instructions.
+        print("To remove chatwire, run:")
+        print("  pipx uninstall chatwire")
+        print("  — or —")
+        print("  brew uninstall chatwire")
+        print()
+        print(f"Config and data at ~/.chatwire/ is preserved.")
+        print("To also remove config and data interactively, run:")
+        print("  chatwire uninstall --purge")
+        return 0
+
+    # --- Purge mode ---
+    chatwire_dir = Path.home() / ".chatwire"
+    log_dir = Path.home() / "Library" / "Logs" / "chatwire"
+
+    if dry:
+        print("chatwire uninstall --purge --dry-run (nothing will be changed)\n")
+    else:
+        print("chatwire uninstall --purge")
+        print("Each item below will ask for confirmation before removal.\n")
+
+    # 1. Config
+    config_path = chatwire_dir / "config.json"
+    _purge_item(dry, f"config ({config_path})", lambda: config_path.unlink(missing_ok=True))
+
+    # 2. Plugins
+    plugins_dir = chatwire_dir / "plugins"
+    _purge_item(dry, f"plugins ({plugins_dir})",
+                lambda: shutil.rmtree(plugins_dir, ignore_errors=True))
+
+    # 3. Read state
+    read_state_path = chatwire_dir / "read_state.db"
+    _purge_item(dry, f"read state ({read_state_path})",
+                lambda: read_state_path.unlink(missing_ok=True))
+
+    # 4. Logs
+    jsonl_files = list(chatwire_dir.glob("*.jsonl")) if chatwire_dir.exists() else []
+    if jsonl_files:
+        _purge_item(
+            dry,
+            f"logs ({len(jsonl_files)} .jsonl file(s) in {chatwire_dir})",
+            lambda: [f.unlink(missing_ok=True) for f in jsonl_files],
+        )
+    else:
+        if dry:
+            print(f"  (dry-run) no .jsonl log files found in {chatwire_dir}")
+
+    # 5. LaunchAgents
+    plist_paths = [_agent_path(label_prefix, name) for name in PLIST_NAMES]
+    existing_plists = [p for p in plist_paths if p.exists()]
+    if existing_plists or dry:
+        uid = os.getuid() if hasattr(os, "getuid") else 501
+
+        def _remove_agents() -> None:
+            for plist in plist_paths:
+                label = _label(label_prefix, plist.stem.split(".")[-1])
+                subprocess.run(
+                    ["launchctl", "bootout", f"gui/{uid}/{label}"],
+                    capture_output=True,
+                )
+                plist.unlink(missing_ok=True)
+
+        _purge_item(
+            dry,
+            f"LaunchAgents ({label_prefix}.*)",
+            _remove_agents,
+        )
+    else:
+        if dry:
+            print(f"  (dry-run) no LaunchAgent plists found for {label_prefix}.*")
+
     print()
     print("=" * 59)
     print(" What chatwire CANNOT remove on your behalf:")
@@ -529,19 +665,70 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     print()
     plugins = _list_installed_plugins()
     if plugins:
-        print("  Third-party plugin packages (removed with the venv in step 3,")
-        print("  but if you want them elsewhere reinstall separately):")
+        print("  Third-party plugin packages:")
         for pkg in plugins:
             print(f"    pipx uninject chatwire {pkg}")
     else:
         print("  Third-party plugin packages:")
-        print("    None detected (or already removed with the venv in step 3).")
+        print("    None detected.")
+    print()
+    print("  To remove the package itself:")
+    print("    pipx uninstall chatwire")
+    print("    — or —")
+    print("    brew uninstall chatwire")
     print()
     print("=" * 59)
     print()
 
     if not dry:
-        print("chatwire uninstall complete.")
+        print("Done. Run `pipx uninstall chatwire` or `brew uninstall chatwire` to remove the package.")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """Print a summary of the local chatwire installation.
+
+    Shows version, config location, web port, running launchd agents (macOS
+    only), and installed plugins. Exits 0 always — this is a read-only probe.
+    """
+    label_prefix = getattr(args, "label_prefix", DEFAULT_LABEL_PREFIX)
+
+    print(f"chatwire {_version.__version__}")
+    print()
+
+    # Config and port
+    if config.CONFIG_PATH.exists():
+        try:
+            cfg = config.load_config()
+        except Exception:
+            cfg = {}
+        port = cfg.get("web", {}).get("port", 8723)
+        print(f"Config:  {config.CONFIG_PATH}")
+        print(f"Port:    {port}")
+    else:
+        print(f"Config:  not found — run `chatwire setup`")
+
+    print()
+
+    # LaunchAgents (macOS only)
+    if sys.platform == "darwin":
+        print("Agents:")
+        for name in PLIST_NAMES:
+            path = _agent_path(label_prefix, name)
+            mark = "✓" if path.exists() else "✗"
+            print(f"  {mark} {name:12s}  {path.name}")
+        print()
+
+    # Installed plugins
+    plugins = _list_installed_plugins()
+    if plugins:
+        print(f"Plugins ({len(plugins)}):")
+        for pkg in plugins:
+            print(f"  • {pkg}")
+    else:
+        print("Plugins: none installed")
+
+    print()
     return 0
 
 
@@ -553,13 +740,15 @@ def cmd_mcp(args: argparse.Namespace) -> int:
         sys.path.insert(0, str(repo_root))
     try:
         from integrations.mcp import run_stdio_server  # noqa: PLC0415
-    except ImportError as exc:
-        print(f"chatwire mcp: import error: {exc}", file=sys.stderr)
+    except ImportError:
+        print("chatwire mcp: MCP support requires the 'mcp' package.", file=sys.stderr)
+        print("Install it with: pip install 'chatwire[mcp]'", file=sys.stderr)
         return 1
     try:
         run_stdio_server()
     except ImportError as exc:
         print(f"chatwire mcp: {exc}", file=sys.stderr)
+        print("Install with: pip install 'chatwire[mcp]'", file=sys.stderr)
         return 1
     return 0
 
@@ -597,7 +786,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"chatwire {_version.__version__}",
     )
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd")
 
     sp = sub.add_parser("install-agents", help="render and load launchd agents")
     sp.add_argument("--label-prefix", default=DEFAULT_LABEL_PREFIX)
@@ -610,7 +799,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--label-prefix", default=DEFAULT_LABEL_PREFIX)
     sp.set_defaults(func=cmd_uninstall_agents)
 
-    sp = sub.add_parser("setup", help="open the web setup wizard")
+    sp = sub.add_parser("init", help="first-run setup wizard")
+    sp.set_defaults(func=cmd_init)
+
+    sp = sub.add_parser("setup", help="alias for init (first-run setup wizard)")
     sp.add_argument("--no-open", dest="open", action="store_false", default=True)
     sp.set_defaults(func=cmd_setup)
 
@@ -625,14 +817,26 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--label-prefix", default=DEFAULT_LABEL_PREFIX)
     sp.set_defaults(func=cmd_doctor)
 
-    sp = sub.add_parser("uninstall", help="stop services, remove data, uninstall package")
-    sp.add_argument("--dry-run", action="store_true",
-                    help="list what would be removed without changing anything")
+    sp = sub.add_parser("uninstall", help="remove chatwire config and data (see also: --purge)")
+    sp.add_argument(
+        "--purge",
+        action="store_true",
+        help="interactively remove config, plugins, read state, logs, and LaunchAgents",
+    )
+    sp.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="(with --purge) show what would be removed without changing anything",
+    )
     sp.add_argument("--label-prefix", default=DEFAULT_LABEL_PREFIX)
     sp.set_defaults(func=cmd_uninstall)
 
     sp = sub.add_parser("migrate", help="legacy .env → config.json (one-shot)")
     sp.set_defaults(func=cmd_migrate)
+
+    sp = sub.add_parser("status", help="show installation summary (version, config, agents, plugins)")
+    sp.add_argument("--label-prefix", default=DEFAULT_LABEL_PREFIX)
+    sp.set_defaults(func=cmd_status)
 
     sp = sub.add_parser(
         "mcp",
@@ -645,6 +849,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.cmd is None:
+        if not config.CONFIG_PATH.exists():
+            print("No config found. Run `chatwire init` to set up chatwire.")
+        else:
+            build_parser().print_help()
+        return 1
     _warn_non_framework_python()
     return args.func(args)
 

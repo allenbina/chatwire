@@ -8,8 +8,9 @@
  *
  * Dismissal of the GitHub banner is persisted per version in localStorage.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 
 const DISMISSED_KEY = 'chatwire-dismissed-version'
 
@@ -57,26 +58,21 @@ export function UpdateBanner() {
     gcTime: 10 * 60_000,
   })
 
-  // --- PWA SW update banner (higher priority) ---
-  if (swUpdated) {
-    return (
-      <div
-        role="status"
-        aria-live="polite"
-        className="flex items-center justify-between px-4 py-2 text-sm
-                   bg-primary text-primary-foreground"
-      >
-        <span>App updated in background. Reload to activate the new version.</span>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="ml-4 flex-shrink-0 font-semibold underline hover:no-underline"
-        >
-          Reload
-        </button>
-      </div>
-    )
-  }
+  // --- PWA SW update — persistent toast (won't be missed on small screens) ---
+  const swToastFired = useRef(false)
+  useEffect(() => {
+    if (swUpdated && !swToastFired.current) {
+      swToastFired.current = true
+      toast('App updated in background', {
+        description: 'Reload to activate the new version.',
+        duration: Infinity,
+        action: {
+          label: 'Reload',
+          onClick: () => window.location.reload(),
+        },
+      })
+    }
+  }, [swUpdated])
 
   // --- GitHub release banner ---
   const currentVersion: string = health?.release ?? health?.version ?? ''

@@ -36,7 +36,7 @@ SETTINGS_URL = "http://localhost:8723/settings"
 WEB_URL = "http://localhost:8723/"
 
 LABEL_PREFIX = "dev.chatwire"
-SERVICES = ("bridge", "web", "keepawake")
+SERVICES = ("bridge", "web")
 REFRESH_INTERVAL = 30  # seconds
 
 

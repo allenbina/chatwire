@@ -129,10 +129,12 @@ async def api_send(body: SendRequest, _auth: None = _AUTH):
     try:
         await asyncio.to_thread(check_send_guard, body.handle, body.text, "api")
     except RateLimitError as exc:
-        raise HTTPException(429, str(exc)) from exc
+        raise HTTPException(
+            429, {"message": str(exc), "cooldown_remaining": None, "step": 0}
+        ) from exc
     except BroadcastBlockedError as exc:
         raise HTTPException(
-            429, {"error": str(exc), "retry_after": exc.retry_after}
+            429, {"message": str(exc), "cooldown_remaining": exc.retry_after, "step": exc.step}
         ) from exc
     result = await asyncio.to_thread(send_text_confirm, body.handle, body.text)
     return {"status": result.status, "hint": result.hint, "service": result.service}
@@ -219,3 +221,133 @@ async def api_events(_auth: None = _AUTH):
             f.close()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# Automation rules CRUD — /api/v1/automations
+# ---------------------------------------------------------------------------
+
+def _load_rules() -> list:
+    """Read the chatwire_rules rules list from config."""
+    cfg = _bridge_config.load_config()
+    return list(
+        cfg.get("integrations", {}).get("chatwire_rules", {}).get("rules", [])
+    )
+
+
+def _save_rules(rules: list) -> None:
+    """Persist the rules list back to config."""
+    cfg = _bridge_config.load_config()
+    cfg.setdefault("integrations", {}).setdefault("chatwire_rules", {})["rules"] = rules
+    _bridge_config.save_config(cfg)
+
+
+def _validate_rule_body(body: object) -> dict:
+    """Basic structural validation of a rule object.  Raises HTTPException on error."""
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body must be an object")
+    if not body.get("name"):
+        raise HTTPException(400, "name is required")
+    trigger = body.get("trigger")
+    if not isinstance(trigger, dict) or not trigger.get("type"):
+        raise HTTPException(400, "trigger.type is required")
+    valid_triggers = {"text_exact", "text_contains", "text_regex", "always", "dsl", "on_send", "schedule"}
+    if trigger["type"] not in valid_triggers:
+        raise HTTPException(400, f"trigger.type must be one of: {', '.join(sorted(valid_triggers))}")
+    if trigger["type"] == "dsl" and not trigger.get("expr"):
+        raise HTTPException(400, "trigger.expr is required for dsl trigger type")
+    if trigger["type"] == "schedule" and not trigger.get("cron"):
+        raise HTTPException(400, "trigger.cron is required for schedule trigger type")
+    if not isinstance(body.get("actions"), list):
+        raise HTTPException(400, "actions must be a list")
+    return body  # type: ignore[return-value]
+
+
+@router.get("/automations")
+async def api_automations_list(_auth: None = _AUTH):
+    """Return all automation rules."""
+    rules = await asyncio.to_thread(_load_rules)
+    return {"rules": rules}
+
+
+@router.post("/automations")
+async def api_automations_create(request: Request, _auth: None = _AUTH):
+    """Append a new automation rule.  Returns the index of the created rule."""
+    body = await request.json()
+    _validate_rule_body(body)
+
+    def _add(rule: dict) -> int:
+        rules = _load_rules()
+        rules.append(rule)
+        _save_rules(rules)
+        return len(rules) - 1
+
+    idx = await asyncio.to_thread(_add, body)
+    return {"ok": True, "index": idx}
+
+
+@router.put("/automations/{rule_index}")
+async def api_automations_update(rule_index: int, request: Request, _auth: None = _AUTH):
+    """Replace the automation rule at *rule_index* (0-based)."""
+    body = await request.json()
+    _validate_rule_body(body)
+
+    def _update(idx: int, rule: dict) -> bool:
+        rules = _load_rules()
+        if idx < 0 or idx >= len(rules):
+            return False
+        rules[idx] = rule
+        _save_rules(rules)
+        return True
+
+    ok = await asyncio.to_thread(_update, rule_index, body)
+    if not ok:
+        raise HTTPException(404, "Rule not found")
+    return {"ok": True}
+
+
+@router.delete("/automations/{rule_index}")
+async def api_automations_delete(rule_index: int, _auth: None = _AUTH):
+    """Delete the automation rule at *rule_index* (0-based)."""
+    def _remove(idx: int) -> bool:
+        rules = _load_rules()
+        if idx < 0 or idx >= len(rules):
+            return False
+        rules.pop(idx)
+        _save_rules(rules)
+        return True
+
+    ok = await asyncio.to_thread(_remove, rule_index)
+    if not ok:
+        raise HTTPException(404, "Rule not found")
+    return {"ok": True}
+
+
+@router.post("/automations/reorder")
+async def api_automations_reorder(request: Request, _auth: None = _AUTH):
+    """Reorder automation rules.
+
+    Body: ``{"order": [2, 0, 1]}`` — a permutation of ``range(len(rules))``
+    that specifies the new position of each rule.  ``order[i]`` is the old
+    index of the rule that should end up at position *i*.
+    """
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body must be an object")
+    order = body.get("order")
+    if not isinstance(order, list):
+        raise HTTPException(400, "order must be a list")
+
+    def _reorder(new_order: list) -> str:
+        rules = _load_rules()
+        n = len(rules)
+        if sorted(new_order) != list(range(n)):
+            return "order must be a permutation of rule indices"
+        reordered = [rules[i] for i in new_order]
+        _save_rules(reordered)
+        return ""
+
+    err = await asyncio.to_thread(_reorder, order)
+    if err:
+        raise HTTPException(400, err)
+    return {"ok": True}

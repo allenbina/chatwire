@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from integrations.base import BridgeContext, InboundMessage
+from web import log_stream as _ls
 
 log = logging.getLogger("chatwire.content_filter")
 
@@ -45,6 +46,31 @@ _CATEGORIES = [
 ]
 
 _DEFAULT_EMOJI_POOL = "😤 🤬 💢 🙈 🚫 ⚠️ 🤐"
+
+# Short descriptions shown next to each category toggle in Settings.
+_CATEGORY_META: dict[str, str] = {
+    "profanity": "Swear words and insults",
+    "politics": "Political terms and hot-button phrases",
+    "religion": "Religious terminology",
+    "sex": "Sexual language and innuendo",
+    "money": "Crypto, forex, and finance spam",
+    "body": "Body-shaming and appearance terms",
+    "drugs": "Drug names and slang",
+    "gossip": "Celebrity gossip and tabloid vocabulary",
+    "gambling": "Betting, casino, and sports gambling",
+    "social_media": "Platform names and viral slang",
+    "gaming": "Gaming insults and toxic language",
+    "dietary": "Diet-culture and food-debate terms",
+}
+
+def _category_word_count(name: str) -> int:
+    """Return word count for a category without loading the full list."""
+    path = _DATA_DIR / f"{name}.json"
+    try:
+        with path.open(encoding="utf-8") as fh:
+            return len(json.load(fh))
+    except Exception:
+        return 0
 
 # l33tspeak → canonical character substitutions used in loose mode.
 _L33T_MAP: list[tuple[str, str]] = [
@@ -101,7 +127,7 @@ class ContentFilterIntegration:
     """Built-in integration that replaces filtered words with emoji."""
 
     NAME = "content_filter"
-    TIER = "core"  # Built-in anti-abuse; needs raw text; bypasses sandboxing.
+    TIER = "core"  # System-level text transform; needs raw text before other plugins.
     DISPLAY_NAME = "Content Filter"
     DESCRIPTION = (
         "Replace words/phrases in inbound messages with emoji. "
@@ -116,7 +142,15 @@ class ContentFilterIntegration:
                 "type": "object",
                 "title": "Filter categories",
                 "description": "Enable one or more categories to filter.",
-                "properties": {cat: {"type": "boolean", "default": False, "title": cat.replace("_", " ").title()} for cat in _CATEGORIES},
+                "properties": {
+                    cat: {
+                        "type": "boolean",
+                        "default": False,
+                        "title": cat.replace("_", " ").title(),
+                        "description": f"{_CATEGORY_META.get(cat, '')} ({_category_word_count(cat)} words)",
+                    }
+                    for cat in _CATEGORIES
+                },
                 "default": {cat: False for cat in _CATEGORIES},
             },
             "custom_words": {
@@ -228,8 +262,12 @@ class ContentFilterIntegration:
             return text
 
         if self._mode == "loose":
-            return self._replace_loose(text, pattern)
-        return self._replace_exact(text, pattern)
+            result = self._replace_loose(text, pattern)
+        else:
+            result = self._replace_exact(text, pattern)
+        if result != text:
+            _ls.info("content_filter", "filter match — message content replaced")
+        return result
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -2,6 +2,26 @@
 @import "./styles/themes.css";
 @import "./styles/schemes.css";
 
+/* Body font family — driven by structural theme */
+body {
+  font-family: var(--font-family);
+}
+
+/* Themed scrollbar — respects scheme colors */
+::-webkit-scrollbar {
+  width: var(--scrollbar-width, 8px);
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: var(--radius);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
 /* Screen-reader-only utility — hides element visually but keeps it in the a11y tree */
 .sr-only {
   position: absolute;
@@ -24,6 +44,26 @@
   overflow: visible;
   clip: auto;
   white-space: normal;
+}
+
+/* Reaction panel pop-in — slight overshoot (bounce) like WhatsApp/Telegram */
+@keyframes reaction-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.reaction-panel-enter {
+  animation: reaction-pop 200ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: var(--radix-popover-content-transform-origin);
 }
 
 /* ── Tailwind v4 @theme ──────────────────────────────────────────────────────
@@ -65,9 +105,33 @@
   /* Alias so bg-tertiary keeps working (maps to muted surface) */
   --color-tertiary:             hsl(var(--muted));
 
+  /* Chatwire-specific color utilities */
+  --color-msg-me:               hsl(var(--msg-me));
+  --color-msg-them:             hsl(var(--msg-them));
+  --color-msg-sms:              hsl(var(--msg-sms));
+  --color-msg-sms-text:         hsl(var(--msg-sms-text));
+  --color-sidebar-bg:           hsl(var(--sidebar-bg));
+  --color-info:                 hsl(var(--info));
+  --color-success:              hsl(var(--success));
+  --color-warning:              hsl(var(--warning));
+
   /* Radius utilities — driven by structural theme (themes.css) */
   --radius-sm:  calc(var(--radius) - 4px);
   --radius-md:  calc(var(--radius) - 2px);
   --radius-lg:  var(--radius);
   --radius-xl:  calc(var(--radius) + 4px);
+
+  /* Accordion height animations — Radix provides --radix-accordion-content-height */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up:   accordion-up   0.2s ease-out;
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to   { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to   { height: 0; }
 }

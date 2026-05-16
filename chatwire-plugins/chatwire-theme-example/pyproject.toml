@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chatwire-theme-example"
+version = "1.0.0"
+description = "Template / starter for community Chatwire theme plugins."
+requires-python = ">=3.11"
+
+# ─── Entry-point registration ─────────────────────────────────────────────────
+# The value must be the importable Python package name (the directory that
+# contains __init__.py).  The key can be anything — Chatwire ignores it.
+[project.entry-points."chatwire.themes"]
+chatwire_theme_example = "chatwire_theme_example"
+
+# ─── Chatwire plugin metadata ─────────────────────────────────────────────────
+[tool.chatwire.plugin]
+TIER = "ui"   # "ui" = purely cosmetic; no access to messages or contacts

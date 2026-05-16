@@ -19,6 +19,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ChatPage } from './pages/ChatPage'
 import { LoginPage } from './pages/LoginPage'
 import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { DataWarningModal } from './components/DataWarningModal'
+import { CommandPalette } from './components/CommandPalette'
 
 // Lazy chunks — split out of the main bundle
 const SettingsPage = lazy(() =>
@@ -26,6 +29,15 @@ const SettingsPage = lazy(() =>
 )
 const PopoutPage = lazy(() =>
   import('./pages/PopoutPage').then((m) => ({ default: m.PopoutPage }))
+)
+const PluginsPage = lazy(() =>
+  import('./pages/PluginsPage').then((m) => ({ default: m.PluginsPage }))
+)
+const LogsPage = lazy(() =>
+  import('./pages/LogsPage').then((m) => ({ default: m.LogsPage }))
+)
+const DebugPage = lazy(() =>
+  import('./pages/DebugPage').then((m) => ({ default: m.DebugPage }))
 )
 
 const queryClient = new QueryClient({
@@ -50,6 +62,7 @@ function PageLoading() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <TooltipProvider delayDuration={300}>
       <BrowserRouter basename="/">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -71,10 +84,37 @@ export default function App() {
               </Suspense>
             }
           />
+          <Route
+            path="/plugins"
+            element={
+              <Suspense fallback={<PageLoading />}>
+                <PluginsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/logs"
+            element={
+              <Suspense fallback={<PageLoading />}>
+                <LogsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/debug"
+            element={
+              <Suspense fallback={<PageLoading />}>
+                <DebugPage />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <CommandPalette />
       </BrowserRouter>
+      <DataWarningModal />
       <Toaster />
+      </TooltipProvider>
     </QueryClientProvider>
   )
 }

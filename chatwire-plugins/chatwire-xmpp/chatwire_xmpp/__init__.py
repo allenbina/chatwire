@@ -35,6 +35,39 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Anti-spam error logging helper
+# ---------------------------------------------------------------------------
+
+def _log_send_future_error(fut: Any, label: str) -> None:
+    """Done-callback for run_coroutine_threadsafe futures.
+
+    Logs BroadcastBlockedError / RateLimitError so anti-spam blocks are not
+    silently swallowed.  Never raises.
+    """
+    try:
+        exc = fut.exception()
+    except Exception:
+        return
+    if exc is None:
+        return
+    try:
+        from chat_send import BroadcastBlockedError, RateLimitError  # noqa: PLC0415
+    except ImportError:
+        log.error("%s send failed: %s: %s", label, type(exc).__name__, exc)
+        return
+    if isinstance(exc, BroadcastBlockedError):
+        log.error(
+            "%s blocked by anti-spam fuse (step=%d): %s",
+            label, exc.step, exc,
+        )
+    elif isinstance(exc, RateLimitError):
+        log.warning("%s rate-limited: %s", label, exc)
+    else:
+        log.error("%s send failed: %s: %s", label, type(exc).__name__, exc)
+
+
 # ---------------------------------------------------------------------------
 # Lazy imports: integrations.base only available inside the chatwire install.
 # ---------------------------------------------------------------------------
@@ -279,7 +312,9 @@ class XMPPIntegration:
         loop: asyncio.AbstractEventLoop | None = getattr(
             self._ctx, "_loop", None
         ) or asyncio.get_event_loop()
-        asyncio.run_coroutine_threadsafe(
+        fut = asyncio.run_coroutine_threadsafe(
             self._ctx.send_text(target, body), loop
         )
+        label = f"xmpp:{sender_jid}"
+        fut.add_done_callback(lambda f: _log_send_future_error(f, label))
         log.debug("xmpp: relayed XMPP from %s → iMessage %s", sender_jid, im_handle)

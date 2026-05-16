@@ -152,10 +152,10 @@ class TestRunDoctorChecks:
         )
         assert r["critical_failures"] == 0
 
-    def test_six_checks_returned(self):
-        """Exactly six checks: macOS, Python, FDA, Automation, pipx, sips."""
+    def test_seven_checks_returned(self):
+        """Exactly seven checks: macOS, Python, MCP package, FDA, Automation, pipx, sips."""
         r = self._run()
-        assert len(r["checks"]) == 6
+        assert len(r["checks"]) == 7
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chatwire-theme-rosepine"
+version = "1.0.0"
+description = "Rosé Pine theme family for Chatwire (base, Moon, Dawn variants)."
+requires-python = ">=3.11"
+
+[project.entry-points."chatwire.themes"]
+chatwire_theme_rosepine = "chatwire_theme_rosepine"
+
+[tool.chatwire.plugin]
+TIER = "ui"

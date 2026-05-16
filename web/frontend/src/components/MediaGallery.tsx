@@ -11,6 +11,7 @@
  * navigation (click buttons or ← → arrow keys). Escape closes via Radix.
  */
 import { useState, useEffect } from 'react'
+import { BlurImage } from './BlurImage'
 import {
   Dialog,
   DialogPortal,
@@ -25,7 +26,7 @@ import type { Attachment } from '../api'
 // Lightbox
 // ---------------------------------------------------------------------------
 
-function Lightbox({
+export function Lightbox({
   images,
   startIndex,
   onClose,
@@ -56,6 +57,7 @@ function Lightbox({
         <DialogPrimitive.Content
           className="fixed inset-0 z-50 flex items-center justify-center p-4 focus:outline-none"
           aria-describedby={undefined}
+          onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
         >
           {/* Visually-hidden title: accessible name for the dialog */}
           <DialogTitle className="sr-only">
@@ -159,17 +161,18 @@ export function MediaGallery({ images, senderName, fromMe }: MediaGalleryProps) 
       >
         {shown.map((att, i) => {
           const isLast = i === 3 && overflow > 0
-          const thumbSrc = `/attachment?path=${encodeURIComponent(att.path)}&size=thumb`
+          const thumbSrc = `/attachment?path=${encodeURIComponent(att.path)}&size=small`
           const altText = `Image sent by ${senderName ?? 'You'}`
           return (
-            <div key={i} className="relative aspect-square overflow-hidden bg-card">
+            <div key={i} className="relative aspect-square overflow-hidden bg-card min-h-[100px]">
               <button
                 type="button"
                 className="block w-full h-full"
                 onClick={() => setLightboxIdx(i)}
                 aria-label={altText}
               >
-                <img
+                <BlurImage
+                  attachmentPath={att.path}
                   src={thumbSrc}
                   alt={altText}
                   className="w-full h-full object-cover hover:opacity-90 transition-opacity"

@@ -38,6 +38,7 @@ ALL_SCOPES: tuple[str, ...] = (
     "read_conversations",
     "send_messages",
     "manage_settings",
+    "mcp",
 )
 
 # (method, path_prefix_or_exact, scope)
@@ -48,6 +49,8 @@ _ROUTE_SCOPES: list[tuple[str, str, str]] = [
     ("POST", "/api/v1/send",               "send_messages"),
     ("POST", "/send",                      "send_messages"),
     ("POST", "/api/ui/settings/",          "manage_settings"),
+    ("GET",  "/mcp/",                      "mcp"),
+    ("POST", "/mcp/",                      "mcp"),
 ]
 
 

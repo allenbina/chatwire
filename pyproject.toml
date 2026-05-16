@@ -58,6 +58,9 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=1.27.1",
+]
 dev = [
     "pytest>=7",
 ]

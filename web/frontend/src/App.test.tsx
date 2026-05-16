@@ -51,9 +51,11 @@ function renderWithProviders(initialPath = '/') {
 
 describe('App', () => {
   it('renders without crashing', () => {
+    // jsdom has no layout, so set innerWidth to trigger desktop path
+    Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true })
     renderWithProviders()
-    // The Layout sidebar header should always be present.
-    expect(screen.getAllByText('Chatwire').length).toBeGreaterThan(0)
+    // ChatPage should render (Layout wraps it)
+    expect(document.querySelector('[aria-label="Chat"]')).not.toBeNull()
   })
 
   it('shows the empty-state message on the index route when no conversations exist', async () => {
@@ -62,7 +64,9 @@ describe('App', () => {
     await screen.findByText(/select a conversation/i)
   })
 
-  it('auto-redirects to the first conversation when conversations exist', async () => {
+  it('auto-redirects to the first conversation when conversations exist (desktop)', async () => {
+    // Ensure desktop viewport so AutoRedirect doesn't skip
+    Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true })
     const mockConv: HandleConversation = {
       kind: 'handle',
       handle: '+15551234567',

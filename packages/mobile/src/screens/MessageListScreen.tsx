@@ -117,7 +117,7 @@ export function MessageListScreen({ route }: Props) {
   if (loading) {
     return (
       <View style={[styles.root, styles.center]}>
-        <ActivityIndicator color={COLORS.accent} />
+        <ActivityIndicator testID="loading-indicator" color={COLORS.accent} />
       </View>
     )
   }
@@ -125,11 +125,12 @@ export function MessageListScreen({ route }: Props) {
   return (
     <View style={styles.root}>
       {loadingOlder && (
-        <View style={styles.loadingOlderBar}>
+        <View testID="loading-older" style={styles.loadingOlderBar}>
           <ActivityIndicator size="small" color={COLORS.accent} />
         </View>
       )}
       <FlatList
+        testID="message-list"
         ref={listRef}
         data={[...messages].reverse()}
         keyExtractor={(m) => String(m.rowid)}

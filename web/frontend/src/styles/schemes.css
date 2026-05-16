@@ -49,10 +49,22 @@
   /* Chatwire-specific */
   --msg-me:                      230 15% 24%;
   --msg-them:                    232 14% 31%;
+  --msg-sms:                     135 94% 65%;
+  --msg-sms-text:                231 15% 18%;
   --sidebar-bg:                  235 14% 15%;
   --success:                     135 94% 65%;
   --warning:                     65 92% 76%;
   --info:                        191 97% 77%;
+  /* Tapback tooltip — defaults match the tapback bar (bg-card, border-border/60).
+   * Themes can override independently. Uses hsl() wrappers because components
+   * reference these via arbitrary value syntax (--tapback-tooltip-bg). */
+  --tapback-tooltip-bg:          hsl(var(--card));
+  --tapback-tooltip-text:        hsl(var(--card-foreground));
+  --tapback-tooltip-border:      hsl(var(--border) / 0.6);
+  /* Reaction panel — independently themeable popover for message actions */
+  --reaction-panel-bg:           color-mix(in hsl, hsl(var(--card)), white 12%);
+  --reaction-panel-text:         hsl(var(--card-foreground));
+  --reaction-panel-border:       hsl(var(--border) / 0.6);
   /* Legacy bridge — components using --color-* arbitrary syntax.
    * Defined only in :root; inherits correct values from [data-theme] blocks
    * at use-time because CSS var() is resolved at computed-style time.
@@ -112,6 +124,8 @@
   /* Chatwire-specific */
   --msg-me:                      226 100% 97%;
   --msg-them:                    240 11% 91%;
+  --msg-sms:                     140 72% 26%;
+  --msg-sms-text:                0 0% 100%;
   --sidebar-bg:                  210 25% 98%;
   --success:                     140 72% 26%;
   --warning:                     43 100% 24%;
@@ -152,6 +166,8 @@
   /* Chatwire-specific */
   --msg-me:                      230 16% 30%;
   --msg-them:                    230 16% 30%;
+  --msg-sms:                     96 44% 68%;
+  --msg-sms-text:                229 19% 23%;
   --sidebar-bg:                  231 19% 20%;
   --success:                     96 44% 68%;
   --warning:                     40 62% 73%;
@@ -192,6 +208,8 @@
   /* Chatwire-specific */
   --msg-me:                      223 16% 83%;
   --msg-them:                    223 16% 83%;
+  --msg-sms:                     109 58% 40%;
+  --msg-sms-text:                0 0% 100%;
   --sidebar-bg:                  220 22% 92%;
   --success:                     109 58% 40%;
   --warning:                     35 77% 49%;
@@ -232,6 +250,8 @@
   /* Chatwire-specific */
   --msg-me:                      230 19% 26%;
   --msg-them:                    230 19% 26%;
+  --msg-sms:                     105 48% 72%;
+  --msg-sms-text:                232 23% 18%;
   --sidebar-bg:                  233 23% 15%;
   --success:                     105 48% 72%;
   --warning:                     40 70% 78%;
@@ -272,6 +292,8 @@
   /* Chatwire-specific */
   --msg-me:                      237 16% 23%;
   --msg-them:                    237 16% 23%;
+  --msg-sms:                     115 54% 76%;
+  --msg-sms-text:                240 21% 15%;
   --sidebar-bg:                  240 21% 12%;
   --success:                     115 54% 76%;
   --warning:                     41 86% 83%;
@@ -312,6 +334,8 @@
   /* Chatwire-specific */
   --msg-me:                      214 25% 11%;
   --msg-them:                    214 25% 11%;
+  --msg-sms:                     128 49% 49%;
+  --msg-sms-text:                216 28% 7%;
   --sidebar-bg:                  218 80% 2%;
   --success:                     128 49% 49%;
   --warning:                     41 72% 48%;
@@ -352,6 +376,8 @@
   /* Chatwire-specific */
   --msg-me:                      210 24% 93%;
   --msg-them:                    210 24% 93%;
+  --msg-sms:                     137 66% 30%;
+  --msg-sms-text:                0 0% 100%;
   --sidebar-bg:                  210 29% 97%;
   --success:                     137 66% 30%;
   --warning:                     40 100% 30%;
@@ -392,6 +418,8 @@
   /* Chatwire-specific */
   --msg-me:                      20 5% 22%;
   --msg-them:                    20 5% 22%;
+  --msg-sms:                     142 72% 43%;
+  --msg-sms-text:                0 0% 16%;
   --sidebar-bg:                  195 6% 12%;
   --success:                     61 66% 44%;
   --warning:                     42 95% 58%;
@@ -432,6 +460,8 @@
   /* Chatwire-specific */
   --msg-me:                      46 67% 84%;
   --msg-them:                    46 67% 84%;
+  --msg-sms:                     122 39% 42%;
+  --msg-sms-text:                48 87% 88%;
   --sidebar-bg:                  53 74% 91%;
   --success:                     57 79% 26%;
   --warning:                     37 80% 39%;
@@ -472,6 +502,8 @@
   /* Chatwire-specific */
   --msg-me:                      207 64% 15%;
   --msg-them:                    207 48% 22%;
+  --msg-sms:                     84 62% 63%;
+  --msg-sms-text:                207 95% 8%;
   --sidebar-bg:                  211 93% 5%;
   --success:                     84 62% 63%;
   --warning:                     35 71% 74%;
@@ -512,6 +544,8 @@
   /* Chatwire-specific */
   --msg-me:                      222 16% 28%;
   --msg-them:                    222 16% 28%;
+  --msg-sms:                     92 28% 65%;
+  --msg-sms-text:                220 16% 22%;
   --sidebar-bg:                  221 16% 19%;
   --success:                     92 28% 65%;
   --warning:                     40 71% 73%;
@@ -552,6 +586,8 @@
   /* Chatwire-specific */
   --msg-me:                      219 14% 20%;
   --msg-them:                    221 13% 28%;
+  --msg-sms:                     95 38% 62%;
+  --msg-sms-text:                220 13% 18%;
   --sidebar-bg:                  216 13% 15%;
   --success:                     95 38% 62%;
   --warning:                     39 67% 69%;
@@ -592,130 +628,12 @@
   /* Chatwire-specific */
   --msg-me:                      240 3% 93%;
   --msg-them:                    240 2% 90%;
+  --msg-sms:                     119 34% 47%;
+  --msg-sms-text:                0 0% 100%;
   --sidebar-bg:                  0 0% 96%;
   --success:                     119 34% 47%;
   --warning:                     41 99% 30%;
   --info:                        198 99% 37%;
-}
-
-/* ── rose-pine ───────────────────────────────────────────────────────────── */
-[data-theme="rose-pine"] {
-  /* shadcn standard */
-  --background:                  249 22% 12%;
-  --foreground:                  245 50% 91%;
-  --card:                        249 15% 28%;
-  --card-foreground:             245 50% 91%;
-  --popover:                     249 15% 28%;
-  --popover-foreground:          245 50% 91%;
-  --primary:                     267 57% 78%;
-  --primary-foreground:          249 22% 12%;
-  --secondary:                   249 15% 28%;
-  --secondary-foreground:        245 50% 91%;
-  --muted:                       247 23% 15%;
-  --muted-foreground:            248 15% 61%;
-  --accent:                      249 15% 28%;
-  --accent-foreground:           245 50% 91%;
-  --destructive:                 343 76% 68%;
-  --destructive-foreground:      245 50% 91%;
-  --border:                      249 15% 28%;
-  --input:                       249 15% 28%;
-  --ring:                        267 57% 78%;
-  /* Sidebar (shadcn sidebar tokens) */
-  --sidebar:                     247 23% 15%;
-  --sidebar-foreground:          245 50% 91%;
-  --sidebar-primary:             267 57% 78%;
-  --sidebar-primary-foreground:  249 22% 12%;
-  --sidebar-accent:              249 15% 28%;
-  --sidebar-accent-foreground:   245 50% 91%;
-  --sidebar-border:              249 15% 28%;
-  --sidebar-ring:                267 57% 78%;
-  /* Chatwire-specific */
-  --msg-me:                      248 25% 18%;
-  --msg-them:                    248 25% 18%;
-  --sidebar-bg:                  247 23% 15%;
-  --success:                     189 43% 73%;
-  --warning:                     35 88% 72%;
-  --info:                        197 49% 38%;
-}
-
-/* ── rose-pine-dawn ──────────────────────────────────────────────────────── */
-[data-theme="rose-pine-dawn"] {
-  /* shadcn standard */
-  --background:                  32 57% 95%;
-  --foreground:                  248 19% 40%;
-  --card:                        315 4% 80%;
-  --card-foreground:             248 19% 40%;
-  --popover:                     315 4% 80%;
-  --popover-foreground:          248 19% 40%;
-  --primary:                     268 21% 57%;
-  --primary-foreground:          32 57% 95%;
-  --secondary:                   315 4% 80%;
-  --secondary-foreground:        248 19% 40%;
-  --muted:                       28 40% 92%;
-  --muted-foreground:            248 12% 52%;
-  --accent:                      315 4% 80%;
-  --accent-foreground:           248 19% 40%;
-  --destructive:                 343 35% 55%;
-  --destructive-foreground:      248 19% 40%;
-  --border:                      315 4% 80%;
-  --input:                       315 4% 80%;
-  --ring:                        268 21% 57%;
-  /* Sidebar (shadcn sidebar tokens) */
-  --sidebar:                     28 40% 92%;
-  --sidebar-foreground:          248 19% 40%;
-  --sidebar-primary:             268 21% 57%;
-  --sidebar-primary-foreground:  32 57% 95%;
-  --sidebar-accent:              315 4% 80%;
-  --sidebar-accent-foreground:   248 19% 40%;
-  --sidebar-border:              315 4% 80%;
-  --sidebar-ring:                268 21% 57%;
-  /* Chatwire-specific */
-  --msg-me:                      30 27% 90%;
-  --msg-them:                    28 40% 92%;
-  --sidebar-bg:                  28 40% 92%;
-  --success:                     197 53% 34%;
-  --warning:                     35 81% 56%;
-  --info:                        189 30% 48%;
-}
-
-/* ── rose-pine-moon ──────────────────────────────────────────────────────── */
-[data-theme="rose-pine-moon"] {
-  /* shadcn standard */
-  --background:                  246 24% 17%;
-  --foreground:                  245 50% 91%;
-  --card:                        247 16% 30%;
-  --card-foreground:             245 50% 91%;
-  --popover:                     247 16% 30%;
-  --popover-foreground:          245 50% 91%;
-  --primary:                     267 57% 78%;
-  --primary-foreground:          246 24% 17%;
-  --secondary:                   247 16% 30%;
-  --secondary-foreground:        245 50% 91%;
-  --muted:                       248 24% 20%;
-  --muted-foreground:            248 15% 61%;
-  --accent:                      247 16% 30%;
-  --accent-foreground:           245 50% 91%;
-  --destructive:                 343 76% 68%;
-  --destructive-foreground:      245 50% 91%;
-  --border:                      247 16% 30%;
-  --input:                       247 16% 30%;
-  --ring:                        267 57% 78%;
-  /* Sidebar (shadcn sidebar tokens) */
-  --sidebar:                     248 24% 20%;
-  --sidebar-foreground:          245 50% 91%;
-  --sidebar-primary:             267 57% 78%;
-  --sidebar-primary-foreground:  246 24% 17%;
-  --sidebar-accent:              247 16% 30%;
-  --sidebar-accent-foreground:   245 50% 91%;
-  --sidebar-border:              247 16% 30%;
-  --sidebar-ring:                267 57% 78%;
-  /* Chatwire-specific */
-  --msg-me:                      248 21% 26%;
-  --msg-them:                    248 21% 26%;
-  --sidebar-bg:                  248 24% 20%;
-  --success:                     189 43% 73%;
-  --warning:                     35 88% 72%;
-  --info:                        197 48% 47%;
 }
 
 /* ── solarized-dark ──────────────────────────────────────────────────────── */
@@ -752,6 +670,8 @@
   /* Chatwire-specific */
   --msg-me:                      192 81% 14%;
   --msg-them:                    192 81% 14%;
+  --msg-sms:                     68 100% 30%;
+  --msg-sms-text:                192 100% 11%;
   --sidebar-bg:                  192 100% 8%;
   --success:                     68 100% 30%;
   --warning:                     45 100% 35%;
@@ -792,6 +712,8 @@
   /* Chatwire-specific */
   --msg-me:                      46 42% 88%;
   --msg-them:                    46 42% 88%;
+  --msg-sms:                     68 100% 30%;
+  --msg-sms-text:                44 87% 94%;
   --sidebar-bg:                  47 62% 90%;
   --success:                     68 100% 30%;
   --warning:                     45 100% 35%;
@@ -832,6 +754,8 @@
   /* Chatwire-specific */
   --msg-me:                      228 23% 21%;
   --msg-them:                    228 23% 21%;
+  --msg-sms:                     89 51% 61%;
+  --msg-sms-text:                235 19% 13%;
   --sidebar-bg:                  240 15% 10%;
   --success:                     89 51% 61%;
   --warning:                     36 66% 64%;
@@ -873,6 +797,8 @@
     /* Chatwire-specific */
     --msg-me:                      230 15% 24%;
     --msg-them:                    232 14% 31%;
+    --msg-sms:                     135 94% 65%;
+    --msg-sms-text:                231 15% 18%;
     --sidebar-bg:                  235 14% 15%;
     --success:                     135 94% 65%;
     --warning:                     65 92% 76%;
@@ -914,6 +840,8 @@
     /* Chatwire-specific */
     --msg-me:                      210 24% 93%;
     --msg-them:                    210 24% 93%;
+    --msg-sms:                     137 66% 30%;
+    --msg-sms-text:                0 0% 100%;
     --sidebar-bg:                  210 29% 97%;
     --success:                     137 66% 30%;
     --warning:                     40 100% 30%;

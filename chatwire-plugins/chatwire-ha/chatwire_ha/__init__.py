@@ -15,11 +15,20 @@ Then add to config.json:
             {"keyword": "lights off", "domain": "light", "service": "turn_off",
              "entity_id": "light.living_room", "description": "Living room lights off"},
             {"keyword": "good night", "domain": "scene", "service": "turn_on",
-             "entity_id": "scene.night_mode", "description": "Night mode scene"}
+             "entity_id": "scene.night_mode", "description": "Night mode scene",
+             "allowed_senders": ["+15551234567", "alice@example.com"]}
           ]
         }
       }
     }
+
+Per-command ``allowed_senders``
+-------------------------------
+Each command entry accepts an optional ``allowed_senders`` list.  When present
+and non-empty, only messages from handles in that list trigger the command.
+Matching is case-insensitive (email addresses) and exact (phone numbers).
+An absent or empty ``allowed_senders`` list means *any* sender may trigger the
+command (the pre-existing, backward-compatible behaviour).
 """
 from __future__ import annotations
 
@@ -119,6 +128,16 @@ class HAIntegration:
                             "title": "Description",
                             "description": "Human-readable label sent back as the reply.",
                         },
+                        "allowed_senders": {
+                            "type": "array",
+                            "title": "Allowed senders",
+                            "description": (
+                                "Optional list of handles (phone numbers or email addresses) "
+                                "that may trigger this command. Empty = anyone can trigger it."
+                            ),
+                            "items": {"type": "string"},
+                            "default": [],
+                        },
                     },
                     "required": ["keyword", "domain", "service", "entity_id", "description"],
                 },
@@ -136,15 +155,18 @@ class HAIntegration:
         commands_raw: list[dict] = config.get("commands") or []
 
         # Build lowercased-keyword → command mapping once at startup.
-        self._commands: dict[str, dict[str, str]] = {}
+        self._commands: dict[str, dict] = {}
         for cmd in commands_raw:
             kw = (cmd.get("keyword") or "").strip().lower()
             if kw:
+                raw_senders: list = cmd.get("allowed_senders") or []
                 self._commands[kw] = {
                     "domain": cmd.get("domain", ""),
                     "service": cmd.get("service", ""),
                     "entity_id": cmd.get("entity_id", ""),
                     "description": cmd.get("description", ""),
+                    # frozenset for O(1) lookup; lowercased for case-insensitive match.
+                    "allowed_senders": frozenset(s.lower() for s in raw_senders if s),
                 }
 
         self._ctx: Any = None
@@ -186,6 +208,17 @@ class HAIntegration:
         cmd = self._commands.get(text)
         if cmd is None:
             return  # not a recognised keyword
+
+        # Allowed-sender filter: if the command has a non-empty allowed_senders
+        # set, only proceed when the message sender is in that set.
+        allowed = cmd["allowed_senders"]
+        if allowed and (msg.handle or "").lower() not in allowed:
+            log.debug(
+                "chatwire_ha: handle %r not in allowed_senders for keyword %r — skipped",
+                msg.handle,
+                text,
+            )
+            return
 
         domain = cmd["domain"]
         service = cmd["service"]

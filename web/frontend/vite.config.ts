@@ -98,22 +98,58 @@ export default defineConfig({
               },
             },
           },
-          // Avatars / attachments — StaleWhileRevalidate
+          // Thumbnail attachments (size=small or size=thumb) — CacheFirst.
+          // These are deterministic resized JPEGs keyed by (path, mtime),
+          // so it's safe to serve from cache. Dramatically speeds up
+          // repeat conversation views, especially on mobile.
           {
-            urlPattern: /\/(avatar|attachment)/,
-            handler: 'StaleWhileRevalidate',
+            urlPattern: ({ url }: { url: URL }) =>
+              url.pathname === '/attachment' &&
+              (url.searchParams.get('size') === 'small' ||
+               url.searchParams.get('size') === 'thumb'),
+            handler: 'CacheFirst',
             options: {
-              cacheName: 'media-cache',
+              cacheName: 'thumb-cache',
               expiration: {
-                maxEntries: 200,
-                maxAgeSeconds: 7 * 24 * 60 * 60,
+                maxEntries: 2000,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
               },
             },
           },
+          // Avatars — CacheFirst with shorter TTL (avatars change rarely).
+          {
+            urlPattern: ({ url }: { url: URL }) =>
+              url.pathname === '/avatar',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'avatar-cache',
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days
+              },
+            },
+          },
+          // Full-size attachments — NetworkOnly (too large to cache).
+          {
+            urlPattern: ({ url }: { url: URL }) =>
+              url.pathname === '/attachment',
+            handler: 'NetworkOnly',
+          },
         ],
-        // Offline fallback: serve the SPA shell when a navigation fails
+        // Offline fallback: serve the SPA shell when a navigation fails.
+        // Exclude API / media endpoints so the SW never intercepts them.
         navigateFallback: '/index.html',
         navigateFallbackAllowlist: [/^\//],
+        navigateFallbackDenylist: [
+          /^\/attachment(\?|\/|$)/,
+          /^\/avatar(\?|\/|$)/,
+          /^\/api\//,
+          /^\/send(\?|$)/,
+          /^\/events(\?|$)/,
+          /^\/healthz(\?|$)/,
+          /^\/login(\?|$)/,
+          /^\/logout(\?|$)/,
+        ],
       },
     }),
   ],

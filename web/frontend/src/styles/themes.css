@@ -12,12 +12,41 @@
   --radius:              1rem;
   --radius-bubble:       1.25rem;
   --radius-input:        9999px;
-  --spacing-message:     0.75rem;
+  --spacing-message:     1rem;
   --spacing-sidebar:     0.625rem;
-  --font-size-message:   0.875rem;
+  --font-size-message:   1rem;
   --font-size-sidebar:   0.875rem;
   --shadow-card:         0 1px 2px rgba(0,0,0,.05);
   --sidebar-width:       320px;
+
+  /* Icon sizing */
+  --icon-size-sm:        0.875rem;
+  --icon-size-md:        1rem;
+  --icon-size-lg:        1.25rem;
+  --icon-stroke:         2;
+
+  /* Font family */
+  --font-family:         'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Scrollbar */
+  --scrollbar-width:     8px;
+
+  /* Background images */
+  --sidebar-bg-image:    none;
+  --header-bg-image:     none;
+
+  /* Decoration slots */
+  --avatar-shape:        9999px;
+  --avatar-size:         2.5rem;
+  --avatar-border:       none;
+  --bubble-shadow:       none;
+  --bubble-tail:         0.125rem;
+  --header-shadow:       none;
+  --header-border:       1px;
+  --sidebar-divider:     1px;
+  --sidebar-active-radius: 0;
+  --border-width:        1px;
+  --transition-speed:    150ms;
 }
 
 [data-style="compact"] {
@@ -30,6 +59,35 @@
   --font-size-sidebar:   0.8125rem;
   --shadow-card:         none;
   --sidebar-width:       280px;
+
+  /* Icon sizing — slightly smaller for compact */
+  --icon-size-sm:        0.75rem;
+  --icon-size-md:        0.8125rem;
+  --icon-size-lg:        1rem;
+  --icon-stroke:         2;
+
+  /* Font family */
+  --font-family:         'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Scrollbar */
+  --scrollbar-width:     8px;
+
+  /* Background images */
+  --sidebar-bg-image:    none;
+  --header-bg-image:     none;
+
+  /* Decoration slots */
+  --avatar-shape:        9999px;
+  --avatar-size:         2rem;
+  --avatar-border:       none;
+  --bubble-shadow:       none;
+  --bubble-tail:         0.125rem;
+  --header-shadow:       none;
+  --header-border:       1px;
+  --sidebar-divider:     1px;
+  --sidebar-active-radius: 0.5rem;
+  --border-width:        1px;
+  --transition-speed:    100ms;
 }
 
 [data-style="flat"] {
@@ -42,4 +100,33 @@
   --font-size-sidebar:   0.875rem;
   --shadow-card:         none;
   --sidebar-width:       320px;
+
+  /* Icon sizing — same as default */
+  --icon-size-sm:        0.875rem;
+  --icon-size-md:        1rem;
+  --icon-size-lg:        1.25rem;
+  --icon-stroke:         2;
+
+  /* Font family */
+  --font-family:         'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Scrollbar */
+  --scrollbar-width:     8px;
+
+  /* Background images */
+  --sidebar-bg-image:    none;
+  --header-bg-image:     none;
+
+  /* Decoration slots */
+  --avatar-shape:        4px;
+  --avatar-size:         2.5rem;
+  --avatar-border:       none;
+  --bubble-shadow:       none;
+  --bubble-tail:         0;
+  --header-shadow:       none;
+  --header-border:       0px;
+  --sidebar-divider:     0px;
+  --sidebar-active-radius: 0;
+  --border-width:        0px;
+  --transition-speed:    150ms;
 }

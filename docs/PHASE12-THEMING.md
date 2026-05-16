@@ -117,7 +117,36 @@ mapping. Both survive the build.
 --font-size-sidebar    Sidebar text size
 --shadow-card          Card shadow
 --sidebar-width        Sidebar width
+--icon-size-sm         Small icon size (14px default)
+--icon-size-md         Medium icon size (16px default)
+--icon-size-lg         Large icon size (20px default)
+--icon-stroke          SVG stroke width (2 default)
+--font-family          App font stack
+--scrollbar-width      Scrollbar width (8px default)
+--sidebar-bg-image     Sidebar background image (none default)
+--header-bg-image      Header background image (none default)
 ```
+
+## Style Guide / Debug Page
+
+Navigate to `/debug` to see a live reference of every themed token:
+
+- **Color swatches** — all shadcn, sidebar, and chatwire-specific colors
+- **Surfaces** — bg-background through bg-destructive with sample text
+- **Typography** — font weights, size vars, font family
+- **Structural vars** — computed values of every radius/spacing/shadow/icon var
+- **Border radii** — visual boxes for each radius token
+- **Message bubbles** — outgoing iMessage, incoming, SMS
+- **Tapback bar** — hoverable emoji bar with themed Radix tooltip
+- **Badges, buttons, avatars** — all component variants
+- **Reply quote** — ghost bubble + connector, both directions
+- **Sidebar items** — active, group, unread
+- **Icons** — all 26 lucide + 14 inline SVGs, at each size var
+- **Scrollbar** — themed scrollbar demo
+- **Background images** — current var values
+
+The page updates live when you switch themes from Settings. Use it to
+verify theme correctness and decide which tokens to override.
 
 ## Hex → HSL Conversion
 

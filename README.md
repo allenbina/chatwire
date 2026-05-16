@@ -24,10 +24,25 @@ you're away from your Mac. chatwire fixes that.
   chat. The service drives Messages.app via AppleScript to send back as you.
 - **Group chats.** First-class support. Replies route by chat GUID so group
   conversations stay intact across surfaces.
-- **Plugins.** Extend chatwire with notification services (ntfy, Pushover),
-  messaging stats, favorites, and more. Plugins get auto-generated settings
-  sections in the web UI. [Build your own](docs/OPEN_SOURCE_PLAN.md) or
-  install community plugins with `pipx inject`.
+- **Automation rules.** A condition/action rules engine fires on every
+  inbound message (or on outbound sends, or on a cron schedule). Actions include
+  auto-reply, webhook, suppress, and log. A human-readable DSL lets you write
+  `from:Alice AND contains:urgent` instead of clicking through dropdowns.
+  Rules live in `~/.chatwire/rules.json` and are fully editable from the
+  Settings UI.
+- **Anti-spam protection.** A six-step message fuse automatically pauses
+  outbound sends if an abnormal send rate is detected — stepping through
+  counting, timed cooldown, and a permanent lockout requiring an unlock code.
+  The UI shows a live-countdown banner and a persistent warning bar so you
+  always know the fuse state.
+- **Hiatus mode.** Pause outbound messaging on a schedule or on demand.
+  A sidebar indicator and End button let you manage hiatus without navigating
+  to Settings. Supports a configurable reminder contacts list and pinnable
+  toggles in the sidebar footer.
+- **Plugins.** Extend chatwire with notification services (ntfy), Telegram
+  relay, MQTT broker, Home Assistant, XMPP, and more. Plugins get
+  auto-generated settings sections in the web UI. [Build your own](docs/OPEN_SOURCE_PLAN.md)
+  or install community plugins with `pipx inject`.
 
 ## Requirements
 
@@ -132,8 +147,30 @@ to `/app/` automatically.
 
 - **Real-time chat** — SSE stream + react-query polling, optimistic sends,
   group chat with sender names.
-- **Full settings** — all settings sections ported from the Jinja2 UI: themes,
-  notifications, whitelist, plugins, export, and more.
+- **Rich message display** — tapback reaction badges (❤️ 👍 👎 😂 ‼️ ❓ 🎉),
+  read receipts ("Read at H:MM AM/PM"), iOS-style quoted-reply ghost bubbles
+  (click to scroll to original), "edited" badge (macOS 13+), location share
+  cards, sticker/Memoji display, SMS text-pattern reaction fallback, and
+  tapback corner overlays.
+- **Automation rules** — rule builder dialog with condition and action
+  dropdowns, DSL toggle for raw grammar (`from:Alice AND contains:urgent`),
+  `on_send` and cron schedule triggers, rule reordering with ↑/↓ buttons,
+  and enable/disable toggles per rule.
+- **Anti-spam / message fuse** — CooldownBanner with live countdown at
+  fuse steps 1-3, LockoutTopBanner (persistent warning bar across all pages)
+  at steps 4+, and LockoutFooterNote in the compose area replacing the textarea
+  when locked out.
+- **Hiatus mode** — sidebar indicator and "End" button, live countdown in the
+  sidebar and Settings, reminder contacts picker, and pinnable toggles in the
+  sidebar footer.
+- **Theme system** — per-theme CSS variable editor, custom CSS overrides per
+  theme pack (sanitized), theme ZIP export/import, sliding hover highlight,
+  unified color-scheme dropdown with sun/moon toggle, and Rose Pine theme
+  plugin (Moon / Dawn / Main schemes).
+- **Full settings** — all settings sections: themes, notifications, whitelist,
+  automation rules, anti-spam, plugins, export, structured log viewer, and more.
+- **Data exposure warning** — a dismissable modal on first launch explains
+  which data chatwire can access; not shown again once acknowledged.
 - **PWA** — installable on desktop and mobile. Workbox service worker handles
   offline access (cached conversations and messages), background sync (unsent
   messages are queued and retried on reconnect), and auto-update notifications.
@@ -141,8 +178,11 @@ to `/app/` automatically.
   into named slots (`sidebar.panel`, `message.toolbar`, `compose.extension`,
   `settings.page`). The built-in StatsWidget uses the `sidebar.panel` slot.
 - **Performance** — message list is virtualised with `@tanstack/react-virtual`
-  (renders ≤ 30 DOM nodes regardless of conversation length). Settings and
-  Popout pages are lazy-loaded (separate chunks, not in the main bundle).
+  (renders ≤ 30 DOM nodes regardless of conversation length). HEIC attachments
+  are converted to JPEG once and cached (`~/.chatwire/img_cache/`) with a
+  startup warmer that pre-converts recent photos before the first UI request.
+  Settings and Popout pages are lazy-loaded (separate chunks, not in the main
+  bundle).
 
 ### PWA install
 
@@ -294,12 +334,21 @@ bridge.py             message relay loop + integration dispatcher
 chat_db.py            reads chat.db, HEIC -> JPEG via sips
 chat_send.py          osascript wrappers (send_text, send_file)
 config.py             config.json loader
-chatwire_cli.py       CLI: setup / install-agents / doctor / logs / migrate
+chatwire_cli.py       CLI: setup / install-agents / doctor / logs / status / migrate
 contacts.py           Contacts.app -> handle/name lookup
 echo_log.py           cross-process echo dedup
 whitelist.py          runtime-mutable contact allowlist
+rules.py              automation rules engine (loads ~/.chatwire/rules.json)
 _version.py           semver source of truth
-integrations/         built-in plugins (web, webhook, stats, favorites)
+integrations/         built-in plugins (web, stats, favorites)
+chatwire-plugins/     standalone plugin packages
+  chatwire-ntfy/      ntfy notification plugin
+  chatwire-telegram/  Telegram relay plugin
+  chatwire-webhook/   Webhook output plugin
+  chatwire-mqtt/      MQTT broker relay plugin
+  chatwire-ha/        Home Assistant plugin
+  chatwire-xmpp/      XMPP relay plugin
+  chatwire-theme-rosepine/  Rose Pine theme (Moon / Dawn / Main)
 packages/sdk/         chatwire-sdk Python package (BaseIntegration, plugin CLI)
 packages/shared/      @chatwire/shared TypeScript types + ChaiwireClient (web + mobile)
 packages/mobile/      React Native + Expo mobile app (iOS + Android)
@@ -314,6 +363,9 @@ templates/launchd/    plist templates rendered by install-agents
 scripts/              install.sh, chatwire-loop.sh (dev automation)
 docs/                 OPEN_SOURCE_PLAN.md, REFERENCE_INSTALL.md, HANDOFF.md,
                       PLUGIN_DEVELOPMENT.md, master-migration-plan.md
+docs/wiki/            Developer reference: architecture, disk layout, permissions,
+                      plugin development, install/uninstall
+docs/admin/           Admin guides: unlock-setup.md
 ```
 
 ## Trademarks
@@ -337,6 +389,11 @@ if you want to build an integration, or browse the
 [open issues](https://github.com/allenbina/chatwire/issues) to find something
 to pick up.
 
+The [developer wiki](docs/wiki/) covers architecture, disk layout, macOS
+permissions, plugin development, and install/uninstall in detail.
+See the [macOS compatibility matrix](docs/wiki/compatibility.md) for a
+feature-by-feature breakdown across macOS 12–15 and hardware configurations.
+
 **Looking for beta testers.** If you have a Mac with iMessage and want to
 try chatwire, [open an issue](https://github.com/allenbina/chatwire/issues)
 with your setup details and we'll get you running.
@@ -345,19 +402,3 @@ with your setup details and we'll get you running.
 
 If chatwire is useful to you, consider
 [sponsoring the project](https://github.com/sponsors/allenbina).
-
----
-
-## Contributing
-
-We welcome contributors at all levels.  See [CONTRIBUTING.md](./CONTRIBUTING.md) to
-get started.
-
-Issues labeled [`good-first-issue`](../../issues?q=label%3Agood-first-issue) are a
-great starting point.
-
-[![GitHub issues](https://img.shields.io/github/issues/allenbina/chatwire)](../../issues)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/allenbina/chatwire)](../../pulls)
-
-> **Privacy:** Never include real phone numbers, contact names, or message content
-> in issues, PRs, or screenshots. Use fake data. See CONTRIBUTING.md for details.

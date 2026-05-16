@@ -14,6 +14,7 @@
  *   - renders "Failed to load messages." on network error
  *   - renders with optimistic messages appended after server messages
  *   - EMPTY_OPTIMISTIC: handle absent from store uses stable reference (no loop)
+ *   - message rows use --spacing-message CSS variable for vertical padding
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -21,31 +22,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MessageList } from './MessageList'
 import { useChatStore } from '../store'
 import type { Message } from '../api'
-
-// ---------------------------------------------------------------------------
-// Mock @tanstack/react-virtual
-//
-// jsdom has no real layout engine: scroll container dimensions are 0, so the
-// default virtualizer renders 0 items regardless of count.  We replace it
-// with a minimal stub that returns every item unconditionally, matching the
-// component's usage surface (getVirtualItems, getTotalSize, scrollToIndex,
-// measureElement).
-// ---------------------------------------------------------------------------
-vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: ({ count, estimateSize }: { count: number; estimateSize: () => number }) => ({
-    getVirtualItems: () =>
-      Array.from({ length: count }, (_, i) => ({
-        index: i,
-        start: i * estimateSize(),
-        size: estimateSize(),
-        key: i,
-        lane: 0,
-      })),
-    getTotalSize: () => count * estimateSize(),
-    scrollToIndex: vi.fn(),
-    measureElement: vi.fn(),
-  }),
-}))
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,9 +90,6 @@ describe('MessageList', () => {
 
   it('shows "No messages yet." when server returns empty list — no infinite loop', async () => {
     // REGRESSION TEST: the EMPTY_OPTIMISTIC fix.
-    // With the old code, returning `[]` from the selector on each render would
-    // cause React's "Maximum update depth exceeded" error.  This test verifies
-    // the component renders and reaches a stable state with an empty message list.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(messagesResponse([])))
 
     renderMessageList('+15550001111')
@@ -125,8 +98,6 @@ describe('MessageList', () => {
       expect(screen.getByText(/no messages yet/i)).toBeInTheDocument()
     })
 
-    // The store for this handle has no entry → EMPTY_OPTIMISTIC is used.
-    // Component must be stable (not re-rendering infinitely) to reach here.
     expect(screen.queryByText(/loading messages/i)).not.toBeInTheDocument()
   })
 
@@ -180,22 +151,31 @@ describe('MessageList', () => {
     expect(screen.getByText('Optimistic message')).toBeInTheDocument()
   })
 
+  it('message rows use --spacing-message CSS variable for vertical padding', async () => {
+    const messages = [
+      makeMessage({ rowid: 1, text: 'Check spacing', from_me: false }),
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(messagesResponse(messages)))
+    const { container } = renderMessageList('+15550001111')
+
+    await waitFor(() => {
+      expect(screen.getByText('Check spacing')).toBeInTheDocument()
+    })
+
+    const rowDiv = container.querySelector('[data-rowid]')
+    expect(rowDiv).not.toBeNull()
+    const style = rowDiv!.getAttribute('style')!
+    expect(style).toContain('--spacing-message')
+  })
+
   it('uses stable EMPTY_OPTIMISTIC reference for handles absent from store', async () => {
-    // Captures the exact scenario the fix addresses: a handle that has never
-    // had optimistic messages.  The store returns undefined for that key, so
-    // the selector falls back to EMPTY_OPTIMISTIC.  If the fallback were an
-    // inline `[]`, React would detect a new reference each render and loop
-    // forever.  We verify the component reaches a stable rendered state.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(messagesResponse([])))
 
     const handle = '+15550003333'
-    // Ensure the handle is NOT in the store at all.
     expect(useChatStore.getState().optimistic[handle]).toBeUndefined()
 
     renderMessageList(handle)
 
-    // If there were an infinite render loop, waitFor would time out or React
-    // would throw before this assertion is reached.
     await waitFor(() => {
       expect(screen.getByText(/no messages yet/i)).toBeInTheDocument()
     })

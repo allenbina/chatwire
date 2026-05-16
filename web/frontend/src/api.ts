@@ -21,14 +21,23 @@ export interface Attachment {
 }
 
 export interface LinkPreview {
-  title?: string
+  /** The target URL. */
   url?: string
+  /** Registered domain extracted from url (e.g. "apple.com"). */
+  domain?: string
+  /** Absolute path to the preview image on the local filesystem. */
+  image_path?: string
+  /** Optional title (OG or page title, populated by some future backends). */
+  title?: string
+  /** Optional description (OG description). */
   description?: string
+  /** External image URL (used by future OG-fetching backends). */
   image_url?: string
 }
 
 export interface Message {
   rowid: number
+  guid?: string
   date: number
   from_me: boolean
   ts: string
@@ -38,9 +47,22 @@ export interface Message {
   // delivery fields (from_me only)
   status?: string
   service?: string
+  // read receipt (from_me iMessage only)
+  read?: boolean
+  read_at?: string
+  // tapback reactions (any message) — {type, senders: [{name, time}]}
+  tapbacks?: { type: string; senders: { name: string; time: string }[] }[]
+  // inline reply context (any message that is a reply)
+  reply_to?: { rowid: number; text: string; sender: string; image_path?: string }
+  // location share
+  location?: { lat: number | null; lon: number | null; maps_url: string | null }
+  // set client-side when an iMessage → SMS fallback pair is collapsed into one bubble
+  fell_back_to_sms?: boolean
   // group chat fields (incoming only)
   sender_handle?: string
   sender_name?: string
+  // edited message flag — true when message has been edited (macOS 13+)
+  edited?: boolean
 }
 
 /** 1:1 conversation. */
@@ -206,12 +228,48 @@ export async function sendMessage(
   id: string,
   text: string,
   isGroup = false,
+  replyToGuid = '',
 ): Promise<{ status: string; hint: string; service: string }> {
+  const payload = isGroup
+    ? { handle: '', guid: id, text, reply_to_guid: replyToGuid }
+    : { handle: id, text, reply_to_guid: replyToGuid }
   return fetchJson('/api/ui/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(isGroup ? { handle: '', guid: id, text } : { handle: id, text }),
+    body: JSON.stringify(payload),
   })
+}
+
+// ---------------------------------------------------------------------------
+// Tapback / Edit / Unsend
+// ---------------------------------------------------------------------------
+
+export async function sendTapback(rowid: number, type: string): Promise<void> {
+  await fetchJson('/api/ui/tapback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rowid, type }),
+  })
+}
+
+export async function unsendMessage(rowid: number): Promise<void> {
+  await fetchJson('/api/ui/unsend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rowid }),
+  })
+}
+
+export async function editMessage(rowid: number, text: string): Promise<void> {
+  await fetchJson('/api/ui/edit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rowid, text }),
+  })
+}
+
+export async function getMacosVersion(): Promise<{ major: number; minor: number }> {
+  return fetchJson('/api/ui/macos-version')
 }
 
 export async function sendFile(
@@ -302,4 +360,28 @@ export async function fetchContactInfo(id: string, isGroup: boolean): Promise<Co
 export async function removeFromWhitelist(id: string, isGroup: boolean): Promise<void> {
   const params = new URLSearchParams(isGroup ? { guid: id } : { handle: id })
   await fetchJson(`/api/ui/whitelist?${params}`, { method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// Anti-spam fuse status
+// ---------------------------------------------------------------------------
+
+export interface FuseStatus {
+  locked: boolean
+  step: number                     // 0 = inactive, 1-5 = timed, 6 = permanent
+  cooldown_remaining_s: number | null
+  unlock_code: string | null
+  unlock_form_url?: string | null  // Google Form URL for unlock requests (null/absent = not configured)
+}
+
+export async function getFuseStatus(): Promise<FuseStatus> {
+  return fetchJson('/api/ui/fuse-status')
+}
+
+export async function postUnlock(code: string): Promise<void> {
+  await fetchJson('/api/ui/unlock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
 }

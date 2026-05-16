@@ -29,13 +29,28 @@ const mockGetConversations = jest.fn().mockResolvedValue([
   },
 ])
 
+// Build mockClient at module scope so it can be referenced inside jest.mock factories.
+// Using var to avoid the temporal dead zone issue with hoisted jest.mock calls.
+// eslint-disable-next-line no-var
+var mockClient = {
+  getConversations: mockGetConversations,
+  eventsUrl: jest.fn().mockReturnValue('http://localhost:8723/events'),
+}
+
 jest.mock('@chatwire/shared', () => ({
-  ChaiwireClient: jest.fn().mockImplementation(() => ({
-    getConversations: mockGetConversations,
-    eventsUrl: jest.fn().mockReturnValue('http://localhost:8723/events'),
-  })),
+  ChaiwireClient: jest.fn().mockImplementation(() => mockClient),
   convRouteKey: (c: { kind: string; handle?: string; guid?: string }) =>
     c.kind === 'group' ? c.guid : c.handle,
+}))
+
+// Provide a client directly so the screen's load() doesn't early-return
+jest.mock('../state/AppStateContext', () => ({
+  useAppState: () => ({
+    client: mockClient,
+    serverUrl: 'http://localhost:8723',
+    setServerUrl: jest.fn(),
+  }),
+  AppStateProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
 
 // Mock navigation
@@ -45,30 +60,21 @@ jest.mock('@react-navigation/native', () => ({
 }))
 
 import { ConversationListScreen } from '../screens/ConversationListScreen'
-import { AppStateProvider } from '../state/AppStateContext'
 
 const mockNavigation = { navigate: mockNavigate } as any
 const mockRoute = {} as any
 
-function Wrapper({ children }: { children: React.ReactNode }) {
-  return <AppStateProvider>{children}</AppStateProvider>
-}
-
 describe('ConversationListScreen', () => {
   it('renders without crashing', () => {
     const { toJSON } = render(
-      <Wrapper>
-        <ConversationListScreen navigation={mockNavigation} route={mockRoute} />
-      </Wrapper>,
+      <ConversationListScreen navigation={mockNavigation} route={mockRoute} />,
     )
     expect(toJSON()).toBeTruthy()
   })
 
   it('shows conversation after loading', async () => {
     const { getByText } = render(
-      <Wrapper>
-        <ConversationListScreen navigation={mockNavigation} route={mockRoute} />
-      </Wrapper>,
+      <ConversationListScreen navigation={mockNavigation} route={mockRoute} />,
     )
     await waitFor(() => expect(getByText('Alice')).toBeTruthy())
   })

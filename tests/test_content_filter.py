@@ -311,20 +311,20 @@ class TestIntegrationProtocol:
         ctx = MagicMock()
         coro = inst.start(ctx)
         assert asyncio.iscoroutine(coro)
-        asyncio.get_event_loop().run_until_complete(coro)
+        asyncio.run(coro)
 
     def test_stop_is_coroutine(self):
         inst = _make()
         coro = inst.stop()
         assert asyncio.iscoroutine(coro)
-        asyncio.get_event_loop().run_until_complete(coro)
+        asyncio.run(coro)
 
     def test_on_inbound_is_coroutine(self):
         inst = _make()
         msg = MagicMock()
         coro = inst.on_inbound(msg)
         assert asyncio.iscoroutine(coro)
-        asyncio.get_event_loop().run_until_complete(coro)
+        asyncio.run(coro)
 
     def test_has_transform_inbound(self):
         assert callable(getattr(ContentFilterIntegration, "transform_inbound", None))

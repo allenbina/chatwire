@@ -1,0 +1,23 @@
+{
+  "name": "compact-mono",
+  "author": "chatwire",
+  "version": "1.0.0",
+  "structure": {
+    "radius": "2px",
+    "radius-bubble": "3px",
+    "radius-input": "2px",
+    "spacing-message": "1px",
+    "spacing-sidebar": "1px",
+    "font-size-message": "0.85rem",
+    "font-size-sidebar": "0.8rem",
+    "sidebar-width": "240px"
+  },
+  "decorations": {
+    "avatar-shape": "2px",
+    "avatar-size": "28px",
+    "bubble-shadow": "none",
+    "header-shadow": "none",
+    "transition-speed": "0ms"
+  },
+  "custom_css": ".message-timestamp { font-size: 0.7rem; opacity: 0.6; }"
+}

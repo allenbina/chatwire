@@ -29,7 +29,33 @@ from integrations.mcp import (
     tool_read_messages,
     tool_search_messages,
     tool_send_message,
+    tool_resolve_contact,
+    tool_get_unread_summary,
+    tool_get_status,
+    tool_draft_message,
+    tool_send_message_to_group,
+    tool_confirm_send,
 )
+
+
+# Default permissive MCP config for tests — no restrictions
+_TEST_MCP_CONFIG = {
+    "enabled": True,
+    "http_enabled": False,
+    "contact_filter": "all",
+    "confirmation_mode": "never",
+    "send_allowed_contacts": [],
+    "pause_sends": False,
+    "scopes": ["mcp:read", "mcp:send", "mcp:contacts", "mcp:meta"],
+    "tools": {},
+}
+
+
+@pytest.fixture(autouse=True)
+def _patch_mcp_config():
+    """All MCP tool tests run with a permissive config by default."""
+    with patch.object(_mod, "_load_mcp_config", return_value=_TEST_MCP_CONFIG):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -286,11 +312,12 @@ class TestToolSearchMessages:
             out = tool_search_messages("xyzzy_no_match_xyz")
         assert out["results"] == []
 
-    def test_bad_db_path_returns_error(self, tmp_path):
+    def test_bad_db_path_returns_empty(self, tmp_path):
+        """With FTS5 + LIKE fallback, a bad path gracefully returns empty results."""
         nonexistent = tmp_path / "no_such_file.db"
         with patch.object(_mod, "_chat_db_path", return_value=nonexistent):
             out = tool_search_messages("anything")
-        assert "error" in out
+        assert out["results"] == []
 
     def test_query_key_in_result(self, fake_chat_db):
         with patch.object(_mod, "_chat_db_path", return_value=fake_chat_db):
@@ -358,15 +385,206 @@ class TestMcpIntegration:
         import asyncio
         integ = McpIntegration({})
         ctx = MagicMock()
-        asyncio.get_event_loop().run_until_complete(integ.start(ctx))
+        asyncio.run(integ.start(ctx))
 
     def test_stop_does_not_raise(self):
         import asyncio
         integ = McpIntegration({})
-        asyncio.get_event_loop().run_until_complete(integ.stop())
+        asyncio.run(integ.stop())
 
     def test_on_inbound_does_not_raise(self):
         import asyncio
         integ = McpIntegration({})
         msg = MagicMock()
-        asyncio.get_event_loop().run_until_complete(integ.on_inbound(msg))
+        asyncio.run(integ.on_inbound(msg))
+
+
+# ---------------------------------------------------------------------------
+# New tools (v2)
+# ---------------------------------------------------------------------------
+
+class TestToolResolveContact:
+    def test_exact_match(self):
+        with patch.object(_mod, "_load_contacts_lookup",
+                          return_value={"+15551234567": "Alice Smith"}):
+            out = tool_resolve_contact("Alice Smith")
+        assert out["matches"][0]["handle"] == "+15551234567"
+        assert out["matches"][0]["score"] == 100
+
+    def test_partial_match(self):
+        with patch.object(_mod, "_load_contacts_lookup",
+                          return_value={"+15551234567": "Alice Smith", "+15559876543": "Bob"}):
+            out = tool_resolve_contact("Ali")
+        assert len(out["matches"]) >= 1
+        assert out["matches"][0]["name"] == "Alice Smith"
+
+    def test_no_match(self):
+        with patch.object(_mod, "_load_contacts_lookup",
+                          return_value={"+15551234567": "Alice"}):
+            out = tool_resolve_contact("Zzznotfound")
+        assert out["matches"] == []
+
+    def test_max_5_results(self):
+        contacts = {f"+1555{i:07d}": f"John {i}" for i in range(10)}
+        with patch.object(_mod, "_load_contacts_lookup", return_value=contacts):
+            out = tool_resolve_contact("John")
+        assert len(out["matches"]) <= 5
+
+
+class TestToolGetUnreadSummary:
+    def test_returns_unread_conversations(self):
+        convos = [
+            {"handle": "+15551234567", "name": "Alice", "preview": "hi",
+             "last_dt": 100, "n": 2, "unseen": True},
+            {"handle": "+15559876543", "name": "Bob", "preview": "yo",
+             "last_dt": 90, "n": 0, "unseen": False},
+        ]
+        with patch.object(_mod, "_list_conversations_fn", return_value=convos):
+            out = tool_get_unread_summary()
+        assert out["total_unread"] == 1
+        assert out["unread_conversations"][0]["handle"] == "+15551234567"
+
+    def test_empty_when_no_unread(self):
+        convos = [
+            {"handle": "+15551234567", "name": "Alice", "preview": "hi",
+             "last_dt": 100, "n": 0, "unseen": False},
+        ]
+        with patch.object(_mod, "_list_conversations_fn", return_value=convos):
+            out = tool_get_unread_summary()
+        assert out["total_unread"] == 0
+
+
+class TestToolGetStatus:
+    def test_returns_expected_keys(self):
+        with patch("chat_send._rate_bucket") as mock_bucket, \
+             patch("chat_send._fuse") as mock_fuse:
+            mock_bucket._tokens = 18.5
+            mock_bucket._capacity = 20
+            mock_fuse._step = 0
+            mock_fuse.is_active.return_value = False
+            mock_fuse.remaining_s.return_value = 0
+            out = tool_get_status()
+        assert "mcp_enabled" in out
+        assert "rate_limit" in out
+        assert "fuse" in out
+        assert "pending_confirmations" in out
+
+
+class TestToolDraftMessage:
+    def test_no_warnings_when_unrestricted(self):
+        out = tool_draft_message("+15551234567", "hello")
+        assert out["would_send_to"] == "+15551234567"
+        assert out["text"] == "hello"
+        assert out["warnings"] == []
+
+    def test_warns_when_paused(self):
+        paused_config = dict(_TEST_MCP_CONFIG)
+        paused_config["pause_sends"] = True
+        with patch.object(_mod, "_load_mcp_config", return_value=paused_config):
+            out = tool_draft_message("+15551234567", "hello")
+        assert any("paused" in w.lower() for w in out["warnings"])
+
+
+class TestToolSendMessageToGroup:
+    def test_sends_to_group(self):
+        result = _mock_send_result(status="sent", service="iMessage")
+        with patch.object(_mod, "_check_send_guard"), \
+             patch.object(_mod, "_send_text_to_chat_confirm", return_value=result):
+            out = tool_send_message_to_group("iMessage;+;chat123", "hello group")
+        assert out["status"] == "sent"
+
+    def test_blocked_when_paused(self):
+        paused_config = dict(_TEST_MCP_CONFIG)
+        paused_config["pause_sends"] = True
+        with patch.object(_mod, "_load_mcp_config", return_value=paused_config):
+            out = tool_send_message_to_group("iMessage;+;chat123", "hello")
+        assert out["error"] == "sends_paused"
+
+
+class TestToolConfirmSend:
+    def test_confirms_pending_send(self):
+        # Queue a send first
+        confirm_config = dict(_TEST_MCP_CONFIG)
+        confirm_config["confirmation_mode"] = "always"
+        with patch.object(_mod, "_load_mcp_config", return_value=confirm_config):
+            pending = tool_send_message("+15551234567", "hello")
+        assert pending["status"] == "pending_confirmation"
+        cid = pending["confirmation_id"]
+
+        # Confirm it
+        result = _mock_send_result(status="delivered", service="iMessage")
+        with patch.object(_mod, "_check_send_guard"), \
+             patch.object(_mod, "_send_text_confirm", return_value=result):
+            out = tool_confirm_send(cid)
+        assert out["status"] == "delivered"
+
+    def test_expired_confirmation(self):
+        out = tool_confirm_send("cw_nonexistent")
+        assert out["error"] == "not_found"
+
+
+# ---------------------------------------------------------------------------
+# Scope enforcement
+# ---------------------------------------------------------------------------
+
+class TestScopeEnforcement:
+    def test_send_blocked_without_scope(self):
+        from integrations.mcp import check_scope
+        granted = {"mcp:read", "mcp:contacts", "mcp:meta"}
+        err = check_scope("send_message", granted)
+        assert err is not None
+        assert "mcp:send" in err
+
+    def test_send_allowed_with_scope(self):
+        from integrations.mcp import check_scope
+        granted = {"mcp:read", "mcp:send", "mcp:contacts", "mcp:meta"}
+        err = check_scope("send_message", granted)
+        assert err is None
+
+    def test_read_allowed_with_read_scope(self):
+        from integrations.mcp import check_scope
+        granted = {"mcp:read"}
+        assert check_scope("read_messages", granted) is None
+        assert check_scope("search_messages", granted) is None
+
+
+# ---------------------------------------------------------------------------
+# Contact filter enforcement
+# ---------------------------------------------------------------------------
+
+class TestContactFilter:
+    def test_search_filters_by_whitelist(self, fake_chat_db):
+        wl_config = dict(_TEST_MCP_CONFIG)
+        wl_config["contact_filter"] = "whitelist"
+        with patch.object(_mod, "_load_mcp_config", return_value=wl_config), \
+             patch.object(_mod, "_chat_db_path", return_value=fake_chat_db), \
+             patch("whitelist.all_handles", return_value={"+15551234567"}), \
+             patch.dict("os.environ", {"SELF_HANDLES": ""}):
+            out = tool_search_messages("hello")
+        # Only results from +15551234567, not +15559876543
+        handles = {r["handle"] for r in out["results"]}
+        assert "+15559876543" not in handles
+
+    def test_read_blocked_for_non_whitelisted(self):
+        wl_config = dict(_TEST_MCP_CONFIG)
+        wl_config["contact_filter"] = "whitelist"
+        with patch.object(_mod, "_load_mcp_config", return_value=wl_config), \
+             patch("whitelist.all_handles", return_value={"+15551234567"}), \
+             patch.dict("os.environ", {"SELF_HANDLES": ""}):
+            out = tool_read_messages("+15559876543")
+        assert out["error"] == "contact_not_allowed"
+
+
+# ---------------------------------------------------------------------------
+# Tool definitions completeness (v2)
+# ---------------------------------------------------------------------------
+
+class TestToolDefinitionsV2:
+    def test_all_v2_tools_defined(self):
+        names = {t["name"] for t in TOOL_DEFINITIONS}
+        expected = {
+            "send_message", "send_message_to_group", "confirm_send",
+            "read_messages", "list_conversations", "search_messages",
+            "resolve_contact", "get_unread_summary", "get_status", "draft_message",
+        }
+        assert expected.issubset(names)

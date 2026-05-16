@@ -1,20 +1,20 @@
 /**
  * Scrollable message feed for the active conversation.
  *
+ * Uses `flex-direction: column-reverse` on the scroll container so the
+ * browser natively anchors the viewport to the bottom (newest messages).
+ * No JavaScript scroll management is needed for the default case — the
+ * browser handles image loads, content expansion, and initial positioning.
+ *
  * - Fetches messages via react-query (polling every 5 s as a fallback;
  *   real-time updates come from the SSE hook in ChatPage).
  * - Appends optimistic messages from the zustand store.
- * - Auto-scrolls to the bottom on new messages.
  * - Shows a "scroll to bottom" button when the user has scrolled up.
  * - "Load older" button at the top when the backend signals has_more.
  * - For group chats, shows the sender name above incoming bubbles.
- *
- * Performance: the message list is virtualised with @tanstack/react-virtual
- * so only ~30 DOM nodes are rendered regardless of conversation length.
  */
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { fetchMessages, fetchOlderMessages, markSeen, type Message } from '../api'
 import { useChatStore } from '../store'
 import { MessageBubble } from './MessageBubble'
@@ -23,6 +23,8 @@ interface MessageListProps {
   handle: string
   isGroup?: boolean
   lastSeenRowid?: number
+  ventura?: boolean
+  onReply?: (msg: Message) => void
 }
 
 // Stable empty array — avoids returning a new [] on every render when there
@@ -30,12 +32,46 @@ interface MessageListProps {
 // useSyncExternalStore's getSnapshot cache check.
 const EMPTY_OPTIMISTIC: never[] = []
 
-export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: MessageListProps) {
+/**
+ * Collapse iMessage→SMS fallback pairs into a single SMS bubble.
+ *
+ * When iMessage fails and Messages.app retries via SMS, the database stores
+ * two consecutive rows: a failed iMessage (status="failed") immediately
+ * followed by the SMS send with identical text. We hide the failed row and
+ * annotate the SMS row with fell_back_to_sms=true so the bubble can show a
+ * small note.
+ */
+function collapseSmsFallback(messages: Message[]): Message[] {
+  const result: Message[] = []
+  let i = 0
+  while (i < messages.length) {
+    const curr = messages[i]
+    const next = messages[i + 1]
+    if (
+      curr.from_me &&
+      curr.status === 'failed' &&
+      next?.from_me &&
+      next.service === 'SMS' &&
+      curr.text === next.text
+    ) {
+      // Suppress the failed iMessage bubble; show only the SMS bubble with a note.
+      result.push({ ...next, fell_back_to_sms: true })
+      i += 2
+    } else {
+      result.push(curr)
+      i++
+    }
+  }
+  return result
+}
+
+export function MessageList({ handle, isGroup = false, lastSeenRowid = 0, ventura = false, onReply }: MessageListProps) {
   const queryClient = useQueryClient()
   const optimistic = useChatStore((s) => s.optimistic[handle] ?? EMPTY_OPTIMISTIC)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const atBottomRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  // Ref so handleScroll can read the latest messages without stale closure
+  const allMsgsRef = useRef<Message[]>([])
   const [olderMsgs, setOlderMsgs] = useState<Message[]>([])
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -57,14 +93,32 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     if (data) setHasMore(data.has_more)
   }, [data])
 
-  // Reset older pages when the conversation changes
+  // Reset state when the conversation changes
   useEffect(() => {
     setOlderMsgs([])
     setHasMore(false)
+    setShowScrollBtn(false)
   }, [handle])
 
   const recentMessages: Message[] = data?.messages ?? []
-  const allMessages = [...olderMsgs, ...recentMessages, ...optimistic]
+  const allMessages = collapseSmsFallback([...olderMsgs, ...recentMessages, ...optimistic])
+  // Keep ref in sync so scroll handler can access latest messages without stale closures
+  allMsgsRef.current = allMessages
+
+  // Self-chat detection: every message is from_me (notes to yourself).
+  // Only treat as self-chat when there's at least one message to avoid
+  // false positives on first render.
+  const isSelfChat = allMessages.length > 0 && allMessages.every((m) => m.from_me)
+
+  // ---------------------------------------------------------------------------
+  // Mark seen when messages load (column-reverse starts at bottom by default)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (allMessages.length === 0) return
+    const lastRowid = allMessages[allMessages.length - 1]?.rowid
+    if (lastRowid) markSeen(handle, lastRowid)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handle, allMessages.length])
 
   // ---------------------------------------------------------------------------
   // Unread pill — "N new messages ↓"
@@ -76,22 +130,20 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [allMessages.length],
   )
-  const firstNewIndex = useMemo(
-    () => allMessages.findIndex((m) => m.rowid > initialSeenRowidRef.current && !m.from_me),
+  const firstNewRowid = useMemo(
+    () => allMessages.find((m) => m.rowid > initialSeenRowidRef.current && !m.from_me)?.rowid ?? null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [allMessages.length],
   )
 
-  // Show pill once when messages first load and there are unseen ones and user isn't at bottom.
+  // Show pill once when messages first load and there are unseen ones.
   const pillShownRef = useRef(false)
   useEffect(() => {
     if (!pillShownRef.current && newMessageCount > 0 && allMessages.length > 0) {
       pillShownRef.current = true
       setShowPill(true)
-      pillTimerRef.current = setTimeout(() => {
-        setShowPill(false)
-        markSeen(handle, allMessages[allMessages.length - 1]?.rowid ?? 0)
-      }, 3000)
+      // Auto-dismiss pill after 3s (markSeen happens on scroll, not here)
+      pillTimerRef.current = setTimeout(() => setShowPill(false), 3000)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMessages.length])
@@ -107,43 +159,35 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
   function dismissPill() {
     setShowPill(false)
     if (pillTimerRef.current) clearTimeout(pillTimerRef.current)
-    if (firstNewIndex >= 0) {
-      virtualizer.scrollToIndex(firstNewIndex, { align: 'start' })
+    if (firstNewRowid !== null) {
+      const el = scrollRef.current?.querySelector(`[data-rowid="${firstNewRowid}"]`)
+      el?.scrollIntoView?.({ block: 'start' })
     } else {
       scrollToBottom()
     }
-    markSeen(handle, allMessages[allMessages.length - 1]?.rowid ?? 0)
   }
 
   // ---------------------------------------------------------------------------
-  // Virtualiser — renders only the visible slice of allMessages
+  // Scroll detection — column-reverse: scrollTop ≈ 0 means at bottom
   // ---------------------------------------------------------------------------
-  const virtualizer = useVirtualizer({
-    count: allMessages.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 64, // rough average row height (px)
-    overscan: 10, // extra rows to pre-render above/below viewport
-  })
-
-  // Scroll to bottom on new messages (only when already at bottom)
-  useEffect(() => {
-    if (atBottomRef.current && allMessages.length > 0) {
-      virtualizer.scrollToIndex(allMessages.length - 1, { align: 'end' })
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allMessages.length])
-
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    atBottomRef.current = nearBottom
+    // In column-reverse, scrollTop is 0 at the natural position (bottom/newest).
+    // Scrolling up toward older messages makes scrollTop go negative (or stay
+    // near 0 on some browsers). Use Math.abs for cross-browser safety.
+    const nearBottom = Math.abs(el.scrollTop) < 80
     setShowScrollBtn(!nearBottom)
-  }, [])
+    // Mark seen when user is at the bottom
+    if (nearBottom && allMsgsRef.current.length > 0) {
+      const lastRowid = allMsgsRef.current[allMsgsRef.current.length - 1]?.rowid
+      if (lastRowid) markSeen(handle, lastRowid)
+    }
+  }, [handle])
 
   function scrollToBottom() {
-    virtualizer.scrollToIndex(allMessages.length - 1, { align: 'end' })
-    atBottomRef.current = true
+    const el = scrollRef.current
+    if (el) el.scrollTop = 0
     setShowScrollBtn(false)
   }
 
@@ -163,6 +207,13 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     }
   }
 
+  // Reversed messages for column-reverse rendering: newest first in DOM
+  // (column-reverse places first child at the bottom of the viewport).
+  const reversedMessages = useMemo(
+    () => [...allMessages].reverse(),
+    [allMessages],
+  )
+
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm animate-pulse">
@@ -179,10 +230,9 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
     )
   }
 
-  const virtualItems = virtualizer.getVirtualItems()
-
   return (
     <div className="relative flex-1 min-h-0">
+      {/* column-reverse scroll container: browser natively anchors to bottom */}
       <div
         id="messages"
         ref={scrollRef}
@@ -190,9 +240,50 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
         role="log"
         aria-live="polite"
         aria-label="Conversation messages"
-        className="absolute inset-0 overflow-y-auto"
+        className="absolute inset-0 overflow-y-auto overscroll-contain flex flex-col-reverse"
       >
-        {/* Load-older button */}
+        {/* Messages rendered newest-first; column-reverse puts first child at bottom */}
+        {reversedMessages.map((msg) => (
+          <div
+            key={msg.rowid}
+            data-rowid={msg.rowid}
+            className="px-4 flex flex-col"
+            style={{
+              paddingTop: 'var(--spacing-message)',
+              paddingBottom: 'var(--spacing-message)',
+            }}
+          >
+            {/* Sender label for incoming group messages */}
+            {isGroup && !msg.from_me && msg.sender_name && (
+              <p className="text-[10px] text-muted-foreground mb-0.5 ml-1">
+                {msg.sender_name}
+              </p>
+            )}
+            <MessageBubble
+              msg={msg}
+              pending={'pending' in msg && (msg as Message & { pending?: boolean }).pending === true}
+              selfChatAlt={isSelfChat && msg.rowid % 2 !== 0}
+              isGroup={isGroup}
+              onScrollToRowid={(rowid) => {
+                const el = scrollRef.current?.querySelector(
+                  `[data-rowid="${rowid}"]`,
+                )
+                el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+              }}
+              ventura={ventura}
+              onReply={onReply}
+            />
+          </div>
+        ))}
+
+        {/* Empty state */}
+        {allMessages.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground mt-8 px-4">
+            No messages yet.
+          </p>
+        )}
+
+        {/* Load-older button — last child in DOM = top of viewport in column-reverse */}
         {hasMore && (
           <div className="flex justify-center my-2 px-4">
             <button
@@ -206,47 +297,6 @@ export function MessageList({ handle, isGroup = false, lastSeenRowid = 0 }: Mess
             </button>
           </div>
         )}
-
-        {allMessages.length === 0 && (
-          <p className="text-center text-sm text-muted-foreground mt-8 px-4">
-            No messages yet.
-          </p>
-        )}
-
-        {/* Virtual list container — height matches total row heights */}
-        <div
-          style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
-        >
-          {virtualItems.map((vItem) => {
-            const msg = allMessages[vItem.index]
-            return (
-              <div
-                key={msg.rowid}
-                data-index={vItem.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${vItem.start}px)`,
-                }}
-                className="px-4 py-1"
-              >
-                {/* Sender label for incoming group messages */}
-                {isGroup && !msg.from_me && msg.sender_name && (
-                  <p className="text-[10px] text-muted-foreground mb-0.5 ml-1">
-                    {msg.sender_name}
-                  </p>
-                )}
-                <MessageBubble
-                  msg={msg}
-                  pending={'pending' in msg && (msg as Message & { pending?: boolean }).pending === true}
-                />
-              </div>
-            )
-          })}
-        </div>
       </div>
 
       {/* New-messages pill */}

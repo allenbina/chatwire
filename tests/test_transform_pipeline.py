@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch, patch as _patch
 
 def _run(coro):
     """Run a coroutine synchronously (no async test plugin required)."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 import pytest
 

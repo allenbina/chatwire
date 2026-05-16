@@ -51,7 +51,7 @@ export function ExportDropdown({ handle, isGroup }: ExportDropdownProps) {
                    transition-colors flex items-center gap-1 text-sm"
         title="Export"
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+        <svg style={{ width: 'var(--icon-size-md)', height: 'var(--icon-size-md)' }} fill="none" stroke="currentColor" strokeWidth="var(--icon-stroke)" viewBox="0 0 24 24"
              strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
           <polyline points="7 10 12 15 17 10"/>

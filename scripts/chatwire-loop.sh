@@ -48,7 +48,7 @@ FALLBACK_MODEL="claude-opus-4-7"
 BUDGET_USD=""
 MAX_ITERATIONS=10
 MAX_PHASES=99            # how many approval cycles before hard stop
-SESSION_TIMEOUT_M=15     # kill session after N minutes; 0 = no timeout
+SESSION_TIMEOUT_M=45     # kill session after N minutes; 0 = no timeout
 NTFY_TOPIC="p9SKpYzY70LlyK1N"
 APPROVAL_TIMEOUT_S=14400 # 4 hours to respond during awake hours
 SLEEP_START=25           # disabled — always send notifications
@@ -254,9 +254,9 @@ trap _failure_ntfy EXIT
 [[ -f "$HANDOFF" ]] || { echo "HANDOFF.md not found at $HANDOFF" >&2; exit 2; }
 
 # --- Extract §6 prompt from HANDOFF.md ---
-# §6 is a fenced code block after "## 6." heading. Extract content between ``` fences.
+# §6 is a fenced code block after "## 6." or "## §6" heading. Extract content between ``` fences.
 extract_section6() {
-    sed -n '/^## 6\./,$ p' "$HANDOFF" \
+    sed -n '/^## \(6\.\|§6\)/,$ p' "$HANDOFF" \
         | sed -n '/^```$/,/^```$/ { /^```$/d; p; }'
 }
 
@@ -408,16 +408,38 @@ $prompt_body"
 
 Working directory: $REPO_DIR
 
-Your job:
-1. Run 'git status' and 'git diff' to check for partial uncommitted work.
+CRITICAL RULES — read carefully:
+- NEVER mark a chunk as DONE without verifying tests pass.
+- NEVER skip work. If it's incomplete, it must be RETRIED.
+- Your job is to VERIFY, then DIAGNOSE, then set up the next attempt.
+
+Steps:
+1. Run 'git status' and 'git diff' to check for uncommitted work.
 2. Read docs/HANDOFF.md to understand what chunk was being worked on.
 3. Read the last 50 lines of the session log at $LOG.
-4. If there is partial work that can be committed, commit it. Then rewrite HANDOFF.md §6 with a prompt to RETRY or CONTINUE the failed chunk (inside a fenced code block).
-5. If the work is unrecoverable or you cannot diagnose the issue, write 'NEEDS_INTERVENTION' in §6 (inside a fenced code block) and stop.
-6. Be concise. Do not start implementing — just diagnose and set up the next attempt."
+
+4. VERIFY the work (this is mandatory):
+   a. Run: cd web/frontend && npm run build
+   b. Run: npm test -- --run
+   c. Run: cd ../.. && python3 -m pytest tests/ --tb=short -q
+   Note the results of each — pass count, fail count, errors.
+
+5. Based on verification:
+   - If build FAILS: do NOT commit. Write RETRY in §6 with the build error.
+   - If tests FAIL: do NOT commit. Write RETRY in §6 with failing test names.
+   - If build + tests PASS and there is uncommitted work: commit it, then write
+     CONTINUE in §6 to advance to the next chunk.
+   - If build + tests PASS and work is already committed: write CONTINUE in §6.
+   - If you cannot determine the state: write NEEDS_VERIFICATION in §6 (do NOT
+     write DONE or CONTINUE — force the next session to verify).
+
+6. NEVER mark chunks as done in the task list unless you personally verified
+   tests pass. If unsure, leave the task list unchanged.
+
+7. Be concise. Do not implement anything — only verify, diagnose, and set up retry."
 
             doctor_exit=0
-            timeout 5m claude -p "$doctor_prompt" \
+            timeout 10m claude -p "$doctor_prompt" \
                 --model "$MODEL" \
                 --fallback-model "$FALLBACK_MODEL" \
                 --permission-mode acceptEdits \
@@ -443,6 +465,11 @@ Your job:
                 break 2
             fi
 
+            if echo "$new_s6" | grep -qi 'NEEDS_VERIFICATION'; then
+                echo "Doctor says: needs verification — work may be incomplete. Retrying with verification." | tee -a "$LOG"
+                ntfy_send "chatwire-loop needs verification" "high" "Doctor couldn't verify work. Next session will re-check."
+            fi
+
             echo "Doctor recovered — continuing loop with updated §6" | tee -a "$LOG"
             ntfy_send "chatwire-loop doctor recovered" "default" "Self-healed after timeout. Continuing."
             section6_hash_before="invalid-force-chain"
@@ -458,16 +485,38 @@ Your job:
 
 Working directory: $REPO_DIR
 
-Your job:
-1. Run 'git status' and 'git diff' to check for partial uncommitted work.
+CRITICAL RULES — read carefully:
+- NEVER mark a chunk as DONE without verifying tests pass.
+- NEVER skip work. If it's incomplete, it must be RETRIED.
+- Your job is to VERIFY, then DIAGNOSE, then set up the next attempt.
+
+Steps:
+1. Run 'git status' and 'git diff' to check for uncommitted work.
 2. Read docs/HANDOFF.md to understand what chunk was being worked on.
 3. Read the last 50 lines of the session log at $LOG.
-4. If there is partial work that can be committed, commit it. Then rewrite HANDOFF.md §6 with a prompt to RETRY the failed chunk (inside a fenced code block).
-5. If the work is unrecoverable, write 'NEEDS_INTERVENTION' in §6 (inside a fenced code block).
-6. Be concise. Diagnose only — do not implement."
+
+4. VERIFY the work (this is mandatory):
+   a. Run: cd web/frontend && npm run build
+   b. Run: npm test -- --run
+   c. Run: cd ../.. && python3 -m pytest tests/ --tb=short -q
+   Note the results of each — pass count, fail count, errors.
+
+5. Based on verification:
+   - If build FAILS: do NOT commit. Write RETRY in §6 with the build error.
+   - If tests FAIL: do NOT commit. Write RETRY in §6 with failing test names.
+   - If build + tests PASS and there is uncommitted work: commit it, then write
+     CONTINUE in §6 to advance to the next chunk.
+   - If build + tests PASS and work is already committed: write CONTINUE in §6.
+   - If you cannot determine the state: write NEEDS_VERIFICATION in §6 (do NOT
+     write DONE or CONTINUE — force the next session to verify).
+
+6. NEVER mark chunks as done in the task list unless you personally verified
+   tests pass. If unsure, leave the task list unchanged.
+
+7. Be concise. Do not implement anything — only verify, diagnose, and set up retry."
 
             doctor_exit=0
-            timeout 5m claude -p "$doctor_prompt" \
+            timeout 10m claude -p "$doctor_prompt" \
                 --model "$MODEL" \
                 --fallback-model "$FALLBACK_MODEL" \
                 --permission-mode acceptEdits \
@@ -493,6 +542,11 @@ Your job:
                 break 2
             fi
 
+            if echo "$new_s6" | grep -qi 'NEEDS_VERIFICATION'; then
+                echo "Doctor says: needs verification — work may be incomplete. Retrying with verification." | tee -a "$LOG"
+                ntfy_send "chatwire-loop needs verification" "high" "Doctor couldn't verify work. Next session will re-check."
+            fi
+
             echo "Doctor recovered — continuing loop" | tee -a "$LOG"
             ntfy_send "chatwire-loop doctor recovered" "default" "Self-healed after error. Continuing."
             section6_hash_before="invalid-force-chain"
@@ -509,16 +563,26 @@ Your job:
         fi
 
         # --- Auto-deploy to mbair after each successful session ---
-        if [[ -d "$REPO_DIR/web/frontend/dist" ]]; then
-            echo "Auto-deploying to mbair..." | tee -a "$LOG"
-            local site="/Users/allen/.local/pipx/venvs/chatwire/lib/python3.14/site-packages/web"
-            ssh mbair "rm -rf $site/frontend/dist" 2>/dev/null || true
-            scp -r "$REPO_DIR/web/frontend/dist" "mbair:$site/frontend/dist" 2>/dev/null || true
-            ssh mbair "/bin/launchctl kickstart -k gui/501/dev.chatwire.web" 2>/dev/null || true
-            local health
-            health=$(ssh mbair "/usr/bin/curl -sf localhost:8723/healthz" 2>/dev/null || echo "FAILED")
-            echo "mbair deploy: $health" | tee -a "$LOG"
+        # Full pip install from git — correct every time, no missing modules.
+        # Commits must be pushed first (the loop does this before reaching here).
+        echo "Auto-deploying to mbair (pip install from git)..." | tee -a "$LOG"
+        # Build frontend locally first (pip install from git won't run npm)
+        if [[ -d "$REPO_DIR/web/frontend" ]] && command -v npm &>/dev/null; then
+            echo "  Building frontend..." | tee -a "$LOG"
+            (cd "$REPO_DIR/web/frontend" && npm run build >>"$LOG" 2>&1) || true
         fi
+        # Push frontend dist to mbair (pip install from git won't include uncommitted dist/)
+        site="/Users/allen/.local/pipx/venvs/chatwire/lib/python3.14/site-packages/web"
+        ssh mbair "rm -rf $site/frontend/dist" 2>/dev/null || true
+        scp -r "$REPO_DIR/web/frontend/dist" "mbair:$site/frontend/dist" 2>/dev/null || true
+        # pip install from git via deploy key — gets all Python files, new modules, everything
+        echo "  pip install from chatwire-dev (deploy key)..." | tee -a "$LOG"
+        ssh mbair "~/.local/pipx/venvs/chatwire/bin/python -m pip install --no-cache-dir --no-deps 'git+ssh://git@github.com-chatwire/allenbina/chatwire-dev.git'" 2>>"$LOG" || true
+        # Restart services
+        ssh mbair "/bin/launchctl kickstart -k gui/501/dev.chatwire.web" 2>/dev/null || true
+        ssh mbair "/bin/launchctl kickstart -k gui/501/dev.chatwire.bridge" 2>/dev/null || true
+        health=$(ssh mbair "/usr/bin/curl -sf localhost:8723/healthz" 2>/dev/null || echo "FAILED")
+        echo "  mbair deploy: $health" | tee -a "$LOG"
 
         # Check if §6 changed
         new_prompt_body="$(extract_section6)"
